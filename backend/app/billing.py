@@ -89,7 +89,7 @@ def _membership_of(tok: dict | None) -> Membership:
 async def membership(db, user: dict) -> Membership:
     """The tier in force for a signed-in account: its token, if paid and bound to this email."""
     tok = await db.tokens.find_one({"_id": user["tokenId"]}) if user.get("tokenId") else None
-    if tok and tok.get("boundEmail") == user["email"]:
+    if tok and (tok.get("lifetime") or tok.get("boundEmail") == user["email"]):
         return _membership_of(tok)
     return _membership_of(None)
 
@@ -359,10 +359,12 @@ async def token_check(body: TokenCheck, request: Request):
         raise HTTPException(status_code=404, detail="No such token.")
     if not _token_live(tok):
         raise HTTPException(status_code=402, detail="This token's subscription is not active.")
-    if tok.get("deviceId") and tok["deviceId"] != body.deviceId:
-        raise HTTPException(status_code=403, detail="This token is in use on another phone.")
-    if not tok.get("deviceId"):
-        await db.tokens.update_one({"_id": tok["_id"]}, {"$set": {"deviceId": body.deviceId, "deviceBoundAt": _now()}})
+    # A lifetime token (the developer's own) is bound to nothing: any phone, any account.
+    if not tok.get("lifetime"):
+        if tok.get("deviceId") and tok["deviceId"] != body.deviceId:
+            raise HTTPException(status_code=403, detail="This token is in use on another phone.")
+        if not tok.get("deviceId"):
+            await db.tokens.update_one({"_id": tok["_id"]}, {"$set": {"deviceId": body.deviceId, "deviceBoundAt": _now()}})
     return TokenStatus(plan=tok["plan"], until=tok["currentPeriodEnd"], grace=tok["currentPeriodEnd"] <= _now(),
                        boundEmail=tok.get("boundEmail"))
 
@@ -376,17 +378,18 @@ async def redeem(body: TokenCheck, request: Request, user: dict = Depends(curren
         raise HTTPException(status_code=404, detail="No such token.")
     if not _token_live(tok):
         raise HTTPException(status_code=402, detail="This token's subscription is not active.")
-    if tok.get("deviceId") and tok["deviceId"] != body.deviceId:
-        raise HTTPException(status_code=403, detail="This token is in use on another phone.")
-    if tok.get("boundEmail") and tok["boundEmail"] != user["email"]:
-        raise HTTPException(status_code=403, detail="This token was set up with a different Google account.")
-    updates = {}
-    if not tok.get("deviceId"):
-        updates["deviceId"] = body.deviceId
-    if not tok.get("boundEmail"):
-        updates.update({"boundEmail": user["email"], "boundAt": _now()})
-    if updates:
-        await db.tokens.update_one({"_id": tok["_id"]}, {"$set": updates})
+    if not tok.get("lifetime"):
+        if tok.get("deviceId") and tok["deviceId"] != body.deviceId:
+            raise HTTPException(status_code=403, detail="This token is in use on another phone.")
+        if tok.get("boundEmail") and tok["boundEmail"] != user["email"]:
+            raise HTTPException(status_code=403, detail="This token was set up with a different Google account.")
+        updates = {}
+        if not tok.get("deviceId"):
+            updates["deviceId"] = body.deviceId
+        if not tok.get("boundEmail"):
+            updates.update({"boundEmail": user["email"], "boundAt": _now()})
+        if updates:
+            await db.tokens.update_one({"_id": tok["_id"]}, {"$set": updates})
     user = await db.users.find_one_and_update({"_id": user["_id"]}, {"$set": {"tokenId": tok["_id"]}}, return_document=True)
     return await membership(db, user)
 
