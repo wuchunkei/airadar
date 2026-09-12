@@ -75,7 +75,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableFloatStateOf
@@ -186,27 +185,31 @@ fun TripScreen(
     // A short present — one trip ahead, say — cannot be scrolled to the top on
     // its own: the list has nothing below it to fill the screen, so it rests
     // with history showing above. A tail spacer makes up exactly the missing
-    // height, no more, so the present section always reaches the top and the
-    // list never scrolls into empty space beyond it.
-    val spacingPx = with(density) { 10.dp.roundToPx() }
-    val tailHeightPx by remember(anchorIndex) {
-        derivedStateOf {
+    // height, measured from the laid-out positions (so spacing and padding are
+    // already in it), and is only ever re-measured while both the heading and
+    // the tail are on screen — it never collapses while the traveller is up in
+    // the past.
+    var tailHeightPx by remember { mutableIntStateOf(0) }
+    LaunchedEffect(listState, anchorIndex) {
+        snapshotFlow {
             val info = listState.layoutInfo
             val tailIndex = info.totalItemsCount - 1
-            val present = info.visibleItemsInfo.filter { it.index >= anchorIndex && it.index < tailIndex }
-            val lastPresentVisible = present.any { it.index == tailIndex - 1 }
-            if (!lastPresentVisible) 0
+            val anchor = info.visibleItemsInfo.firstOrNull { it.index == anchorIndex }
+            val tail = info.visibleItemsInfo.firstOrNull { it.index == tailIndex }
+            if (anchor == null || tail == null) null
             else {
-                val viewport = info.viewportEndOffset - info.viewportStartOffset
-                (viewport - present.sumOf { it.size } - spacingPx * present.size).coerceAtLeast(0)
+                // Offsets are measured from the padded start, so the end offset
+                // already excludes the top padding; only the bottom one is left.
+                val presentHeight = tail.offset - anchor.offset
+                (info.viewportEndOffset - info.afterContentPadding - presentHeight).coerceAtLeast(0)
             }
-        }
-    }
-    LaunchedEffect(listState) {
-        // Once the tail has grown, the present can finally sit at the top: put it there.
-        snapshotFlow { tailHeightPx }.collect {
-            if (it > 0 && locked.value && listState.firstVisibleItemIndex < anchorIndex) {
-                listState.scrollToItem(anchorIndex)
+        }.collect { needed ->
+            if (needed != null && needed != tailHeightPx) {
+                tailHeightPx = needed
+                // With the room now there, the heading can take the top: put it there.
+                if (locked.value && listState.firstVisibleItemIndex < anchorIndex) {
+                    listState.scrollToItem(anchorIndex)
+                }
             }
         }
     }

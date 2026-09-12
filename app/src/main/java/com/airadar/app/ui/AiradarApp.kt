@@ -204,7 +204,8 @@ fun AiradarApp() {
                         )
                     }
                 },
-                modifier = Modifier.padding(padding)
+                // Each screen applies the status bar inset itself; only the nav bar is shared.
+                modifier = Modifier.padding(bottom = padding.calculateBottomPadding())
             )
 
             Tab.SEARCH -> SearchScreen(
@@ -214,7 +215,8 @@ fun AiradarApp() {
                     remind(flight)
                     tab = Tab.TRIP
                 },
-                modifier = Modifier.padding(padding)
+                // Each screen applies the status bar inset itself; only the nav bar is shared.
+                modifier = Modifier.padding(bottom = padding.calculateBottomPadding())
             )
 
             // The map runs edge to edge, so only the nav bar inset is applied.
