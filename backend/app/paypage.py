@@ -3,7 +3,7 @@
 STYLE = """<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root{--bg:#000;--fg:#f2f2f2;--mute:#9aa3b2;--card:#101216;--line:#2a2f3a;--field:#0a0b0e;
-  --green:#0f5a3a;--green-hi:#1fb37a;--gold:#b8860b;--gold-hi:#ffd24a;--red:#b3261e;--red-bg:#2a0c0c;--red-card:#3a1010;
+  --gold-hi:#ffd24a;--red:#b3261e;--red-bg:#2a0c0c;--red-card:#3a1010;
   --crack-a:rgba(255,255,255,.55);--crack-b:rgba(0,0,0,.9);--stone:#c9c9c9}
 @media (prefers-color-scheme: light){:root{--bg:#fff;--fg:#111;--mute:#5b6270;--card:#f4f5f7;--line:#d9dde3;--field:#fff;
   --red-bg:#ffecec;--red-card:#ffd6d6;--crack-a:rgba(0,0,0,.55);--crack-b:rgba(255,255,255,.9);--stone:#555}}
@@ -16,21 +16,8 @@ h1{margin:0 0 24px;font-size:28px}p.sub{color:var(--mute);margin:0 0 28px}
 @media (max-width:480px){.grid{grid-template-columns:1fr}}
 .btn{position:relative;display:block;width:100%;min-height:96px;padding:18px 16px;border-radius:20px;border:2px solid var(--line);background:var(--card);color:var(--fg);font-size:18px;font-weight:600;cursor:pointer;text-decoration:none;transition:border-color .2s,background .2s,filter 1.2s,color 1.2s}
 .btn small{display:block;font-weight:400;color:var(--mute);font-size:13px;margin-top:4px}
-/* The animated frame is its own layer laid exactly over the border, so it can be
-   masked left→right. Superior blinks deep green, Premium gold, once a second. */
-.btn::before{content:"";position:absolute;inset:-2px;border-radius:20px;border:2px solid transparent;pointer-events:none}
-@keyframes blinkGreen{0%,100%{border-color:var(--green);box-shadow:none}50%{border-color:var(--green-hi);box-shadow:0 0 16px rgba(31,179,122,.45)}}
-@keyframes blinkGold{0%,100%{border-color:var(--gold);box-shadow:none}50%{border-color:var(--gold-hi);box-shadow:0 0 16px rgba(255,210,74,.45)}}
-.flame-green::before{animation:blinkGreen 1s steps(2,jump-none) infinite}
-.flame-gold::before{animation:blinkGold 1s steps(2,jump-none) infinite}
-/* Upgrade: both left→right, a quarter a second — Superior's green goes out from the left edge,
-   Premium's gold comes in from the left edge; once in, it keeps blinking. */
-@property --cut{syntax:"<percentage>";inherits:false;initial-value:0%}
-@keyframes sweep{0%{--cut:0%}25%{--cut:25%}50%{--cut:50%}75%{--cut:75%}100%{--cut:100%}}
-.drain-green::before{-webkit-mask:linear-gradient(90deg,transparent var(--cut),#000 var(--cut));mask:linear-gradient(90deg,transparent var(--cut),#000 var(--cut));
-  animation:blinkGreen 1s steps(2,jump-none) infinite,sweep 4s steps(4,jump-end) forwards}
-.fill-gold::before{-webkit-mask:linear-gradient(90deg,#000 var(--cut),transparent var(--cut));mask:linear-gradient(90deg,#000 var(--cut),transparent var(--cut));
-  animation:blinkGold 1s steps(2,jump-none) infinite,sweep 4s steps(4,jump-end) forwards}
+/* Hover: the frame simply brightens. */
+.btn:hover{border-color:var(--fg)}
 /* forgot: the page reddens; the other three turn to stone and crack */
 body.forgot{background:var(--red-bg)}
 .forgot-btn.hot{border-color:var(--red);background:var(--red-card)}
@@ -93,14 +80,9 @@ PAGE = """<!doctype html><title>Airadar plans</title>""" + STYLE + """
 const $ = s => document.querySelector(s);
 const sup = $('#superior'), prem = $('#premium'), up = $('#upgrade'), forgot = $('#forgot');
 const all = [sup, prem, up, forgot];
-function clear(){ all.forEach(b => b.classList.remove('flame-green','flame-gold','drain-green','fill-gold','stone','hot')); document.body.classList.remove('forgot'); }
+function clear(){ all.forEach(b => b.classList.remove('stone','hot')); document.body.classList.remove('forgot'); }
 
-// Superior blinks deep green, Premium gold, once a second.
-sup.addEventListener('mouseenter', () => { clear(); sup.classList.add('flame-green'); });
-prem.addEventListener('mouseenter', () => { clear(); prem.classList.add('flame-gold'); });
-// Upgrade: Superior's green drains away left to right, a quarter a second; Premium's gold fills in the
-// same way and, once full, keeps blinking gold on its own.
-up.addEventListener('mouseenter', () => { clear(); sup.classList.add('drain-green'); prem.classList.add('fill-gold'); });
+[sup, prem, up].forEach(b => b.addEventListener('mouseenter', clear));
 // Forgot: the page reddens and the other three turn to cracked stone.
 forgot.addEventListener('mouseenter', () => { clear(); forgot.classList.add('hot'); document.body.classList.add('forgot'); [sup, prem, up].forEach(b => b.classList.add('stone')); });
 all.forEach(b => b.addEventListener('mouseleave', clear));
