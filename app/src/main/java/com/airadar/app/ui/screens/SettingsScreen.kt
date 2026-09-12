@@ -166,34 +166,30 @@ fun SettingsScreen(
                                 grace = false,
                                 note = checked.boundEmail?.let { "Sign in with $it" }
                             )
-                            Row(
+                            // Two full-width rows: the sign-in first, the swap under it.
+                            Button(
+                                onClick = { viewModel.signIn(activity) },
+                                enabled = !signingIn,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    .padding(top = 10.dp)
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                OutlinedButton(
-                                    onClick = viewModel::replaceToken,
-                                    enabled = !signingIn,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) { Text("Replace token") }
-                                Button(
-                                    onClick = { viewModel.signIn(activity) },
-                                    enabled = !signingIn,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    if (signingIn) CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp), strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    ) else Text("Continue with Google", fontWeight = FontWeight.SemiBold)
-                                }
+                                if (signingIn) CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp), strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                ) else Text("Continue with Google", fontWeight = FontWeight.SemiBold)
                             }
+                            OutlinedButton(
+                                onClick = viewModel::replaceToken,
+                                enabled = !signingIn,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp)
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("Replace token") }
                             authError?.let {
                                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.padding(top = 8.dp))
@@ -255,8 +251,8 @@ fun SettingsScreen(
                 }
             }
 
-            // Importing is for plan holders: the section appears once a token is in.
-            if (checkedToken != null) item {
+            // Importing is for signed-in plan holders; a token alone is still a guest.
+            if (settings.isLoggedIn) item {
                 SettingsSection("Import") {
                     NavigationRow(
                         title = "Read trips from email",
