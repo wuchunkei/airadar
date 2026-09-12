@@ -39,7 +39,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.airadar.app.data.Flight
-import com.airadar.app.ui.components.DateSheet
+import com.airadar.app.ui.components.WheelDatePickerDialog
 import com.airadar.app.ui.components.FlightDetailSheet
 import com.airadar.app.ui.viewmodel.SearchViewModel
 import java.time.LocalDate
@@ -235,7 +235,7 @@ private fun DetailSearchForm(
     }
 
     if (showPicker) {
-        DateSheet(
+        WheelDatePickerDialog(
             initialDate = date,
             onConfirm = {
                 date = it

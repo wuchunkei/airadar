@@ -1,6 +1,7 @@
 package com.airadar.app.ui.components
 
 import android.graphics.Color as AndroidColor
+import android.graphics.Point
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.GradientDrawable
@@ -33,6 +34,7 @@ import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.milestones.MilestoneManager
 import org.osmdroid.views.overlay.milestones.MilestoneMeterDistanceLister
 import org.osmdroid.views.overlay.milestones.MilestonePathDisplayer
+import kotlin.math.hypot
 
 data class MapRoute(
     val from: Airport,
@@ -131,16 +133,18 @@ fun TileMap(
             // Taps are resolved here rather than per line: osmdroid's own hit test is
             // only as wide as the stroke and hands the tap to whichever line is on top,
             // which makes a bundle of legs out of one hub impossible to pick apart.
-            // Widening rings are tried in turn; the first that catches anything wins,
-            // and everything it catches is reported together.
+            // Every leg's distance to the finger is measured in pixels and exactly one
+            // — the nearest, if it is within reach — is reported.
             map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
                 override fun singleTapConfirmedHelper(p: OsmGeoPoint?): Boolean {
                     if (p == null) return false
-                    val hits = listOf(6f, 12f, 20f, 30f).firstNotNullOfOrNull { dp ->
-                        legs.filter { it.first.isCloseTo(p, (dp * density).toDouble(), map) }
-                            .takeIf { it.isNotEmpty() }
-                    }
-                    if (hits != null) onLegsClick?.invoke(hits.map { it.second to it.third })
+                    val tap = map.projection.toPixels(p, null)
+                    val nearest = legs
+                        .map { it to it.first.pixelDistanceTo(tap, map) }
+                        .minByOrNull { it.second }
+                        ?.takeIf { it.second <= 28f * density }
+                        ?.first
+                    if (nearest != null) onLegsClick?.invoke(listOf(nearest.second to nearest.third))
                     else onMapTap?.invoke()
                     return true
                 }
@@ -250,6 +254,34 @@ private fun midpointArrow(lengthMeters: Double, color: Int): MilestoneManager {
         MilestoneMeterDistanceLister(doubleArrayOf(lengthMeters / 2)),
         MilestonePathDisplayer(0.0, true, head, paint)
     )
+}
+
+/** Shortest screen distance from [tap] to any segment of this line, in pixels. */
+private fun Polyline.pixelDistanceTo(tap: Point, map: MapView): Double {
+    val projection = map.projection
+    val scratch = Point()
+    var best = Double.MAX_VALUE
+    var prevX = 0.0
+    var prevY = 0.0
+    actualPoints.forEachIndexed { i, geo ->
+        projection.toPixels(geo, scratch)
+        val x = scratch.x.toDouble()
+        val y = scratch.y.toDouble()
+        if (i > 0) best = minOf(best, distanceToSegment(tap.x.toDouble(), tap.y.toDouble(), prevX, prevY, x, y))
+        prevX = x
+        prevY = y
+    }
+    return best
+}
+
+private fun distanceToSegment(px: Double, py: Double, ax: Double, ay: Double, bx: Double, by: Double): Double {
+    val dx = bx - ax
+    val dy = by - ay
+    val lengthSq = dx * dx + dy * dy
+    val t = if (lengthSq == 0.0) 0.0 else ((px - ax) * dx + (py - ay) * dy / lengthSq).coerceIn(0.0, 1.0)
+    val cx = ax + t * dx
+    val cy = ay + t * dy
+    return hypot(px - cx, py - cy)
 }
 
 private fun dotDrawable(color: Int) = GradientDrawable().apply {

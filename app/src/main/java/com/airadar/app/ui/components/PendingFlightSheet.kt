@@ -17,8 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -26,8 +24,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,8 +42,6 @@ import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightDatabase
 import com.airadar.app.ui.theme.isDarkTheme
 import java.time.format.DateTimeFormatter
-import java.time.LocalDate
-import java.time.ZoneId
 import java.util.Locale
 
 private const val FEEDBACK_URL = "https://t.me/wuchunkei"
@@ -284,7 +278,7 @@ fun PendingFlightSheet(
     }
 
     if (showDatePicker) {
-        PendingDatePickerDialog(
+        WheelDatePickerDialog(
             initialDate = editedDate,
             onConfirm = {
                 editedDate = it
@@ -293,32 +287,6 @@ fun PendingFlightSheet(
             },
             onDismiss = { showDatePicker = false }
         )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PendingDatePickerDialog(
-    initialDate: LocalDate,
-    onConfirm: (LocalDate) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val initialMillis = initialDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-    val state = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
-    DatePickerDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = {
-                val millis = state.selectedDateMillis ?: initialMillis
-                val date = java.time.Instant.ofEpochMilli(millis)
-                    .atZone(ZoneId.systemDefault())
-                    .toLocalDate()
-                onConfirm(date)
-            }) { Text("OK") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    ) {
-        DatePicker(state = state)
     }
 }
 
