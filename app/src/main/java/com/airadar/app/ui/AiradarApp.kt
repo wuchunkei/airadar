@@ -13,6 +13,12 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.rememberCoroutineScope
 import com.airadar.app.ui.screens.RecycleBinScreen
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.LaunchedEffect
+import com.airadar.app.data.BackendClient
+import com.airadar.app.data.FlightStore
+import com.airadar.app.data.Person
+import com.airadar.app.ui.components.FlightDetailSheet
+import com.airadar.app.ui.screens.FriendsScreen
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,7 +48,12 @@ private enum class Tab(val label: String) {
     MY("My")
 }
 
-private enum class Overlay { SETTINGS, EMAIL_IMPORT, RECYCLE_BIN }
+private enum class Overlay { SETTINGS, EMAIL_IMPORT, RECYCLE_BIN, FRIENDS }
+
+/** A trip link opened from outside (airadar://s/<token>); the Activity sets it. */
+object DeepLinks {
+    val shareToken = mutableStateOf<String?>(null)
+}
 
 @Composable
 fun AiradarApp() {
@@ -78,6 +89,11 @@ fun AiradarApp() {
             return
         }
 
+        Overlay.FRIENDS -> {
+            FriendsScreen(onBack = { overlay = null })
+            return
+        }
+
         Overlay.RECYCLE_BIN -> {
             RecycleBinScreen(
                 viewModel = tripViewModel,
@@ -89,6 +105,43 @@ fun AiradarApp() {
         }
 
         null -> Unit
+    }
+
+    // A trip someone sent as a link: shown for the traveller to take into Trips.
+    var linked by remember { mutableStateOf<Pair<Flight, Person>?>(null) }
+    val token by DeepLinks.shareToken
+    LaunchedEffect(token) {
+        val t = token ?: return@LaunchedEffect
+        linked = runCatching { BackendClient.linkedTrip(t) }.getOrNull()
+        if (linked == null) {
+            snackbar.showSnackbar("That trip link has expired.")
+            DeepLinks.shareToken.value = null
+        }
+    }
+    linked?.let { (flight, owner) ->
+        FlightDetailSheet(
+            flight = flight.copy(airlineName = "${owner.givenName} shared · ${flight.airlineName}"),
+            forceSystemZone = settings.forceSystemZone,
+            onDismiss = {
+                linked = null
+                DeepLinks.shareToken.value = null
+            },
+            primaryAction = "Add to trips" to {
+                val t = token
+                scope.launch {
+                    if (settings.isLoggedIn && t != null) {
+                        runCatching { BackendClient.copyLinkedTrip(t) }
+                        runCatching { FlightStore.syncFromServer() }
+                    } else {
+                        tripViewModel.addFlight(flight)
+                    }
+                    remind(flight)
+                    linked = null
+                    DeepLinks.shareToken.value = null
+                    tab = Tab.TRIP
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -124,6 +177,8 @@ fun AiradarApp() {
                 viewModel = tripViewModel,
                 forceSystemZone = settings.forceSystemZone,
                 onCommitted = remind,
+                onFriendsClick = { overlay = Overlay.FRIENDS },
+                signedIn = settings.isLoggedIn,
                 onDeleted = { flight ->
                     FlightReminders.cancel(context, flight.id)
                     scope.launch {

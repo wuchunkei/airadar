@@ -50,7 +50,11 @@ data class Flight(
     /** The day the stored track was flown — an earlier date when borrowed for a future leg. */
     val trackFlownOn: java.time.LocalDate? = null,
     /** Set while the trip sits in the recycle bin; cleared on restore. */
-    val deletedAt: Instant? = null
+    val deletedAt: Instant? = null,
+    /** A friend's trip shown on my list: who shared it and where I stand on it. */
+    val sharedBy: TripShare? = null,
+    /** My trip shared with friends: each of them and where they stand. */
+    val shares: List<TripShare> = emptyList()
 ) {
     val departureAirport: Airport? get() = FlightDatabase.airport(departure)
     val arrivalAirport: Airport? get() = FlightDatabase.airport(arrival)
@@ -124,7 +128,10 @@ data class UserSettings(
     val forceSystemZone: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val userEmail: String? = null,
-    val userName: String? = null
+    val userName: String? = null,
+    /** The traveller's own colour, as friends see them. */
+    val color: String? = null,
+    val findableByEmail: Boolean = false
 )
 
 /** The three countries that still measure road and air distance in miles. */

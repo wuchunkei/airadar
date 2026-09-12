@@ -47,9 +47,41 @@ object FlightStore {
      * refresh; the demo trips shown while signed out are not carried over.
      */
     suspend fun syncFromServer() {
-        val live = BackendClient.listTrips()
+        val outgoing = runCatching { BackendClient.outgoingShares() }.getOrDefault(emptyMap())
+        val live = BackendClient.listTrips().map { it.copy(shares = outgoing[it.id].orEmpty()) }
         val binned = BackendClient.listTrips(deleted = true)
-        withContext(Dispatchers.Main) { publish(live + binned) }
+        val incoming = runCatching { BackendClient.incomingShares() }.getOrDefault(emptyList())
+        // A trip taken "together" is mine now (the server copied it); the friend's
+        // name rides on my copy instead of a second card.
+        val together = incoming.filter { it.sharedBy?.status == ShareStatus.TOGETHER }
+        val mine = live.map { own ->
+            together.firstOrNull { it.flightNumber == own.flightNumber && it.departureTime == own.departureTime }
+                ?.let { own.copy(sharedBy = it.sharedBy) } ?: own
+        }
+        val rest = incoming.filterNot { inc ->
+            inc.sharedBy?.status == ShareStatus.TOGETHER &&
+                    live.any { it.flightNumber == inc.flightNumber && it.departureTime == inc.departureTime }
+        }
+        withContext(Dispatchers.Main) { publish(mine + binned + rest) }
+    }
+
+    /** Accept, reject or take together a friend's trip; the list is then refreshed. */
+    suspend fun respondToShare(flight: Flight, action: String) {
+        val share = flight.sharedBy ?: return
+        BackendClient.respondToShare(share.id, action)
+        syncFromServer()
+    }
+
+    /** Shares one of my trips with a friend and shows the new block straight away. */
+    suspend fun shareWith(flight: Flight, person: Person) {
+        val (share, _) = BackendClient.shareTrip(flight.id, person.id)
+        if (share != null) {
+            withContext(Dispatchers.Main) {
+                publish(all.map { f ->
+                    if (f.id == flight.id) f.copy(shares = (f.shares.filterNot { it.person.id == person.id } + share)) else f
+                })
+            }
+        }
     }
 
     /** Back to the signed-out demo list. */
@@ -127,6 +159,14 @@ object FlightStore {
 
     /** Moves the trip to the recycle bin; [restore] undoes it within [RETENTION_DAYS]. */
     fun delete(flightId: String) {
+        val target = all.firstOrNull { it.id == flightId }
+        // A friend's trip has no bin: swiping it away is declining the share.
+        // (A trip taken together is my own copy and goes to the bin like any other.)
+        target?.sharedBy?.takeIf { flightId.startsWith("shared:") }?.let { share ->
+            publish(all.filterNot { it.id == flightId })
+            push { BackendClient.respondToShare(share.id, "reject") }
+            return
+        }
         publish(all.map { if (it.id == flightId) it.copy(deletedAt = Instant.now()) else it })
         push { BackendClient.deleteTrip(flightId) }
     }

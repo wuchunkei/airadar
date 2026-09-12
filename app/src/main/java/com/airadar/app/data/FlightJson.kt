@@ -70,5 +70,20 @@ fun flightFromJson(o: JSONObject): Flight = Flight(
     }
 )
 
+fun personFromJson(o: JSONObject): Person =
+    Person(o.getString("id"), o.optString("givenName").ifBlank { "Friend" }, o.optString("color").ifBlank { "#1E88E5" })
+
+fun shareFromJson(o: JSONObject): TripShare? {
+    val person = o.optJSONObject("person")?.let(::personFromJson) ?: return null
+    val status = runCatching { ShareStatus.valueOf(o.optString("status").uppercase()) }.getOrNull() ?: return null
+    return TripShare(o.getString("id"), person, status)
+}
+
+fun friendFromJson(o: JSONObject): Friend = Friend(
+    o.getString("friendshipId"),
+    personFromJson(o.getJSONObject("person")),
+    runCatching { FriendStatus.valueOf(o.optString("status").uppercase()) }.getOrDefault(FriendStatus.OUTGOING)
+)
+
 private fun JSONObject.text(key: String): String? =
     optString(key).takeIf { has(key) && !isNull(key) && it.isNotBlank() && it != "null" }

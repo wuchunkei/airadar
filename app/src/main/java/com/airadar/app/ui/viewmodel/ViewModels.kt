@@ -82,6 +82,8 @@ class TripViewModel : ViewModel() {
 
     fun deleteFlight(flight: Flight) = FlightStore.delete(flight.id)
 
+    suspend fun respondToShare(flight: Flight, action: String) = FlightStore.respondToShare(flight, action)
+
     fun restoreFlight(flight: Flight) = FlightStore.restore(flight.id)
 
     fun replacePending(old: Flight, replacement: Flight) = FlightStore.replace(old, replacement)
@@ -166,8 +168,18 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         _settings.value = _settings.value?.copy(
             isLoggedIn = user != null,
             userName = user?.name,
-            userEmail = user?.email
+            userEmail = user?.email,
+            color = user?.color,
+            findableByEmail = user?.findableByEmail ?: false
         )
+    }
+
+    fun setColor(hex: String) {
+        viewModelScope.launch { runCatching { BackendClient.updateProfile(color = hex) } }
+    }
+
+    fun setFindableByEmail(on: Boolean) {
+        viewModelScope.launch { runCatching { BackendClient.updateProfile(findableByEmail = on) } }
     }
 
     init {
@@ -187,6 +199,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val idToken = GoogleSignIn.idToken(activity)
                 BackendClient.signInWithGoogle(idToken)
+                runCatching { BackendClient.me() }
                 FlightStore.syncFromServer()
             } catch (_: GoogleSignIn.Cancelled) {
                 // Nothing to say: the traveller closed the picker.

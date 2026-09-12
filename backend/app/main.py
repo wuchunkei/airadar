@@ -12,12 +12,13 @@ from datetime import date
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 
-from . import airlabs, auth, db, trips
+from . import airlabs, auth, db, social, trips
 from .schema import Airport, Flight
 
 app = FastAPI(title="Airadar backend", version="0.2.0")
 app.include_router(auth.router)
 app.include_router(trips.router)
+app.include_router(social.router)
 
 
 def _http() -> httpx.AsyncClient:

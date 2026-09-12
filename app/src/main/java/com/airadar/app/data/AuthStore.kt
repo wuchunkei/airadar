@@ -12,7 +12,10 @@ data class AuthUser(
     val id: String,
     val email: String,
     val name: String?,
-    val avatarUrl: String?
+    val avatarUrl: String?,
+    val givenName: String? = null,
+    val color: String? = null,
+    val findableByEmail: Boolean = false
 )
 
 /**
@@ -55,8 +58,21 @@ object AuthStore {
             .putString("email", user.email)
             .putString("name", user.name)
             .putString("avatarUrl", user.avatarUrl)
+            .putString("givenName", user.givenName)
+            .putString("color", user.color)
+            .putBoolean("findableByEmail", user.findableByEmail)
             .apply()
         _user.postValue(user)
+    }
+
+    /** Profile fields changed after sign-in (colour, findability). */
+    fun updateProfile(givenName: String?, color: String?, findableByEmail: Boolean) {
+        prefs.edit()
+            .putString("givenName", givenName)
+            .putString("color", color)
+            .putBoolean("findableByEmail", findableByEmail)
+            .apply()
+        _user.postValue(load())
     }
 
     fun clear() {
@@ -67,6 +83,10 @@ object AuthStore {
     private fun load(): AuthUser? {
         val id = prefs.getString("userId", null) ?: return null
         val email = prefs.getString("email", null) ?: return null
-        return AuthUser(id, email, prefs.getString("name", null), prefs.getString("avatarUrl", null))
+        return AuthUser(
+            id, email, prefs.getString("name", null), prefs.getString("avatarUrl", null),
+            prefs.getString("givenName", null), prefs.getString("color", null),
+            prefs.getBoolean("findableByEmail", false)
+        )
     }
 }

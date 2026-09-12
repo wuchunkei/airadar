@@ -5,6 +5,13 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
+import com.airadar.app.data.PersonPalette
+import com.airadar.app.data.colorOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -102,10 +109,12 @@ fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
+                                // The traveller's name in their own colour — how friends see them.
                                 Text(
                                     settings.userName ?: "Signed in",
                                     style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = settings.color?.let(::colorOf) ?: MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
                                     settings.userEmail ?: "",
@@ -115,6 +124,40 @@ fun SettingsScreen(
                             }
                             TextButton(onClick = viewModel::signOut) { Text("Sign out") }
                         }
+                        Text(
+                            "My colour",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(top = 12.dp)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            PersonPalette.forEach { hex ->
+                                val selected = settings.color.equals(hex, ignoreCase = true)
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .then(
+                                            if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                            else Modifier
+                                        )
+                                        .padding(if (selected) 5.dp else 2.dp)
+                                        .background(colorOf(hex), CircleShape)
+                                        .clickable { viewModel.setColor(hex) }
+                                )
+                            }
+                        }
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                        ToggleRow(
+                            title = "Friends can find me by email",
+                            checked = settings.findableByEmail,
+                            onCheckedChange = viewModel::setFindableByEmail
+                        )
                     } else {
                         Text(
                             "Keep your trips on every device and in the recycle bin for 30 days.",

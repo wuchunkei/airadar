@@ -119,6 +119,98 @@ object BackendClient {
         authed("POST", "trips/$id/restore")
     }
 
+    // ---- people and shares -----------------------------------------------------
+
+    suspend fun me(): AuthUser = withContext(Dispatchers.IO) { profile(authed("GET", "me")) }
+
+    suspend fun updateProfile(color: String? = null, findableByEmail: Boolean? = null): AuthUser =
+        withContext(Dispatchers.IO) {
+            val body = JSONObject()
+            color?.let { body.put("color", it) }
+            findableByEmail?.let { body.put("findableByEmail", it) }
+            profile(authed("PATCH", "me", body))
+        }
+
+    private fun profile(o: JSONObject): AuthUser {
+        val current = AuthStore.user.value
+        AuthStore.updateProfile(o.text("givenName"), o.text("color"), o.optBoolean("findableByEmail", false))
+        return AuthUser(
+            o.getString("id"), o.getString("email"), o.text("name") ?: current?.name, o.text("avatarUrl"),
+            o.text("givenName"), o.text("color"), o.optBoolean("findableByEmail", false)
+        )
+    }
+
+    suspend fun lookup(email: String): Person = withContext(Dispatchers.IO) {
+        personFromJson(authed("GET", "users/lookup?email=" + java.net.URLEncoder.encode(email.trim(), "UTF-8")))
+    }
+
+    suspend fun friends(): List<Friend> = withContext(Dispatchers.IO) {
+        authed("GET", "friends").getJSONArray("items").let { arr -> (0 until arr.length()).map { friendFromJson(arr.getJSONObject(it)) } }
+    }
+
+    suspend fun requestFriend(userId: String): Friend = withContext(Dispatchers.IO) {
+        friendFromJson(authed("POST", "friends/request", JSONObject().put("userId", userId)))
+    }
+
+    suspend fun acceptFriend(friendshipId: String): Friend = withContext(Dispatchers.IO) {
+        friendFromJson(authed("POST", "friends/$friendshipId/accept"))
+    }
+
+    suspend fun removeFriend(friendshipId: String): Unit = withContext(Dispatchers.IO) {
+        authed("DELETE", "friends/$friendshipId")
+    }
+
+    /** Shares with a friend; with no [toUserId] a link is minted and its token returned. */
+    suspend fun shareTrip(tripId: String, toUserId: String? = null): Pair<TripShare?, String?> =
+        withContext(Dispatchers.IO) {
+            val body = JSONObject()
+            toUserId?.let { body.put("toUserId", it) }
+            val o = authed("POST", "trips/$tripId/share", body)
+            shareFromJson(o) to o.text("token")
+        }
+
+    /** Friend shares of my trips: tripId → shares. */
+    suspend fun outgoingShares(): Map<String, List<TripShare>> = withContext(Dispatchers.IO) {
+        val arr = authed("GET", "shares/outgoing").getJSONArray("items")
+        (0 until arr.length()).map { arr.getJSONObject(it) }
+            .mapNotNull { o -> shareFromJson(o)?.let { o.getString("tripId") to it } }
+            .groupBy({ it.first }, { it.second })
+    }
+
+    /** Friends' trips shared with me, each carrying who shared it and my answer so far. */
+    suspend fun incomingShares(): List<Flight> = withContext(Dispatchers.IO) {
+        val arr = authed("GET", "shares/incoming").getJSONArray("items")
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.getJSONObject(i)
+            val share = shareFromJson(o) ?: return@mapNotNull null
+            val trip = flightFromJson(o.getJSONObject("trip"))
+            ensureAirports(trip.departure, trip.arrival)
+            trip.copy(id = "shared:${share.id}", sharedBy = share, deletedAt = null)
+        }
+    }
+
+    suspend fun respondToShare(shareId: String, action: String): Unit = withContext(Dispatchers.IO) {
+        authed("POST", "shares/$shareId/respond", JSONObject().put("action", action))
+    }
+
+    suspend fun unshare(shareId: String): Unit = withContext(Dispatchers.IO) {
+        authed("DELETE", "shares/$shareId")
+    }
+
+    /** What a shared link points at; needs no sign-in. */
+    suspend fun linkedTrip(token: String): Pair<Flight, Person> = withContext(Dispatchers.IO) {
+        val o = call("GET", "shares/link/$token")
+        val trip = flightFromJson(o.getJSONObject("trip"))
+        ensureAirports(trip.departure, trip.arrival)
+        trip to personFromJson(o.getJSONObject("owner"))
+    }
+
+    suspend fun copyLinkedTrip(token: String): Flight = withContext(Dispatchers.IO) {
+        flightFromJson(authed("POST", "shares/link/$token/copy"))
+    }
+
+    fun linkUrl(token: String): String = BuildConfig.BACKEND_URL.trimEnd('/') + "/s/" + token
+
     private suspend fun ensureAirports(vararg codes: String) {
         codes.forEach { code -> FlightDatabase.ensureAirport(code) { airport(code) } }
     }

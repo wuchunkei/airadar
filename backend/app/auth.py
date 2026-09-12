@@ -14,6 +14,7 @@ Google. It posts that here once; from then on it talks only to this server with:
 
 import hashlib
 import os
+import random
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -24,7 +25,7 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from pydantic import BaseModel
 
-from .db import REFRESH_TOKEN_DAYS
+from .db import PALETTE, REFRESH_TOKEN_DAYS
 
 ACCESS_TOKEN_MINUTES = 60
 
@@ -160,7 +161,14 @@ async def google_login(body: GoogleLogin, request: Request):
                 "avatarUrl": info.get("picture"),
                 "lastLoginAt": now,
             },
-            "$setOnInsert": {"createdAt": now, "settings": {}},
+            # A colour is dealt at sign-up; the traveller can change it in Settings.
+            "$setOnInsert": {
+                "createdAt": now,
+                "settings": {},
+                "givenName": info.get("given_name"),
+                "color": random.choice(PALETTE),
+                "findableByEmail": False,
+            },
         },
         upsert=True,
         return_document=True,

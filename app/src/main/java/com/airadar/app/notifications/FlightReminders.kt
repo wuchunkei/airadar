@@ -97,13 +97,15 @@ object FlightReminders {
 
         override suspend fun doWork(): Result {
             val stage = Stage.valueOf(inputData.getString(KEY_STAGE) ?: return Result.failure())
-            val number = inputData.getString(KEY_NUMBER) ?: return Result.failure()
+            val rawNumber = inputData.getString(KEY_NUMBER) ?: return Result.failure()
             val date = LocalDate.parse(inputData.getString(KEY_DATE) ?: return Result.failure())
             val route = inputData.getString(KEY_ROUTE).orEmpty()
             val depAt = LocalDateTime.parse(inputData.getString(KEY_DEP) ?: return Result.failure())
             val arrAt = LocalDateTime.parse(inputData.getString(KEY_ARR) ?: return Result.failure())
             val terminal = inputData.getString(KEY_TERMINAL)
             val id = inputData.getString(KEY_ID) ?: return Result.failure()
+            // "Bob's trip · CX392 …" when the trip was shared by a friend.
+            val number = inputData.getString(KEY_OWNER)?.let { "$it's trip · $rawNumber" } ?: rawNumber
 
             ensureChannels(applicationContext)
 
@@ -115,7 +117,7 @@ object FlightReminders {
                 )
 
                 Stage.STATUS -> {
-                    val live = fetch(number, date)
+                    val live = fetch(rawNumber, date)
                     post(
                         id, CHANNEL_SCHEDULE,
                         title = "$number in 3 hours · $route",
@@ -152,7 +154,7 @@ object FlightReminders {
 
                 Stage.LANDED -> {
                     NotificationManagerCompat.from(applicationContext).cancel(id.hashCode())
-                    val live = fetch(number, date)
+                    val live = fetch(rawNumber, date)
                     val landedAt = live?.takeIf { it.status == FlightStatus.LANDED }
                         ?.arrivalTime?.plusMinutes(live.delayMinutes.toLong())
                     post(
@@ -229,6 +231,7 @@ object FlightReminders {
     private const val KEY_DEP = "dep"
     private const val KEY_ARR = "arr"
     private const val KEY_TERMINAL = "terminal"
+    private const val KEY_OWNER = "owner"
 
     // Everything the worker needs rides in its input: the in-memory store may be
     // gone by the time a job fires hours later.
@@ -240,7 +243,8 @@ object FlightReminders {
         KEY_ROUTE to "$departure → $arrival",
         KEY_DEP to departureTime.toString(),
         KEY_ARR to arrivalTime.toString(),
-        KEY_TERMINAL to departureTerminal
+        KEY_TERMINAL to departureTerminal,
+        KEY_OWNER to sharedBy?.person?.givenName
     )
 
     private val clock: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")

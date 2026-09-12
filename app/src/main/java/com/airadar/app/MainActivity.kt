@@ -1,6 +1,7 @@
 package com.airadar.app
 
 import android.Manifest
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -25,6 +26,7 @@ import com.airadar.app.data.ThemeMode
 import com.airadar.app.data.UserSettings
 import com.airadar.app.notifications.FlightReminders
 import com.airadar.app.ui.AiradarApp
+import com.airadar.app.ui.DeepLinks
 import com.airadar.app.ui.theme.AiradarTheme
 import com.airadar.app.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -36,6 +38,19 @@ class MainActivity : ComponentActivity() {
     private val askNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleLink(intent)
+    }
+
+    /** airadar://s/<token> — a trip someone shared as a link. */
+    private fun handleLink(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme == "airadar" && data.host == "s") {
+            data.lastPathSegment?.let { DeepLinks.shareToken.value = it }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AuthStore.init(this)
@@ -46,6 +61,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        handleLink(intent)
         setContent {
             val settings by settingsViewModel.settings.observeAsState(UserSettings())
             val dark = when (settings.themeMode) {

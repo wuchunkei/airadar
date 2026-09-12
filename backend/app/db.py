@@ -7,6 +7,13 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 REFRESH_TOKEN_DAYS = 60
 TRASH_RETENTION_DAYS = 30
 
+# The colours a traveller can be; no black, white or grey, so a name in one of
+# these always reads as "someone".
+PALETTE = [
+    "#E53935", "#F4511E", "#FB8C00", "#F9A825", "#7CB342", "#43A047",
+    "#00897B", "#00ACC1", "#1E88E5", "#3949AB", "#8E24AA", "#D81B60",
+]
+
 _client: AsyncIOMotorClient | None = None
 
 
@@ -37,3 +44,11 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await db.trips.create_index(
         "deletedAt", expireAfterSeconds=TRASH_RETENTION_DAYS * 24 * 3600
     )
+
+    await db.friendships.create_index("a")
+    await db.friendships.create_index("b")
+
+    await db.shares.create_index([("tripKey", 1), ("toUserId", 1)])
+    await db.shares.create_index("toUserId")
+    await db.shares.create_index("ownerId")
+    await db.shares.create_index("token", sparse=True)

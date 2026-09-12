@@ -48,7 +48,9 @@ fun FlightDetailSheet(
     forceSystemZone: Boolean = false,
     trackStatus: TrackStatus? = null,
     onLoadTrack: (() -> Unit)? = null,
-    primaryAction: Pair<String, () -> Unit>? = null
+    primaryAction: Pair<String, () -> Unit>? = null,
+    /** Extra buttons under the itinerary — share, accept, together, and so on. */
+    extraActions: (@Composable () -> Unit)? = null
 ) {
     // Opening fully expanded gives the whole itinerary in one look; on a tall phone
     // it fits without scrolling, and a short one simply scrolls the tail.
@@ -216,6 +218,11 @@ fun FlightDetailSheet(
                 DetailRow(label = "Baggage claim", value = flight.baggageClaim ?: "–")
                 flight.pnr?.let { DetailRow(label = "Booking reference", value = it) }
 
+                // Who shared it, when the trip is a friend's.
+                flight.sharedBy?.let { share ->
+                    DetailRow(label = "Shared by", value = share.person.givenName, secondary = share.status.label())
+                }
+
                 primaryAction?.let { (label, action) ->
                     Button(
                         onClick = action,
@@ -227,6 +234,10 @@ fun FlightDetailSheet(
                     ) {
                         Text(label, fontWeight = FontWeight.SemiBold)
                     }
+                }
+
+                extraActions?.let { actions ->
+                    Column(modifier = Modifier.padding(top = 16.dp)) { actions() }
                 }
             }
         }

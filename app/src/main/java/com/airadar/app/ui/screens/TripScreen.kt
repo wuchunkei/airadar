@@ -26,6 +26,23 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import com.airadar.app.data.ShareStatus
+import com.airadar.app.data.onColor
+import com.airadar.app.data.sortedForDisplay
+import com.airadar.app.ui.components.ShareSheet
+import com.airadar.app.ui.components.blockColor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -108,8 +125,12 @@ fun TripScreen(
     forceSystemZone: Boolean,
     onCommitted: (Flight) -> Unit,
     onDeleted: (Flight) -> Unit,
+    onFriendsClick: () -> Unit,
+    signedIn: Boolean,
     modifier: Modifier = Modifier
 ) {
+    var shareFor by remember { mutableStateOf<Flight?>(null) }
+    val scope = rememberCoroutineScope()
     val delete: (Flight) -> Unit = {
         viewModel.deleteFlight(it)
         onDeleted(it)
@@ -258,7 +279,7 @@ fun TripScreen(
             // "Now" marks the present: either flights in the air, or simply the
             // boundary between what has been flown and what is ahead.
             if (airborne.isNotEmpty()) {
-                item(key = "now-header") { SectionTitle("Now") }
+                item(key = "now-header") { PresentHeader("Now", onFriendsClick) }
                 // Now is today by definition; no heading needed.
                 flightItems(airborne, forceSystemZone, dateHeadings = false, onDelete = delete, swipe = swipe) { selectedId = it.id }
                 item(key = "coming-divider") { TimeDivider() }
@@ -268,7 +289,7 @@ fun TripScreen(
                     Crossfade(
                         targetState = if (showHistory) "Now" else "Coming",
                         label = "sectionTitle"
-                    ) { title -> SectionTitle(title) }
+                    ) { title -> PresentHeader(title, onFriendsClick) }
                 }
             }
 
@@ -305,13 +326,101 @@ fun TripScreen(
                 onDismiss = { selectedId = null }
             )
         } else {
+            val share = flight.sharedBy
+            // A friend's trip: answer it.
+            val respondActions: @Composable () -> Unit = {
+                RespondButtons(share?.status ?: ShareStatus.PENDING) { action ->
+                    selectedId = null
+                    scope.launch { runCatching { viewModel.respondToShare(flight, action) } }
+                    if (action != "reject") onCommitted(flight)
+                }
+            }
+            // My own: offer it.
+            val shareActions: @Composable () -> Unit = {
+                OutlinedButton(
+                    onClick = { shareFor = flight },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("Share", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp))
+                }
+            }
             FlightDetailSheet(
                 flight = flight,
                 forceSystemZone = forceSystemZone,
                 trackStatus = trackStatus[flight.id],
                 onLoadTrack = { viewModel.loadTrack(flight) },
-                onDismiss = { selectedId = null }
+                onDismiss = { selectedId = null },
+                extraActions = when {
+                    share != null && share.status != ShareStatus.TOGETHER -> respondActions
+                    signedIn && !flight.isPending -> shareActions
+                    else -> null
+                }
             )
+        }
+    }
+
+    shareFor?.let { ShareSheet(flight = it, onDismiss = { shareFor = null }) }
+}
+
+/** The section title on the present line, with the Friends door on its right. */
+@Composable
+private fun PresentHeader(title: String, onFriendsClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SectionTitle(title)
+        Surface(
+            modifier = Modifier.size(44.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 3.dp
+        ) {
+            IconButton(onClick = onFriendsClick) {
+                Icon(Icons.Outlined.People, contentDescription = "Friends", tint = MaterialTheme.colorScheme.onSurface)
+            }
+        }
+    }
+}
+
+/** Accept (green) · Together (yellow) · Reject (red); an accepted trip can still be taken together. */
+@Composable
+private fun RespondButtons(status: ShareStatus, onRespond: (String) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        if (status == ShareStatus.PENDING) {
+            Button(
+                onClick = { onRespond("accept") },
+                colors = ButtonDefaults.buttonColors(containerColor = ShareStatus.ACCEPTED.blockColor(), contentColor = Color.White),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) { Text("Accept", fontWeight = FontWeight.SemiBold) }
+        }
+        if (status != ShareStatus.TOGETHER) {
+            Button(
+                onClick = { onRespond("together") },
+                colors = ButtonDefaults.buttonColors(containerColor = ShareStatus.TOGETHER.blockColor(), contentColor = Color(0xFF111111)),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) { Text("Together", fontWeight = FontWeight.SemiBold) }
+        }
+        if (status == ShareStatus.PENDING) {
+            Button(
+                onClick = { onRespond("reject") },
+                colors = ButtonDefaults.buttonColors(containerColor = ShareStatus.REJECTED.blockColor(), contentColor = Color.White),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) { Text("Reject", fontWeight = FontWeight.SemiBold) }
         }
     }
 }
@@ -334,18 +443,21 @@ private fun LazyListScope.flightItems(
                 (index == 0 || flights[index - 1].departureTime.toLocalDate() != day)
         Column {
             if (firstOfDay) DateTitle(day.toString(), dimmed)
-            SwipeToDelete(
-                isOpen = swipe.openId == flight.id,
-                onOpened = { swipe.open(flight.id) },
-                onBounds = { if (swipe.openId == flight.id) swipe.bounds.value = it },
-                onDelete = { onDelete(flight) }
-            ) {
-                FlightCard(
-                    flight = flight,
-                    forceSystemZone = forceSystemZone,
-                    dimmed = dimmed,
-                    onClick = { onSelect(flight) }
-                )
+            val folded = remember(flight.id) { mutableStateOf(false) }
+            CompositionLocalProvider(LocalShareListExpanded provides folded) {
+                SwipeToDelete(
+                    isOpen = swipe.openId == flight.id,
+                    onOpened = { swipe.open(flight.id) },
+                    onBounds = { if (swipe.openId == flight.id) swipe.bounds.value = it },
+                    onDelete = { onDelete(flight) }
+                ) {
+                    FlightCard(
+                        flight = flight,
+                        forceSystemZone = forceSystemZone,
+                        dimmed = dimmed,
+                        onClick = { onSelect(flight) }
+                    )
+                }
             }
         }
     }
@@ -551,8 +663,21 @@ fun FlightCard(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(20.dp)
-    val dashed = flight.isPending
+    val shared = flight.sharedBy
+    // A friend's trip wears their colour; one still waiting for my answer is dashed.
+    // Once taken together it is my own trip again, and only the name block remains.
+    val dashed = flight.isPending || shared?.status == ShareStatus.PENDING
+    val ground = shared?.takeIf { it.status != ShareStatus.TOGETHER }?.person?.tint
+    val ink = ground?.onColor()
+    val baseScheme = MaterialTheme.colorScheme
+    val scheme = if (ground == null || ink == null) baseScheme else baseScheme.copy(
+        surface = ground,
+        onSurface = ink,
+        onSurfaceVariant = ink.copy(alpha = 0.72f),
+        primary = ink
+    )
 
+    MaterialTheme(colorScheme = scheme) {
     Card(
         // Card's own onClick keeps the ripple and the hit target on the card
         // itself, rather than layering a tap handler behind decoration modifiers.
@@ -562,12 +687,15 @@ fun FlightCard(
             .then(
                 // An imported trip stays dashed until the traveller confirms it.
                 if (dashed) Modifier.dashedBorder(
-                    color = MaterialTheme.colorScheme.primary,
+                    color = if (ground != null) ground else MaterialTheme.colorScheme.primary,
                     shape = shape
                 ) else Modifier
             ),
         colors = CardDefaults.cardColors(
             containerColor = when {
+                // Waiting on my answer: the friend's colour only as an outline and a tint.
+                ground != null && dashed -> ground.copy(alpha = 0.18f).compositeOver(baseScheme.surface)
+                ground != null -> ground
                 dashed -> MaterialTheme.colorScheme.surface
                 // Composited, not translucent: nothing behind the card may show through.
                 dimmed -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
@@ -582,7 +710,7 @@ fun FlightCard(
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
 
-            if (dashed) {
+            if (dashed && shared == null) {
                 Text(
                     "Imported · needs review",
                     style = MaterialTheme.typography.labelSmall,
@@ -659,13 +787,122 @@ fun FlightCard(
                     )
                 }
 
+                // Who this is shared with (mine) or who shared it (theirs).
+                ShareBlocks(flight, modifier = Modifier.weight(1f).padding(start = 8.dp))
+
                 Text(
                     "Usually ${formatDuration(flight.typicalDurationMinutes ?: flight.durationMinutes)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            ShareList(flight)
         }
+    }
+    }
+}
+
+/**
+ * Next to the status: a friend's name on a trip they shared, or a block per friend
+ * I shared mine with, coloured by their answer. Past two, the rest fold behind a
+ * chevron and open as a list under the card's rows.
+ */
+@Composable
+private fun ShareBlocks(flight: Flight, modifier: Modifier = Modifier) {
+    val shared = flight.sharedBy
+    val outgoing = remember(flight.shares) { flight.shares.sortedForDisplay() }
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        when {
+            shared != null -> NameBlock(
+                shared.person.givenName,
+                if (shared.status == ShareStatus.TOGETHER) shared.person.tint else MaterialTheme.colorScheme.onSurface,
+                dashed = shared.status == ShareStatus.PENDING
+            )
+            outgoing.size <= 2 -> outgoing.forEach { NameBlock(it.person.givenName, it.status.blockColor()) }
+            else -> {
+                val expanded = LocalShareListExpanded.current
+                NameBlock(outgoing.first().person.givenName, outgoing.first().status.blockColor())
+                Box(
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f), RoundedCornerShape(6.dp))
+                        .clickable { expanded.value = !expanded.value }
+                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "+${outgoing.size - 1}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Icon(
+                            if (expanded.value) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The folded list: every friend, name in their colour, answer on the right. */
+@Composable
+private fun ShareList(flight: Flight) {
+    val expanded = LocalShareListExpanded.current
+    if (!expanded.value || flight.shares.size <= 2) return
+    Column(modifier = Modifier.padding(top = 10.dp)) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+        flight.shares.sortedForDisplay().forEach { share ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    share.person.givenName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = share.person.tint
+                )
+                Text(
+                    share.status.label(),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = share.status.blockColor()
+                )
+            }
+        }
+    }
+}
+
+/** Whether a card's share list is unfolded; each card gets its own. */
+private val LocalShareListExpanded = compositionLocalOf<MutableState<Boolean>> { mutableStateOf(false) }
+
+@Composable
+private fun NameBlock(name: String, color: Color, dashed: Boolean = false) {
+    val shape = RoundedCornerShape(6.dp)
+    Box(
+        modifier = Modifier
+            .then(if (dashed) Modifier.dashedBorder(color, shape) else Modifier.background(color.copy(alpha = 0.16f), shape))
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    ) {
+        Text(
+            name,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = color,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
