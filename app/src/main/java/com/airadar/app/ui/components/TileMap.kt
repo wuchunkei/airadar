@@ -20,7 +20,6 @@ import com.airadar.app.data.Airport
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightDatabase
 import com.airadar.app.data.TrackPoint
-import com.airadar.app.ui.theme.isDarkTheme
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -31,7 +30,6 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.TilesOverlay
 import org.osmdroid.views.overlay.milestones.MilestoneManager
 import org.osmdroid.views.overlay.milestones.MilestoneMeterDistanceLister
 import org.osmdroid.views.overlay.milestones.MilestonePathDisplayer
@@ -80,11 +78,11 @@ fun TileMap(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val dark = isDarkTheme()
-
-    val routeColor = (if (dark) Color(0xFF4FD8C4) else Color(0xFF0B6FD4)).toArgb()
-    val selectedColor = (if (dark) Color(0xFFFFD166) else Color(0xFFE8590C)).toArgb()
-    val nodeColor = (if (dark) Color(0xFF9DF5E6) else Color(0xFF0A4F96)).toArgb()
+    // The tiles are OSM's standard style whatever the app theme, so the line
+    // colours are picked once, against that light ground.
+    val routeColor = Color(0xFF0B6FD4).toArgb()
+    val selectedColor = Color(0xFFE8590C).toArgb()
+    val nodeColor = Color(0xFF0A4F96).toArgb()
 
     val framedFor = remember(interactive) { intArrayOf(0) }
 
@@ -125,9 +123,6 @@ fun TileMap(
         // map down here cannot race a final draw the way onDispose can.
         onRelease = { it.onDetach() },
         update = { map ->
-            // OSM serves one style only; at night its tiles are inverted in place.
-            map.overlayManager.tilesOverlay.setColorFilter(if (dark) TilesOverlay.INVERT_COLORS else null)
-
             map.overlays.clear()
 
             val legs = mutableListOf<Triple<Polyline, Airport, Airport>>()

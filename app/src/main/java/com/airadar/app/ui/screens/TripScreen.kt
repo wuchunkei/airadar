@@ -15,6 +15,16 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -115,6 +125,11 @@ fun TripScreen(
     val indicatorPx = with(density) { IndicatorSize.toPx() }
 
     var pull by remember { mutableFloatStateOf(0f) }
+    // The one card showing its Delete button, and where it sits on screen. Any
+    // touch that lands outside it, or a scroll, shuts it again.
+    var openSwipeId by remember { mutableStateOf<String?>(null) }
+    val openSwipeBounds = remember { mutableStateOf<Rect?>(null) }
+    val swipe = SwipeCoordinator(openSwipeId, { openSwipeId = it }, openSwipeBounds)
     // Held by id: the sheet must see the refreshed Flight once a track is stored on it.
     var selectedId by remember { mutableStateOf<String?>(null) }
     val trackStatus by viewModel.trackStatus.observeAsState(emptyMap())
@@ -191,12 +206,26 @@ fun TripScreen(
         }
     }
 
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collect { if (it) openSwipeId = null }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .nestedScroll(nestedScroll)
+            .pointerInput(Unit) {
+                // Watched on the initial pass so nothing downstream can swallow it,
+                // and never consumed, so taps and drags carry on as normal.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    if (openSwipeId != null && openSwipeBounds.value?.contains(down.position) != true) {
+                        openSwipeId = null
+                    }
+                }
+            }
     ) {
         PullIndicator(
             pull = pull,
@@ -221,7 +250,7 @@ fun TripScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (past.isNotEmpty()) {
-                flightItems(past, forceSystemZone, dimmed = true, onDelete = delete) { selectedId = it.id }
+                flightItems(past, forceSystemZone, dimmed = true, onDelete = delete, swipe = swipe) { selectedId = it.id }
                 item(key = "past-divider") { TimeDivider() }
             }
 
@@ -230,7 +259,7 @@ fun TripScreen(
             if (airborne.isNotEmpty()) {
                 item(key = "now-header") { SectionTitle("Now") }
                 // Now is today by definition; no heading needed.
-                flightItems(airborne, forceSystemZone, dateHeadings = false, onDelete = delete) { selectedId = it.id }
+                flightItems(airborne, forceSystemZone, dateHeadings = false, onDelete = delete, swipe = swipe) { selectedId = it.id }
                 item(key = "coming-divider") { TimeDivider() }
                 item(key = "coming-header") { SectionTitle("Coming") }
             } else {
@@ -242,7 +271,7 @@ fun TripScreen(
                 }
             }
 
-            flightItems(coming, forceSystemZone, onDelete = delete) { selectedId = it.id }
+            flightItems(coming, forceSystemZone, onDelete = delete, swipe = swipe) { selectedId = it.id }
 
             if (coming.isEmpty() && airborne.isEmpty()) {
                 item(key = "empty") {
@@ -292,6 +321,7 @@ private fun LazyListScope.flightItems(
     dimmed: Boolean = false,
     dateHeadings: Boolean = true,
     onDelete: (Flight) -> Unit,
+    swipe: SwipeCoordinator,
     onSelect: (Flight) -> Unit
 ) {
     // The date heading lives inside the first card's item of each day rather than
@@ -303,7 +333,12 @@ private fun LazyListScope.flightItems(
                 (index == 0 || flights[index - 1].departureTime.toLocalDate() != day)
         Column {
             if (firstOfDay) DateTitle(day.toString(), dimmed)
-            SwipeToDelete(onDelete = { onDelete(flight) }) {
+            SwipeToDelete(
+                isOpen = swipe.openId == flight.id,
+                onOpened = { swipe.open(flight.id) },
+                onBounds = { if (swipe.openId == flight.id) swipe.bounds.value = it },
+                onDelete = { onDelete(flight) }
+            ) {
                 FlightCard(
                     flight = flight,
                     forceSystemZone = forceSystemZone,
@@ -317,6 +352,13 @@ private fun LazyListScope.flightItems(
 
 private enum class Reveal { CLOSED, OPEN }
 
+/** Which card is swiped open, shared by every section of the list. */
+private class SwipeCoordinator(
+    val openId: String?,
+    val open: (String) -> Unit,
+    val bounds: MutableState<Rect?>
+)
+
 private val DeleteWidth = 92.dp
 
 /**
@@ -325,7 +367,13 @@ private val DeleteWidth = 92.dp
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeToDelete(onDelete: () -> Unit, content: @Composable () -> Unit) {
+private fun SwipeToDelete(
+    isOpen: Boolean,
+    onOpened: () -> Unit,
+    onBounds: (Rect) -> Unit,
+    onDelete: () -> Unit,
+    content: @Composable () -> Unit
+) {
     val density = LocalDensity.current
     val openPx = with(density) { DeleteWidth.toPx() }
     val state = remember(openPx) {
@@ -344,7 +392,22 @@ private fun SwipeToDelete(onDelete: () -> Unit, content: @Composable () -> Unit)
             })
         }
     }
-    Box(modifier = Modifier.fillMaxWidth()) {
+    val scope = rememberCoroutineScope()
+
+    // Report the moment this card heads open, so the previously open one is told to shut.
+    LaunchedEffect(state) {
+        snapshotFlow { state.targetValue }.collect { if (it == Reveal.OPEN) onOpened() }
+    }
+    // Told to shut from outside — another card opened, a scroll, a tap elsewhere.
+    LaunchedEffect(isOpen) {
+        if (!isOpen && state.targetValue == Reveal.OPEN) state.animateTo(Reveal.CLOSED)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { onBounds(it.boundsInRoot()) }
+    ) {
         // The button fades in with the drag, so a closed card hides it completely.
         Box(
             modifier = Modifier
@@ -355,6 +418,7 @@ private fun SwipeToDelete(onDelete: () -> Unit, content: @Composable () -> Unit)
         ) {
             Surface(
                 onClick = {
+                    scope.launch { state.animateTo(Reveal.CLOSED) }
                     onDelete()
                 },
                 modifier = Modifier

@@ -21,11 +21,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.DatePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,10 +39,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.airadar.app.data.Flight
+import com.airadar.app.ui.components.DateSheet
 import com.airadar.app.ui.components.FlightDetailSheet
 import com.airadar.app.ui.viewmodel.SearchViewModel
-import java.time.Instant
-import java.time.ZoneOffset
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -240,26 +235,14 @@ private fun DetailSearchForm(
     }
 
     if (showPicker) {
-        // Material's calendar picker — the same one the phone's own apps use.
-        val pickerState = rememberDatePickerState(
-            initialSelectedDateMillis = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-        )
-        DatePickerDialog(
-            onDismissRequest = { showPicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    pickerState.selectedDateMillis?.let {
-                        date = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
-                    }
-                    showPicker = false
-                }) { Text("OK") }
+        DateSheet(
+            initialDate = date,
+            onConfirm = {
+                date = it
+                showPicker = false
             },
-            dismissButton = {
-                TextButton(onClick = { showPicker = false }) { Text("Cancel") }
-            }
-        ) {
-            DatePicker(state = pickerState, showModeToggle = true)
-        }
+            onDismiss = { showPicker = false }
+        )
     }
 }
 
