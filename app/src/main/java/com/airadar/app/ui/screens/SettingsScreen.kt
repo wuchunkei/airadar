@@ -32,8 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.airadar.app.BuildConfig
-import com.airadar.app.data.BackendClient
 import com.airadar.app.data.UserSettings
 import com.airadar.app.ui.viewmodel.SettingsViewModel
 import java.time.ZonedDateTime
@@ -48,9 +46,6 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settings.observeAsState(UserSettings())
-    val openSkyConfigured = remember {
-        BuildConfig.OPENSKY_CLIENT_ID.isNotBlank() && BuildConfig.OPENSKY_CLIENT_SECRET.isNotBlank()
-    }
     val systemZoneName = remember {
         ZonedDateTime.now().format(DateTimeFormatter.ofPattern("z", Locale.ENGLISH))
     }
@@ -143,23 +138,6 @@ fun SettingsScreen(
             }
 
             item {
-                SettingsSection("Data sources") {
-                    SourceRow(
-                        name = "Airadar server (AirLabs)",
-                        role = "Schedule, status, gates and delays, via your own backend. " +
-                                "backend.url / backend.token in local.properties.",
-                        configured = BackendClient.isConfigured
-                    )
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    SourceRow(
-                        name = "OpenSky Network",
-                        role = "The path actually flown. opensky.clientId / clientSecret in local.properties.",
-                        configured = openSkyConfigured
-                    )
-                }
-            }
-
-            item {
                 SettingsSection("About") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -231,41 +209,6 @@ private fun NavigationRow(
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
-}
-
-@Composable
-private fun SourceRow(name: String, role: String, configured: Boolean) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Text(
-                role,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        KeyBadge(configured = configured)
-    }
-}
-
-@Composable
-private fun KeyBadge(configured: Boolean) {
-    val tint = if (configured) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-    Text(
-        if (configured) "Key set" else "No key",
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.SemiBold,
-        color = tint,
-        modifier = Modifier
-            .background(tint.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-    )
 }
 
 @Composable

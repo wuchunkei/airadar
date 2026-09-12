@@ -80,9 +80,9 @@ fun FlightDetailSheet(
                         .clip(RoundedCornerShape(16.dp))
                 )
 
-                // A flown leg gets its own track; a future one borrows the most recent
-                // day this callsign flew, since routings barely change day to day.
-                if (onLoadTrack != null && flight.callsign != null) {
+                // Only a leg that has flown (or is flying) has a track to fetch; a
+                // future one is drawn as a great circle without comment.
+                if (onLoadTrack != null && flight.callsign != null && flight.phase != FlightPhase.UPCOMING) {
                     TrackLoader(
                         phase = flight.phase,
                         flownOn = flight.trackFlownOn,
@@ -252,9 +252,8 @@ private fun TrackLoader(
                 when {
                     status is TrackStatus.Loading -> "Fetching ADS-B track"
                     flownOn == null -> "Route shown as a great circle"
-                    phase == FlightPhase.PAST -> "Showing the path actually flown"
                     phase == FlightPhase.IN_PROGRESS -> "Showing the path flown so far"
-                    else -> "Usual path — as flown on ${flownOn.format(trackDate)}"
+                    else -> "Showing the path actually flown"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -267,11 +266,7 @@ private fun TrackLoader(
                 )
                 else -> TextButton(onClick = onLoad, contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Text(
-                        when {
-                            hasTrack -> "Reload"
-                            phase == FlightPhase.UPCOMING -> "Load usual path"
-                            else -> "Load flown track"
-                        }
+                        if (hasTrack) "Reload" else "Load flown track"
                     )
                 }
             }
@@ -339,7 +334,6 @@ private fun DetailRow(
 }
 
 private val dateFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.ENGLISH)
-private val trackDate: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH)
 
 fun formatDuration(minutes: Int): String {
     if (minutes <= 0) return "—"

@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -273,14 +273,35 @@ private fun LazyListScope.flightItems(
     dimmed: Boolean = false,
     onSelect: (Flight) -> Unit
 ) {
-    items(flights, key = { it.id }) { flight ->
-        FlightCard(
-            flight = flight,
-            forceSystemZone = forceSystemZone,
-            dimmed = dimmed,
-            onClick = { onSelect(flight) }
-        )
+    // The date heading lives inside the first card's item of each day rather than
+    // as an item of its own, so item counts — which the history anchor is built
+    // on — stay one per flight.
+    itemsIndexed(flights, key = { _, it -> it.id }) { index, flight ->
+        val day = flight.departureTime.toLocalDate()
+        val firstOfDay = index == 0 || flights[index - 1].departureTime.toLocalDate() != day
+        Column {
+            if (firstOfDay) DateTitle(day.toString(), dimmed)
+            FlightCard(
+                flight = flight,
+                forceSystemZone = forceSystemZone,
+                dimmed = dimmed,
+                onClick = { onSelect(flight) }
+            )
+        }
     }
+}
+
+/** A day's heading over its cards: the section title's shape, at a smaller size. */
+@Composable
+private fun DateTitle(text: String, dimmed: Boolean) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant
+        else MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(top = 6.dp, bottom = 6.dp)
+    )
 }
 
 @Composable
@@ -411,7 +432,7 @@ fun FlightCard(
                 )
             }
 
-            // Row 1 — airline, then the departure date and flight number
+            // Row 1 — airline and flight number
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -421,25 +442,14 @@ fun FlightCard(
                     flight.airlineName.ifBlank { "—" },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        flight.departureTime.toLocalDate().toString(),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 8.dp, end = 10.dp)
-                    )
-                    Text(
-                        flight.flightNumber,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+                Text(
+                    flight.flightNumber,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
 
             Spacer(Modifier.height(10.dp))
