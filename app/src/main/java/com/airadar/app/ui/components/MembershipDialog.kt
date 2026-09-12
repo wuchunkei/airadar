@@ -18,6 +18,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -28,13 +33,13 @@ import com.airadar.app.data.Tier
 private class PlanRow(val feature: String, val guest: String, val superior: String, val premium: String)
 
 private val rows = listOf(
-    PlanRow("Trips kept", "3", "Unlimited", "Unlimited"),
+    PlanRow("Trips ahead", "3 in all", "10", "Unlimited"),
     PlanRow("Past trips", "1", "5", "Unlimited"),
     PlanRow("Add ahead", "7 days", "30 days", "Any date"),
     PlanRow("Cloud sync", "—", "✓", "✓"),
     PlanRow("Friends & sharing", "—", "✓", "✓"),
     PlanRow("Recycle bin", "—", "✓", "✓"),
-    PlanRow("Past flight lookup", "—", "—", "✓"),
+    PlanRow("Past flight lookup", "—", "✓", "✓"),
     PlanRow("Flown tracks", "—", "—", "✓"),
     PlanRow("Gmail & calendar import", "—", "—", "✓"),
     PlanRow("Price", "Free", Plans.SUPERIOR_PRICE, Plans.PREMIUM_PRICE)
@@ -51,9 +56,13 @@ fun MembershipDialog(
     reason: String? = null,
     onDismiss: () -> Unit,
     onSignIn: (() -> Unit)? = null,
-    onSubscribe: ((productId: String) -> Unit)? = null,
+    /** Signed in: opens the web page to pay, and takes a pasted token. */
+    onGetPlan: (() -> Unit)? = null,
+    onRedeem: ((token: String) -> Unit)? = null,
+    redeemError: String? = null,
     busy: Boolean = false
 ) {
+    var token by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Plans", fontWeight = FontWeight.Bold) },
@@ -88,30 +97,42 @@ fun MembershipDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp)
                 )
-                onSubscribe?.let { subscribe ->
+                onGetPlan?.let { getPlan ->
                     Column(
                         modifier = Modifier.padding(top = 14.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         if (current != Tier.PREMIUM) {
                             Button(
-                                onClick = { subscribe(Plans.PREMIUM) },
+                                onClick = getPlan,
                                 enabled = !busy,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(46.dp),
                                 shape = RoundedCornerShape(12.dp)
-                            ) { Text("Go Premium · ${Plans.PREMIUM_PRICE}", fontWeight = FontWeight.SemiBold) }
+                            ) { Text("Get a plan on the web", fontWeight = FontWeight.SemiBold) }
                         }
-                        if (current == Tier.GUEST) {
+                        onRedeem?.let { redeem ->
+                            OutlinedTextField(
+                                value = token,
+                                onValueChange = { token = it.uppercase() },
+                                label = { Text("Token from the web page") },
+                                placeholder = { Text("AIR-XXXX-XXXX-XXXX") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             OutlinedButton(
-                                onClick = { subscribe(Plans.SUPERIOR) },
-                                enabled = !busy,
+                                onClick = { redeem(token) },
+                                enabled = !busy && token.length >= 12,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(46.dp),
                                 shape = RoundedCornerShape(12.dp)
-                            ) { Text("Superior · ${Plans.SUPERIOR_PRICE}") }
+                            ) { Text("Redeem token") }
+                            redeemError?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                            }
                         }
                     }
                 }

@@ -83,6 +83,7 @@ object AuthStore {
             .putString("tier", m.tier.name)
             .putLong("tierUntil", m.until?.toEpochMilli() ?: 0L)
             .putBoolean("tierTrial", m.trial)
+            .putString("planToken", m.token)
             .apply()
         _user.postValue(load())
     }
@@ -92,7 +93,7 @@ object AuthStore {
         val until = prefs.getLong("tierUntil", 0L).takeIf { it > 0 }?.let(Instant::ofEpochMilli)
         // A lapsed plan is a guest plan until the server says otherwise.
         val lapsed = until != null && until.isBefore(Instant.now())
-        return Membership(if (lapsed) Tier.GUEST else tier, until, prefs.getBoolean("tierTrial", false))
+        return Membership(if (lapsed) Tier.GUEST else tier, until, prefs.getBoolean("tierTrial", false), prefs.getString("planToken", null))
     }
 
     fun clear() {

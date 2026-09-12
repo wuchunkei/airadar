@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.airadar.app.data.AuthStore
 import com.airadar.app.data.BackendClient
-import com.airadar.app.data.Billing
 import com.airadar.app.data.FlightStore
 import com.airadar.app.data.ThemeMode
 import com.airadar.app.data.UserSettings
@@ -60,7 +59,6 @@ class MainActivity : ComponentActivity() {
         if (AuthStore.isSignedIn) lifecycleScope.launch {
             runCatching { BackendClient.me() }          // plan and profile as the server sees them
             runCatching { FlightStore.syncFromServer() }
-            runCatching { Billing.restore(this@MainActivity) }  // an active Play subscription after a reinstall
         }
         enableEdgeToEdge()
         FlightReminders.ensureChannels(this)

@@ -71,7 +71,7 @@ class ProfilePatch(BaseModel):
     findableByEmail: bool | None = None
 
 
-def _me(user: dict) -> Me:
+def _me(user: dict, m: Membership) -> Me:
     p = _person(user)
     return Me(
         **p.model_dump(),
@@ -79,13 +79,13 @@ def _me(user: dict) -> Me:
         name=user.get("name"),
         avatarUrl=user.get("avatarUrl"),
         findableByEmail=bool(user.get("findableByEmail", False)),
-        membership=membership(user),
+        membership=m,
     )
 
 
 @router.get("/me", response_model=Me)
-async def me(user: dict = Depends(current_user)):
-    return _me(user)
+async def me(request: Request, user: dict = Depends(current_user)):
+    return _me(user, await membership(request.app.state.db, user))
 
 
 @router.patch("/me", response_model=Me)
@@ -95,7 +95,7 @@ async def patch_me(body: ProfilePatch, request: Request, user: dict = Depends(cu
         user = await request.app.state.db.users.find_one_and_update(
             {"_id": user["_id"]}, {"$set": changes}, return_document=True
         )
-    return _me(user)
+    return _me(user, await membership(request.app.state.db, user))
 
 
 @router.get("/users/lookup", response_model=Person)
@@ -147,7 +147,7 @@ async def list_friends(request: Request, user: dict = Depends(current_user)):
 async def request_friend(body: FriendRequest, request: Request, user: dict = Depends(current_user)):
     db = request.app.state.db
     other_id = ObjectId(body.userId)
-    if not membership(user).limits.sharing:
+    if not (await membership(db, user)).limits.sharing:
         raise HTTPException(status_code=402, detail={"code": "limit", "tier": "guest", "error": "Friends need a subscription."})
     if other_id == user["_id"]:
         raise HTTPException(status_code=400, detail="That is you.")
@@ -242,7 +242,7 @@ async def share_trip(trip_id: str, body: ShareRequest, request: Request, user: d
     if not trip:
         raise HTTPException(status_code=404, detail="No such trip.")
 
-    if not membership(user).limits.sharing:
+    if not (await membership(db, user)).limits.sharing:
         raise HTTPException(status_code=402, detail={"code": "limit", "tier": "guest", "error": "Sharing needs a subscription."})
     if body.toUserId:
         to_id = ObjectId(body.toUserId)

@@ -68,3 +68,20 @@ the API. Then set `backend.url=https://airadar.example.com` and
 opens shared links straight in the app.
 
 Without a domain the API stays on plain HTTP :8080 and links use the IP.
+
+## Plans (Stripe)
+
+Plans are sold on `https://<PUBLIC_URL>/pay`; the buyer gets a token to paste
+into the app (Settings › Plan). In the Stripe dashboard:
+
+1. Products → two recurring prices, US$1/month and US$5/month → copy their
+   `price_...` ids into `STRIPE_PRICE_SUPERIOR` / `STRIPE_PRICE_PREMIUM`.
+2. Developers → API keys → `STRIPE_SECRET_KEY`.
+3. Developers → Webhooks → add `https://<PUBLIC_URL>/billing/stripe/webhook`
+   with events `checkout.session.completed`, `customer.subscription.updated`,
+   `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`
+   → copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
+
+A token binds to the first Google account that redeems it and then works on
+every device of that account; it stays valid while Stripe reports the
+subscription paid. `/pay/lookup` finds a token again by order number.

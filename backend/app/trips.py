@@ -86,13 +86,13 @@ async def list_deleted(request: Request, user: dict = Depends(current_user)):
 
 async def _enforce_limits(db, user: dict, trip: TripIn, key: str) -> None:
     """
-    Superior: at most 5 past trips, nothing further than a month ahead.
+    Superior: 5 past trips, 10 ahead (Now + Coming), nothing beyond a month out.
     Guest-level (lapsed): 1 past trip, a week ahead, 3 trips in all.
     Premium: no limits. Updating a trip that already exists is always allowed.
     """
-    m = membership(user)
+    m = await membership(db, user)
     lim = m.limits
-    if lim.maxPastTrips is None and lim.futureDays is None and lim.maxTrips is None:
+    if lim.maxPastTrips is None and lim.futureDays is None and lim.maxTrips is None and lim.maxUpcomingTrips is None:
         return
     if await db.trips.find_one({"_id": key, "deletedAt": None}):
         return
@@ -101,6 +101,7 @@ async def _enforce_limits(db, user: dict, trip: TripIn, key: str) -> None:
     cursor = db.trips.find({"userId": user["_id"], "deletedAt": None})
     existing = [d async for d in cursor]
     past_count = sum(1 for d in existing if d["departureTime"].date() < today)
+    upcoming_count = len(existing) - past_count  # today and ahead: Now and Coming
 
     def refuse(reason: str):
         raise HTTPException(status_code=402, detail={"code": "limit", "tier": m.tier, "error": reason})
@@ -109,6 +110,8 @@ async def _enforce_limits(db, user: dict, trip: TripIn, key: str) -> None:
         refuse(f"{lim.maxTrips} trips is the most this plan keeps.")
     if trip_day < today and lim.maxPastTrips is not None and past_count >= lim.maxPastTrips:
         refuse(f"This plan keeps {lim.maxPastTrips} past trip{'s' if lim.maxPastTrips != 1 else ''}.")
+    if trip_day >= today and lim.maxUpcomingTrips is not None and upcoming_count >= lim.maxUpcomingTrips:
+        refuse(f"This plan keeps {lim.maxUpcomingTrips} trips ahead at a time.")
     if trip_day > today and lim.futureDays is not None and (trip_day - today).days > lim.futureDays:
         refuse(f"This plan adds trips up to {lim.futureDays} days ahead.")
 

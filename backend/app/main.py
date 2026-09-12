@@ -55,7 +55,7 @@ async def health():
         "google": bool(os.environ.get("GOOGLE_CLIENT_ID")),
         "jwt": bool(os.environ.get("JWT_SECRET")),
         "history": fr24.enabled(),
-        "playVerification": bool(os.environ.get("PLAY_SERVICE_ACCOUNT_JSON")),
+        "stripe": bool(os.environ.get("STRIPE_SECRET_KEY")),
     }
 
 
@@ -80,7 +80,7 @@ async def flight(number: str, day: date, user: dict | None = Depends(optional_us
         errors.append(str(e))
 
     # Past flights AirLabs no longer carries: the history service, for Premium only.
-    if user is not None and membership(user).limits.historyLookup and fr24.enabled():
+    if user is not None and (await membership(app.state.db, user)).limits.historyLookup and fr24.enabled():
         try:
             return await fr24.flight(_http(), app.state.db, number, day)
         except fr24.HistoryError as e:

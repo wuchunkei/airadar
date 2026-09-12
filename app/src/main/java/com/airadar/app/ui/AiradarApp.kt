@@ -1,6 +1,7 @@
 package com.airadar.app.ui
 
-import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import com.airadar.app.ui.components.MembershipDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
 import com.airadar.app.data.BackendClient
 import com.airadar.app.data.FlightStore
+import com.airadar.app.data.Plans
 import com.airadar.app.ui.screens.FriendsScreen
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -131,16 +133,21 @@ fun AiradarApp() {
             FlightStore.clearLimitHit()
             overlay = Overlay.SETTINGS
         }
-        val goSubscribe: (String) -> Unit = { productId ->
-            FlightStore.clearLimitHit()
-            settingsViewModel.subscribe(context as Activity, productId) { }
+        val goWeb: () -> Unit = {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Plans.payUrl)))
         }
+        val redeemToken: (String) -> Unit = { token -> settingsViewModel.redeem(token) { FlightStore.clearLimitHit() } }
+        val redeemError by settingsViewModel.redeemError.observeAsState()
+        val redeeming by settingsViewModel.redeeming.observeAsState(false)
         MembershipDialog(
             current = settings.membership.tier,
             reason = hit.reason,
             onDismiss = { FlightStore.clearLimitHit() },
             onSignIn = if (settings.isLoggedIn) null else goSignIn,
-            onSubscribe = if (settings.isLoggedIn) goSubscribe else null
+            onGetPlan = if (settings.isLoggedIn) goWeb else null,
+            onRedeem = if (settings.isLoggedIn) redeemToken else null,
+            redeemError = redeemError,
+            busy = redeeming
         )
     }
 

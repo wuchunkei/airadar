@@ -6,7 +6,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.airadar.app.data.colorOf
-import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import com.airadar.app.data.Plans
 import com.airadar.app.data.Tier
 import com.airadar.app.ui.components.MembershipDialog
 import java.time.ZoneId
@@ -67,8 +69,8 @@ fun SettingsScreen(
     val signingIn by viewModel.signingIn.observeAsState(false)
     val activity = LocalContext.current
     var showPlans by remember { mutableStateOf(false) }
-    val purchaseError by viewModel.purchaseError.observeAsState()
-    val purchasing by viewModel.purchasing.observeAsState(false)
+    val redeemError by viewModel.redeemError.observeAsState()
+    val redeeming by viewModel.redeeming.observeAsState(false)
     val membership = settings.membership
     val calendarStatus by viewModel.calendarStatus.observeAsState()
     val askCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -135,9 +137,7 @@ fun SettingsScreen(
                             } + (membership.until?.let { " · until ${it.atZone(ZoneId.systemDefault()).toLocalDate()}" } ?: ""),
                             onClick = { showPlans = true }
                         )
-                        purchaseError?.let {
-                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                        }
+
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
                         ToggleRow(
                             title = "Friends can find me by email",
@@ -256,13 +256,15 @@ fun SettingsScreen(
         show = showPlans,
         signedIn = settings.isLoggedIn,
         membership = membership,
-        purchasing = purchasing,
+        busy = redeeming,
+        redeemError = redeemError,
         onDismiss = { showPlans = false },
         onSignIn = {
             showPlans = false
             viewModel.signIn(activity)
         },
-        onSubscribe = { productId -> viewModel.subscribe(activity as Activity, productId) { showPlans = false } }
+        onGetPlan = { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Plans.payUrl))) },
+        onRedeem = { token -> viewModel.redeem(token) { showPlans = false } }
     )
 }
 
@@ -271,18 +273,22 @@ private fun PlansHost(
     show: Boolean,
     signedIn: Boolean,
     membership: com.airadar.app.data.Membership,
-    purchasing: Boolean,
+    busy: Boolean,
+    redeemError: String?,
     onDismiss: () -> Unit,
     onSignIn: () -> Unit,
-    onSubscribe: (String) -> Unit
+    onGetPlan: () -> Unit,
+    onRedeem: (String) -> Unit
 ) {
     if (!show) return
     MembershipDialog(
         current = membership.tier,
         onDismiss = onDismiss,
         onSignIn = if (signedIn) null else onSignIn,
-        onSubscribe = if (signedIn) onSubscribe else null,
-        busy = purchasing
+        onGetPlan = if (signedIn) onGetPlan else null,
+        onRedeem = if (signedIn) onRedeem else null,
+        redeemError = redeemError,
+        busy = busy
     )
 }
 

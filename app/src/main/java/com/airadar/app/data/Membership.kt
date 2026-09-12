@@ -11,15 +11,17 @@ enum class Tier { GUEST, SUPERIOR, PREMIUM }
 @Immutable
 data class Limits(
     val maxPastTrips: Int?,
-    val futureDays: Int?,
+    /** Trips in the air or ahead — Now and Coming together. */
+    val maxUpcomingTrips: Int?,
     val maxTrips: Int?,
+    val futureDays: Int?,
     val historyLookup: Boolean,
     val sharing: Boolean
 ) {
     companion object {
-        val GUEST = Limits(maxPastTrips = 1, futureDays = 7, maxTrips = 3, historyLookup = false, sharing = false)
-        val SUPERIOR = Limits(maxPastTrips = 5, futureDays = 30, maxTrips = null, historyLookup = false, sharing = true)
-        val PREMIUM = Limits(maxPastTrips = null, futureDays = null, maxTrips = null, historyLookup = true, sharing = true)
+        val GUEST = Limits(maxPastTrips = 1, maxUpcomingTrips = null, maxTrips = 3, futureDays = 7, historyLookup = false, sharing = false)
+        val SUPERIOR = Limits(maxPastTrips = 5, maxUpcomingTrips = 10, maxTrips = null, futureDays = 30, historyLookup = true, sharing = true)
+        val PREMIUM = Limits(maxPastTrips = null, maxUpcomingTrips = null, maxTrips = null, futureDays = null, historyLookup = true, sharing = true)
         fun of(tier: Tier) = when (tier) {
             Tier.GUEST -> GUEST
             Tier.SUPERIOR -> SUPERIOR
@@ -32,7 +34,8 @@ data class Limits(
 data class Membership(
     val tier: Tier,
     val until: Instant?,
-    val trial: Boolean
+    val trial: Boolean,
+    val token: String? = null
 ) {
     val limits: Limits get() = Limits.of(tier)
 
@@ -41,12 +44,11 @@ data class Membership(
     }
 }
 
-/** Play Store subscription products, as created in the Play Console. */
+/** Plans are bought on the web (Stripe) and redeemed here with a token. */
 object Plans {
-    const val SUPERIOR = "superior_monthly"
-    const val PREMIUM = "premium_monthly"
     const val SUPERIOR_PRICE = "US$1 / month"
     const val PREMIUM_PRICE = "US$5 / month"
+    val payUrl: String get() = com.airadar.app.BuildConfig.BACKEND_URL.trimEnd('/') + "/pay"
 }
 
 /** Why a trip could not be added under the current plan, and what would allow it. */
@@ -74,6 +76,9 @@ object Entitlements {
         lim.maxTrips?.let { if (live.size >= it) throw LimitReached("$it trips is the most this plan keeps.", m.tier) }
         if (day < today) lim.maxPastTrips?.let {
             if (past >= it) throw LimitReached("This plan keeps $it past trip${if (it == 1) "" else "s"}.", m.tier)
+        }
+        if (day >= today) lim.maxUpcomingTrips?.let {
+            if (live.size - past >= it) throw LimitReached("This plan keeps $it trips ahead at a time.", m.tier)
         }
         if (day > today) lim.futureDays?.let {
             if (ChronoUnit.DAYS.between(today, day) > it) throw LimitReached("This plan adds trips up to $it days ahead.", m.tier)

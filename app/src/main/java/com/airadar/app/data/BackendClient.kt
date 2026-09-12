@@ -149,12 +149,13 @@ object BackendClient {
             runCatching { java.time.OffsetDateTime.parse(raw).toInstant() }.getOrNull()
                 ?: runCatching { LocalDateTime.parse(raw.take(19)).atOffset(java.time.ZoneOffset.UTC).toInstant() }.getOrNull()
         },
-        trial = o.optBoolean("trial", false)
+        trial = o.optBoolean("trial", false),
+        token = o.text("token")
     )
 
-    /** Hands a Google Play purchase to the server, which verifies it and raises the plan. */
-    suspend fun confirmPurchase(productId: String, purchaseToken: String): Membership = withContext(Dispatchers.IO) {
-        val o = authed("POST", "billing/google", JSONObject().put("productId", productId).put("purchaseToken", purchaseToken))
+    /** A token bought on the web page: binds it to this account (first come) and raises the plan. */
+    suspend fun redeem(token: String): Membership = withContext(Dispatchers.IO) {
+        val o = authed("POST", "billing/redeem", JSONObject().put("token", token.trim().uppercase()))
         membershipFromJson(o).also(AuthStore::saveMembership)
     }
 
@@ -297,6 +298,7 @@ object BackendClient {
             when (code) {
                 401 -> reason.ifBlank { "The server rejected this build's token (backend.token in local.properties)." }
                 402 -> reason.ifBlank { "This needs a higher plan." }
+                403 -> reason.ifBlank { "Not allowed." }
                 404 -> if (path.startsWith("flights/")) "Nothing found for that flight on that date." else reason.ifBlank { "Not found." }
                 429 -> "AirLabs monthly quota used up on the server."
                 else -> reason.ifBlank { "Airadar server error (HTTP $code)." }

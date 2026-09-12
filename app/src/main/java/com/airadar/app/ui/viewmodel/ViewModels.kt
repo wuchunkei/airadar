@@ -4,8 +4,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import android.app.Application
-import android.app.Activity
-import com.airadar.app.data.Billing
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import com.airadar.app.data.ThemeMode
@@ -178,27 +176,24 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private val _purchaseError = MutableLiveData<String?>(null)
-    val purchaseError: LiveData<String?> = _purchaseError
+    private val _redeemError = MutableLiveData<String?>(null)
+    val redeemError: LiveData<String?> = _redeemError
 
-    private val _purchasing = MutableLiveData(false)
-    val purchasing: LiveData<Boolean> = _purchasing
+    private val _redeeming = MutableLiveData(false)
+    val redeeming: LiveData<Boolean> = _redeeming
 
-    /** Opens Google Play for [productId]; the server raises the plan once Play confirms. */
-    fun subscribe(activity: Activity, productId: String, onDone: () -> Unit) {
+    /** Pastes in a token from the web page; the server binds it to this account. */
+    fun redeem(token: String, onDone: () -> Unit) {
         viewModelScope.launch {
-            _purchasing.value = true
-            _purchaseError.value = null
+            _redeeming.value = true
+            _redeemError.value = null
             try {
-                Billing.subscribe(activity, productId) { result ->
-                    _purchasing.value = false
-                    result.onFailure { _purchaseError.value = it.message }
-                    result.onSuccess { onDone() }
-                }
+                BackendClient.redeem(token)
+                onDone()
             } catch (e: IOException) {
-                _purchasing.value = false
-                _purchaseError.value = e.message
+                _redeemError.value = e.message
             }
+            _redeeming.value = false
         }
     }
 
