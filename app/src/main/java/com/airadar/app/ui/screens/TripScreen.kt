@@ -169,7 +169,8 @@ fun TripScreen(
 
     // Past trips always occupy the top of the list — the viewport simply starts
     // below them. Nothing is inserted or removed, so the rows never jump.
-    val anchorIndex = if (past.isEmpty()) 0 else past.size + 1
+    // Above the present sit: the "Past" heading, one item per past trip, the divider.
+    val anchorIndex = if (past.isEmpty()) 0 else past.size + 2
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = anchorIndex)
     val locked = rememberUpdatedState(!showHistory)
 
@@ -327,6 +328,7 @@ fun TripScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (past.isNotEmpty()) {
+                item(key = "past-header") { SectionTitle("Past") }
                 flightItems(past, forceSystemZone, dimmed = true, onDelete = delete, swipe = swipe) { selectedId = it.id }
                 item(key = "past-divider") { TimeDivider() }
             }
