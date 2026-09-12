@@ -53,6 +53,7 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await db.shares.create_index("ownerId")
     await db.shares.create_index("token", sparse=True)
 
+    await db.tokens.create_index("tokenHash", unique=True)
     await db.tokens.create_index("order", unique=True)
     await db.tokens.create_index("sessionId", unique=True, sparse=True)
     await db.tokens.create_index("subscriptionId", sparse=True)

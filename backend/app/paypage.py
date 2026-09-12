@@ -105,13 +105,14 @@ PAGE = """<!doctype html><title>Airadar plans</title>""" + STYLE + """
 
 <div class="modal" id="upgradeModal"><div class="card">
   <h2>Upgrade to Premium</h2><p>Enter your Superior token. What is left of this month is credited against the first Premium month.</p>
-  <input id="upTok" placeholder="16 characters" autocomplete="off">
+  <input id="upTok" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
   <div class="err" id="upErr"></div>
   <div class="row"><button class="btn" id="upCancel" type="button">Cancel</button><button class="btn" id="upGo" type="button">Check</button></div>
 </div></div>
 
 <div class="modal" id="forgotModal"><div class="card">
   <p class="label" id="fLabel">Order number</p>
+  <p style="color:var(--mute);font-size:12px;margin:0 0 8px">A new token is issued; the old one stops working.</p>
   <input id="fInput" placeholder="ORD-XXXXXXXX" autocomplete="off">
   <div class="err" id="fErr"></div>
   <div class="row"><button class="btn" id="fCancel" type="button">Close</button><button class="btn" id="fGo" type="button">Find</button></div>
@@ -155,12 +156,12 @@ forgot.addEventListener('click', () => { $('#forgotModal').classList.add('open')
 $('#fCancel').addEventListener('click', () => { $('#forgotModal').classList.remove('open'); $('#fLabel').textContent='Order number'; $('#fLabel').classList.remove('gold'); $('#fInput').value=''; $('#fInput').readOnly=false; });
 $('#fGo').addEventListener('click', async () => {
   const order = $('#fInput').value.trim().toUpperCase(); $('#fErr').textContent = '';
-  const r = await fetch('/pay/api/lookup?order=' + encodeURIComponent(order));
+  const r = await fetch('/pay/api/lookup', {method:'POST', body: new URLSearchParams({order})});
   const d = await r.json();
   if (!r.ok) { $('#fErr').textContent = d.detail || 'Not found.'; return; }
   const input = $('#fInput'); input.readOnly = true;
   const from = order, to = d.token, steps = 24, ms = 3000 / steps;
-  const glyphs = '0123456789ABCDEF';
+  const glyphs = '0123456789abcdef';
   let i = 0;
   const tick = setInterval(() => {
     i++;
@@ -168,6 +169,7 @@ $('#fGo').addEventListener('click', async () => {
     let s = '';
     for (let k = 0; k < to.length; k++) {
       if (k < settled) s += to[k];
+      else if (to[k] === '-') s += '-';
       else if (k < from.length && i < steps / 3) s += from[k];
       else s += glyphs[Math.floor(Math.random() * glyphs.length)];
     }

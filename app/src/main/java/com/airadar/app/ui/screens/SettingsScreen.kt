@@ -118,9 +118,9 @@ fun SettingsScreen(
                         checked == null -> {
                             OutlinedTextField(
                                 value = tokenInput,
-                                onValueChange = { tokenInput = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(16) },
+                                onValueChange = { tokenInput = it.lowercase().filter { c -> c.isLetterOrDigit() || c == '-' }.take(36) },
                                 label = { Text("Token") },
-                                placeholder = { Text("16 characters") },
+                                placeholder = { Text("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
@@ -140,7 +140,7 @@ fun SettingsScreen(
                                 ) { Text("Get a token") }
                                 Button(
                                     onClick = { viewModel.checkToken(tokenInput) },
-                                    enabled = tokenInput.length == 16 && !checkingToken,
+                                    enabled = tokenInput.count { it.isLetterOrDigit() } == 32 && !checkingToken,
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(48.dp),

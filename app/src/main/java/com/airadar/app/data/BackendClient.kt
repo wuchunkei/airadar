@@ -155,7 +155,7 @@ object BackendClient {
 
     /** Before sign-in: is this token live, and may this phone use it? Binds the phone on first use. */
     suspend fun checkToken(token: String): CheckedToken = withContext(Dispatchers.IO) {
-        val code = token.trim().uppercase()
+        val code = token.trim().lowercase()
         val o = call("POST", "billing/token/check", JSONObject().put("token", code).put("deviceId", AuthStore.deviceId))
         CheckedToken(
             token = code,
@@ -168,7 +168,7 @@ object BackendClient {
 
     /** After sign-in: ties the token to this account (first come) and raises the plan. */
     suspend fun redeem(token: String): Membership = withContext(Dispatchers.IO) {
-        val body = JSONObject().put("token", token.trim().uppercase()).put("deviceId", AuthStore.deviceId)
+        val body = JSONObject().put("token", token.trim().lowercase()).put("deviceId", AuthStore.deviceId)
         membershipFromJson(authed("POST", "billing/redeem", body)).also(AuthStore::saveMembership)
     }
 

@@ -5,7 +5,10 @@ Membership tiers, paid through Stripe on a web page, unlocked in the app with a 
   superior  US$1/month
   premium   US$5/month
 
-Paying on /pay (Stripe Checkout) mints a token tied to the Stripe subscription.
+Paying on /pay (Stripe Checkout) mints a token (a UUID) tied to the Stripe
+subscription. Only a hash of the token is stored, so a copy of the database
+does not give away anyone's plan; "Forgot token" therefore issues a fresh
+token rather than showing the old one, which is gone for good.
 In the app the token comes first: it is checked and bound to that phone, and
 only then may the traveller sign in with Google; the first Google account used
 with the token is bound to it too. Another phone, or another account on the
@@ -17,15 +20,19 @@ against the first Premium month, the Superior subscription is cancelled, and
 the token simply becomes Premium.
 """
 
+import hashlib
 import json
 import os
 import re
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
+
+from bson import ObjectId
 
 from .auth import current_user
 
@@ -56,7 +63,6 @@ class Membership(BaseModel):
     tier: str  # guest | superior | premium
     until: datetime | None  # end of the paid period; grace runs GRACE_DAYS past it
     grace: bool = False  # past the period end, inside the grace days
-    token: str | None = None
     limits: Limits
 
 
@@ -76,7 +82,7 @@ def _membership_of(tok: dict | None) -> Membership:
     if tok and _token_live(tok):
         plan = tok["plan"]
         return Membership(tier=plan, until=tok["currentPeriodEnd"], grace=tok["currentPeriodEnd"] <= _now(),
-                          token=tok["_id"], limits=LIMITS[plan])
+                          limits=LIMITS[plan])
     return Membership(tier="guest", until=None, limits=LIMITS["guest"])
 
 
@@ -115,12 +121,21 @@ _ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
 
 
 def _new_token() -> str:
-    """16 hex characters, e.g. 3F9A0C7D21B4E8F6."""
-    return secrets.token_hex(8).upper()
+    """A random UUID, e.g. 3f9a0c7d-21b4-4e8f-9a6b-1c2d3e4f5a6b (122 bits)."""
+    return str(uuid.uuid4())
 
 
 def normalize(token: str) -> str:
-    return re.sub(r"[^0-9A-Z]", "", token.strip().upper())
+    """Case and punctuation do not matter: 32 hex digits are the token."""
+    return re.sub(r"[^0-9a-f]", "", token.strip().lower())
+
+
+def _hash(token: str) -> str:
+    return hashlib.sha256(normalize(token).encode()).hexdigest()
+
+
+async def _find(db, token: str) -> dict | None:
+    return await db.tokens.find_one({"tokenHash": _hash(token)})
 
 
 async def seed_lifetime_tokens(db) -> None:
@@ -132,12 +147,11 @@ async def seed_lifetime_tokens(db) -> None:
     forever = datetime(2999, 1, 1, tzinfo=timezone.utc)
     for raw in os.environ.get("LIFETIME_PREMIUM_TOKENS", "").split(","):
         code = normalize(raw)
-        if len(code) < 8:
+        if len(code) < 16:
             continue
         await db.tokens.update_one(
-            {"_id": code},
-            {"$setOnInsert": {"order": f"ORD-LIFE-{code[:6]}", "plan": "premium", "status": "active",
-                              "currentPeriodEnd": forever, "deviceId": None, "boundEmail": None,
+            {"tokenHash": _hash(code)},
+            {"$setOnInsert": {"order": f"ORD-LIFE-{code[:6].upper()}", "deviceId": None, "boundEmail": None,
                               "lifetime": True, "createdAt": _now()},
              "$set": {"plan": "premium", "status": "active", "currentPeriodEnd": forever}},
             upsert=True,
@@ -153,11 +167,16 @@ def _sub_state(sub) -> tuple[str, datetime]:
     return status, datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc)
 
 
-async def _token_for_session(db, session) -> dict:
-    """The token for a paid Checkout session — created (or, for an upgrade, changed) once."""
+async def _token_for_session(db, session) -> tuple[dict, str | None]:
+    """
+    The token record for a paid Checkout session — created (or, for an upgrade,
+    changed) once — and the plain token if this call is the one that minted it.
+    A later visit to the success page gets the record but no token: it was
+    shown once, and only its hash is kept.
+    """
     existing = await db.tokens.find_one({"sessionId": session["id"]})
     if existing:
-        return existing
+        return existing, None
     meta = session.get("metadata") or {}
     sub_id = session.get("subscription")
     status, period_end = ("active", _now() + timedelta(days=31))
@@ -166,7 +185,7 @@ async def _token_for_session(db, session) -> dict:
 
     upgrade_of = meta.get("upgradeToken")
     if upgrade_of:
-        old = await db.tokens.find_one({"_id": upgrade_of})
+        old = await db.tokens.find_one({"_id": ObjectId(upgrade_of)})
         if old:
             if old.get("subscriptionId") and old["subscriptionId"] != sub_id:
                 try:
@@ -174,14 +193,15 @@ async def _token_for_session(db, session) -> dict:
                 except Exception:
                     pass  # already gone; the new plan stands either way
             await db.tokens.update_one(
-                {"_id": upgrade_of},
+                {"_id": old["_id"]},
                 {"$set": {"plan": "premium", "sessionId": session["id"], "subscriptionId": sub_id,
                           "status": status, "currentPeriodEnd": period_end, "upgradedAt": _now()}},
             )
-            return await db.tokens.find_one({"_id": upgrade_of})
+            return await db.tokens.find_one({"_id": old["_id"]}), None
 
+    plain = _new_token()
     doc = {
-        "_id": _new_token(),
+        "tokenHash": _hash(plain),
         "order": _new_order(),
         "plan": meta.get("plan", "superior"),
         "sessionId": session["id"],
@@ -195,7 +215,7 @@ async def _token_for_session(db, session) -> dict:
         "createdAt": _now(),
     }
     await db.tokens.insert_one(doc)
-    return doc
+    return doc, plain
 
 
 @router.post("/billing/stripe/webhook")
@@ -214,7 +234,11 @@ async def stripe_webhook(request: Request):
     kind = event["type"]
     obj = event["data"]["object"]
     if kind == "checkout.session.completed" and obj.get("payment_status") in ("paid", "no_payment_required"):
-        await _token_for_session(db, obj)
+        # Minted here first if the webhook beats the success page; the page then
+        # shows the token the webhook could not, via a short-lived pending slot.
+        tok, plain = await _token_for_session(db, obj)
+        if plain:
+            await db.tokens.update_one({"_id": tok["_id"]}, {"$set": {"pendingPlain": plain, "pendingUntil": _now() + timedelta(minutes=30)}})
     elif kind in ("customer.subscription.updated", "customer.subscription.deleted", "invoice.paid", "invoice.payment_failed"):
         sub_id = obj.get("id") if kind.startswith("customer.subscription") else obj.get("subscription")
         if sub_id:
@@ -265,7 +289,7 @@ class UpgradeCheck(BaseModel):
 @router.post("/pay/api/upgrade-check")
 async def upgrade_check(body: UpgradeCheck, request: Request):
     """Is this token a live Superior? If so, what will the first Premium month cost?"""
-    tok = await request.app.state.db.tokens.find_one({"_id": normalize(body.token)})
+    tok = await _find(request.app.state.db, body.token)
     if not tok:
         raise HTTPException(status_code=404, detail="No such token.")
     if tok["plan"] == "premium":
@@ -280,25 +304,32 @@ async def upgrade_check(body: UpgradeCheck, request: Request):
 @router.post("/pay/upgrade")
 async def pay_upgrade(request: Request, token: str = Form(...)):
     db = request.app.state.db
-    code = normalize(token)
-    tok = await db.tokens.find_one({"_id": code})
+    tok = await _find(db, token)
     if not tok or tok["plan"] != "superior" or not _token_live(tok):
         raise HTTPException(status_code=400, detail="Only a live Superior token can be upgraded.")
     credit = _upgrade_credit_cents(tok)
     discounts = None
     if credit > 0:
         coupon = _stripe().Coupon.create(amount_off=credit, currency="usd", duration="once",
-                                         name=f"Unused Superior time ({code})")
+                                         name=f"Unused Superior time ({tok['order']})")
         discounts = [{"coupon": coupon["id"]}]
-    return _checkout(request, "premium", {"plan": "premium", "upgradeToken": code}, discounts)
+    return _checkout(request, "premium", {"plan": "premium", "upgradeToken": str(tok["_id"])}, discounts)
 
 
-@router.get("/pay/api/lookup")
-async def lookup_api(order: str, request: Request):
-    tok = await request.app.state.db.tokens.find_one({"order": order.strip().upper()})
+@router.post("/pay/api/lookup")
+async def lookup_api(request: Request, order: str = Form(...)):
+    """
+    Forgot token: the order number is the proof of purchase. The old token cannot
+    be shown (only its hash exists), so a new one is issued in its place; the
+    phone and account bindings carry over, the old token stops working.
+    """
+    db = request.app.state.db
+    tok = await db.tokens.find_one({"order": order.strip().upper()})
     if not tok:
         raise HTTPException(status_code=404, detail="No order with that number.")
-    return {"token": tok["_id"], "plan": tok["plan"], "active": _token_live(tok)}
+    plain = _new_token()
+    await db.tokens.update_one({"_id": tok["_id"]}, {"$set": {"tokenHash": _hash(plain), "rotatedAt": _now()}})
+    return {"token": plain, "plan": tok["plan"], "active": _token_live(tok)}
 
 
 # ---- The app's side of the token -----------------------------------------------------------
@@ -323,8 +354,7 @@ async def token_check(body: TokenCheck, request: Request):
     this phone if it is not yet bound to one. Another phone is refused.
     """
     db = request.app.state.db
-    code = normalize(body.token)
-    tok = await db.tokens.find_one({"_id": code})
+    tok = await _find(db, body.token)
     if not tok:
         raise HTTPException(status_code=404, detail="No such token.")
     if not _token_live(tok):
@@ -332,7 +362,7 @@ async def token_check(body: TokenCheck, request: Request):
     if tok.get("deviceId") and tok["deviceId"] != body.deviceId:
         raise HTTPException(status_code=403, detail="This token is in use on another phone.")
     if not tok.get("deviceId"):
-        await db.tokens.update_one({"_id": code}, {"$set": {"deviceId": body.deviceId, "deviceBoundAt": _now()}})
+        await db.tokens.update_one({"_id": tok["_id"]}, {"$set": {"deviceId": body.deviceId, "deviceBoundAt": _now()}})
     return TokenStatus(plan=tok["plan"], until=tok["currentPeriodEnd"], grace=tok["currentPeriodEnd"] <= _now(),
                        boundEmail=tok.get("boundEmail"))
 
@@ -341,8 +371,7 @@ async def token_check(body: TokenCheck, request: Request):
 async def redeem(body: TokenCheck, request: Request, user: dict = Depends(current_user)):
     """After Google sign-in: ties the token to this account (first come) and raises the plan."""
     db = request.app.state.db
-    code = normalize(body.token)
-    tok = await db.tokens.find_one({"_id": code})
+    tok = await _find(db, body.token)
     if not tok:
         raise HTTPException(status_code=404, detail="No such token.")
     if not _token_live(tok):
@@ -357,8 +386,8 @@ async def redeem(body: TokenCheck, request: Request, user: dict = Depends(curren
     if not tok.get("boundEmail"):
         updates.update({"boundEmail": user["email"], "boundAt": _now()})
     if updates:
-        await db.tokens.update_one({"_id": code}, {"$set": updates})
-    user = await db.users.find_one_and_update({"_id": user["_id"]}, {"$set": {"tokenId": code}}, return_document=True)
+        await db.tokens.update_one({"_id": tok["_id"]}, {"$set": updates})
+    user = await db.users.find_one_and_update({"_id": user["_id"]}, {"$set": {"tokenId": tok["_id"]}}, return_document=True)
     return await membership(db, user)
 
 
@@ -383,5 +412,11 @@ async def pay_success(session_id: str, request: Request):
     session = stripe.checkout.Session.retrieve(session_id)
     if session.get("payment_status") not in ("paid", "no_payment_required"):
         return HTMLResponse(f"<!doctype html>{STYLE}<body><main><h1>Not paid yet</h1><p class='sub'>Stripe has not confirmed this payment.</p></main></body>")
-    tok = await _token_for_session(request.app.state.db, session)
-    return SUCCESS.replace("{{PLAN}}", PLANS[tok["plan"]]).replace("{{ORDER}}", tok["order"]).replace("{{TOKEN}}", tok["_id"])
+    db = request.app.state.db
+    tok, plain = await _token_for_session(db, session)
+    if plain is None and tok.get("pendingPlain") and (tok.get("pendingUntil") or _now()) > _now():
+        # The webhook minted it moments ago; hand it over once and forget it.
+        plain = tok["pendingPlain"]
+        await db.tokens.update_one({"_id": tok["_id"]}, {"$unset": {"pendingPlain": "", "pendingUntil": ""}})
+    shown = plain or "Shown once already — use Forgot token with the order number to get a new one."
+    return SUCCESS.replace("{{PLAN}}", PLANS[tok["plan"]]).replace("{{ORDER}}", tok["order"]).replace("{{TOKEN}}", shown)
