@@ -2,56 +2,64 @@
 
 STYLE = """<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-:root{--bg:#0f1115;--fg:#eceff4;--mute:#9aa3b2;--green:#0f5a3a;--green-hi:#1fb37a;--gold:#b8860b;--gold-hi:#ffd24a;--red:#b3261e}
+:root{--bg:#000;--fg:#f2f2f2;--mute:#9aa3b2;--card:#101216;--line:#2a2f3a;--field:#0a0b0e;
+  --green:#0f5a3a;--green-hi:#1fb37a;--gold:#b8860b;--gold-hi:#ffd24a;--red:#b3261e;--red-bg:#2a0c0c;--red-card:#3a1010;
+  --crack-a:rgba(255,255,255,.55);--crack-b:rgba(0,0,0,.9);--stone:#c9c9c9}
+@media (prefers-color-scheme: light){:root{--bg:#fff;--fg:#111;--mute:#5b6270;--card:#f4f5f7;--line:#d9dde3;--field:#fff;
+  --red-bg:#ffecec;--red-card:#ffd6d6;--crack-a:rgba(0,0,0,.55);--crack-b:rgba(255,255,255,.9);--stone:#555}}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;align-items:center;justify-content:center}
-main{width:min(560px,92vw);text-align:center}
-h1{margin:0 0 6px;font-size:28px}p.sub{color:var(--mute);margin:0 0 28px}
-.grid{display:grid;gap:14px}
-.btn{position:relative;display:block;width:100%;padding:18px 20px;border-radius:20px;border:2px solid #2a2f3a;background:#161a22;color:var(--fg);font-size:18px;font-weight:600;cursor:pointer;text-decoration:none;transition:border-color .2s,background .2s;overflow:hidden}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;align-items:center;justify-content:center;transition:background 1.5s}
+main{width:min(640px,94vw);text-align:center}
+h1{margin:0 0 24px;font-size:28px}p.sub{color:var(--mute);margin:0 0 28px}
+/* 1 2 / 3 4 */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:480px){.grid{grid-template-columns:1fr}}
+.btn{position:relative;display:block;width:100%;min-height:96px;padding:18px 16px;border-radius:20px;border:2px solid var(--line);background:var(--card);color:var(--fg);font-size:18px;font-weight:600;cursor:pointer;text-decoration:none;transition:border-color .2s,background .2s,filter 1.2s,color 1.2s}
 .btn small{display:block;font-weight:400;color:var(--mute);font-size:13px;margin-top:4px}
-/* the frame is a separate layer so it can be masked left→right */
+/* the animated frame is its own layer, laid exactly over the border, so it can be masked left→right */
 .btn::before{content:"";position:absolute;inset:-2px;border-radius:20px;border:2px solid transparent;pointer-events:none;
   -webkit-mask:linear-gradient(90deg,#000 var(--reveal,100%),transparent var(--reveal,100%));mask:linear-gradient(90deg,#000 var(--reveal,100%),transparent var(--reveal,100%))}
-@keyframes blinkGreen{0%,100%{border-color:var(--green)}50%{border-color:var(--green-hi);box-shadow:0 0 18px rgba(31,179,122,.35)}}
-@keyframes blinkGold{0%,100%{border-color:var(--gold)}50%{border-color:var(--gold-hi);box-shadow:0 0 18px rgba(255,210,74,.35)}}
+@keyframes blinkGreen{0%,100%{border-color:var(--green);box-shadow:none}50%{border-color:var(--green-hi);box-shadow:0 0 18px rgba(31,179,122,.45)}}
+@keyframes blinkGold{0%,100%{border-color:var(--gold);box-shadow:none}50%{border-color:var(--gold-hi);box-shadow:0 0 18px rgba(255,210,74,.45)}}
 .blink-green::before{animation:blinkGreen 1s steps(2,jump-none) infinite}
 .blink-gold::before{animation:blinkGold 1s steps(2,jump-none) infinite}
-/* upgrade: green drains left→right one quarter per second; gold fills the same way */
+/* upgrade: green drains left→right a quarter a second; gold fills the same way, then keeps blinking */
+@property --reveal{syntax:"<percentage>";inherits:false;initial-value:100%}
 @keyframes drain{0%{--reveal:100%}25%{--reveal:75%}50%{--reveal:50%}75%{--reveal:25%}100%{--reveal:0%}}
 @keyframes fill{0%{--reveal:0%}25%{--reveal:25%}50%{--reveal:50%}75%{--reveal:75%}100%{--reveal:100%}}
-@property --reveal{syntax:"<percentage>";inherits:false;initial-value:100%}
 .drain-green::before{animation:blinkGreen 1s steps(2,jump-none) infinite,drain 4s steps(4,jump-end) forwards}
 .fill-gold::before{animation:blinkGold 1s steps(2,jump-none) infinite,fill 4s steps(4,jump-end) forwards}
-/* forgot: the page reddens, the others turn to stone and crack */
-body.forgot{background:#2a0c0c;transition:background 1.5s}
-body.forgot main{transition:none}
-.stone{filter:grayscale(1) brightness(.75);color:#c9c9c9;transition:filter 1.2s}
-.stone::after{content:"";position:absolute;inset:0;border-radius:20px;pointer-events:none;opacity:0;
+/* forgot: the page reddens; the other three turn to stone and crack */
+body.forgot{background:var(--red-bg)}
+.forgot-btn.hot{border-color:var(--red);background:var(--red-card)}
+.stone{filter:grayscale(1) contrast(.85) brightness(.8);color:var(--stone)}
+.stone small{color:var(--stone)}
+.stone::after{content:"";position:absolute;inset:0;border-radius:18px;pointer-events:none;opacity:0;
   background:
-    linear-gradient(115deg,transparent 48%,rgba(0,0,0,.9) 49%,transparent 51%),
-    linear-gradient(35deg,transparent 30%,rgba(0,0,0,.8) 30.6%,transparent 31.4%),
-    linear-gradient(160deg,transparent 62%,rgba(0,0,0,.85) 62.5%,transparent 63.2%),
-    linear-gradient(80deg,transparent 78%,rgba(0,0,0,.7) 78.4%,transparent 79%);
-  animation:crack 1.2s ease-out forwards}
-@keyframes crack{0%{opacity:0;transform:scale(1)}60%{opacity:1;transform:scale(1.005)}100%{opacity:1;transform:scale(1)}}
-.forgot-btn.hot{border-color:var(--red);background:#3a1010;transition:border-color 1.2s,background 1.2s}
-/* modal */
+    linear-gradient(112deg,transparent 46.5%,var(--crack-a) 47.2%,var(--crack-b) 48%,transparent 49.2%),
+    linear-gradient(38deg,transparent 28%,var(--crack-a) 28.8%,var(--crack-b) 29.6%,transparent 30.8%),
+    linear-gradient(158deg,transparent 60%,var(--crack-a) 60.7%,var(--crack-b) 61.4%,transparent 62.6%),
+    linear-gradient(78deg,transparent 74%,var(--crack-a) 74.6%,var(--crack-b) 75.3%,transparent 76.4%),
+    linear-gradient(135deg,transparent 15%,var(--crack-a) 15.6%,var(--crack-b) 16.2%,transparent 17.2%),
+    radial-gradient(circle at 62% 40%,var(--crack-b) 0 1.5px,transparent 2.5px);
+  animation:crack 1.1s steps(6,jump-end) forwards}
+@keyframes crack{0%{opacity:0}100%{opacity:1}}
+/* modals */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center}
 .modal.open{display:flex}
-.card{background:#161a22;border:1px solid #2a2f3a;border-radius:20px;padding:24px;width:min(420px,92vw);text-align:left}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;width:min(420px,92vw);text-align:left}
 .card h2{margin:0 0 10px}.card p{color:var(--mute);margin:0 0 14px}
-input{width:100%;font-size:18px;letter-spacing:1px;padding:12px 14px;border-radius:14px;border:1px solid #2a2f3a;background:#0f1115;color:var(--fg);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-.row{display:flex;gap:10px;margin-top:14px}.row .btn{padding:12px}
+input{width:100%;font-size:18px;letter-spacing:1px;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--field);color:var(--fg);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.row{display:flex;gap:10px;margin-top:14px}.row .btn{min-height:0;padding:12px}
 .err{color:#ff8a80;margin-top:10px;min-height:1.2em}
-code.tok{display:block;font-size:24px;letter-spacing:2px;background:#161a22;padding:16px;border-radius:16px;margin:16px 0;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+code.tok{display:block;font-size:24px;letter-spacing:2px;background:var(--card);border:1px solid var(--line);padding:16px;border-radius:16px;margin:16px 0;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .label{color:var(--mute);font-size:13px;text-align:left;margin:0 0 6px;transition:color .6s}
 .label.gold{color:var(--gold-hi)}
 </style>"""
 
 PAGE = """<!doctype html><title>Airadar plans</title>""" + STYLE + """
 <body><main>
-<h1>Airadar</h1><p class="sub">Pick a plan. You get a token to enter in the app.</p>
+<h1>Airadar</h1>
 <div class="grid">
   <button class="btn" id="superior">Superior<small>US$1 / month · sync, friends, 5 past & 10 ahead</small></button>
   <button class="btn" id="premium">Premium<small>US$5 / month · everything, no limits</small></button>
