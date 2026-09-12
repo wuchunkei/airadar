@@ -92,7 +92,7 @@ fun MembershipDialog(
                     }
                 }
                 Text(
-                    "New accounts get Superior free for the first 30 days.",
+                    "New accounts get Superior free for the first 30 days. Paid plans keep working for 3 days after a period ends.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp)

@@ -27,6 +27,7 @@ from .auth import current_user
 router = APIRouter(tags=["billing"])
 
 TRIAL_DAYS = 30
+GRACE_DAYS = 3  # a paid plan keeps working this long after its period ends
 PLANS = {"superior": "Superior", "premium": "Premium"}
 PRICES = {"superior": "US$1 / month", "premium": "US$5 / month"}
 
@@ -49,8 +50,9 @@ LIMITS = {
 
 class Membership(BaseModel):
     tier: str  # guest | superior | premium
-    until: datetime | None
+    until: datetime | None  # end of the paid period (or trial); grace runs GRACE_DAYS past it
     trial: bool
+    grace: bool = False  # past the period end, inside the grace days
     token: str | None = None  # the redeemed token, so the app can show it
     limits: Limits
 
@@ -60,7 +62,11 @@ def _now() -> datetime:
 
 
 def _token_live(tok: dict | None) -> bool:
-    return bool(tok) and tok.get("status") == "active" and (tok.get("currentPeriodEnd") or _now()) > _now()
+    """Paid and inside the period, or within the grace days after it. A cancelled subscription ends at once."""
+    if not tok or tok.get("status") != "active":
+        return False
+    end = tok.get("currentPeriodEnd") or _now()
+    return end + timedelta(days=GRACE_DAYS) > _now()
 
 
 async def membership(db, user: dict) -> Membership:
@@ -69,7 +75,8 @@ async def membership(db, user: dict) -> Membership:
     tok = await db.tokens.find_one({"_id": user["tokenId"]}) if user.get("tokenId") else None
     if tok and _token_live(tok) and tok.get("boundEmail") == user["email"]:
         plan = tok["plan"]
-        return Membership(tier=plan, until=tok["currentPeriodEnd"], trial=False, token=tok["_id"], limits=LIMITS[plan])
+        return Membership(tier=plan, until=tok["currentPeriodEnd"], trial=False,
+                          grace=tok["currentPeriodEnd"] <= now, token=tok["_id"], limits=LIMITS[plan])
     trial_until = user.get("trialUntil") or (
         user["createdAt"] + timedelta(days=TRIAL_DAYS) if user.get("createdAt") else None
     )

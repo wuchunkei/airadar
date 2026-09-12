@@ -91,8 +91,9 @@ object AuthStore {
     private fun loadMembership(): Membership {
         val tier = runCatching { Tier.valueOf(prefs.getString("tier", null) ?: "") }.getOrDefault(Tier.GUEST)
         val until = prefs.getLong("tierUntil", 0L).takeIf { it > 0 }?.let(Instant::ofEpochMilli)
-        // A lapsed plan is a guest plan until the server says otherwise.
-        val lapsed = until != null && until.isBefore(Instant.now())
+        // A lapsed plan is a guest plan until the server says otherwise; a paid
+        // period gets three days of grace after it ends, as on the server.
+        val lapsed = until != null && until.plus(3, java.time.temporal.ChronoUnit.DAYS).isBefore(Instant.now())
         return Membership(if (lapsed) Tier.GUEST else tier, until, prefs.getBoolean("tierTrial", false), prefs.getString("planToken", null))
     }
 
