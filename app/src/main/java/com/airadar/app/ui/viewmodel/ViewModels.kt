@@ -11,6 +11,7 @@ import androidx.lifecycle.Observer
 import com.airadar.app.data.CalendarImporter
 import com.airadar.app.data.TripImporter
 import com.airadar.app.data.Membership
+import com.airadar.app.data.CheckedToken
 import com.airadar.app.data.AuthStore
 import com.airadar.app.data.AuthUser
 import com.airadar.app.data.GoogleSignIn
@@ -176,24 +177,37 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private val _redeemError = MutableLiveData<String?>(null)
-    val redeemError: LiveData<String?> = _redeemError
+    private val _tokenError = MutableLiveData<String?>(null)
+    val tokenError: LiveData<String?> = _tokenError
 
-    private val _redeeming = MutableLiveData(false)
-    val redeeming: LiveData<Boolean> = _redeeming
+    private val _checkingToken = MutableLiveData(false)
+    val checkingToken: LiveData<Boolean> = _checkingToken
 
-    /** Pastes in a token from the web page; the server binds it to this account. */
-    fun redeem(token: String, onDone: () -> Unit) {
+    val checkedToken: LiveData<CheckedToken?> = AuthStore.checkedToken
+
+    /** The token from the web page: checked with the server and bound to this phone. */
+    fun checkToken(token: String) {
         viewModelScope.launch {
-            _redeeming.value = true
-            _redeemError.value = null
+            _checkingToken.value = true
+            _tokenError.value = null
             try {
-                BackendClient.redeem(token)
-                onDone()
+                BackendClient.checkToken(token)
             } catch (e: IOException) {
-                _redeemError.value = e.message
+                _tokenError.value = e.message
             }
-            _redeeming.value = false
+            _checkingToken.value = false
+        }
+    }
+
+    /** Back to the token field; a signed-in account is signed out first. */
+    fun replaceToken() {
+        viewModelScope.launch {
+            if (AuthStore.isSignedIn) {
+                BackendClient.signOut()
+                FlightStore.onSignedOut()
+            }
+            AuthStore.saveCheckedToken(null)
+            _tokenError.value = null
         }
     }
 
@@ -220,8 +234,17 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             _signingIn.value = true
             _authError.value = null
             try {
+                val token = AuthStore.checkedToken.value?.token
+                    ?: throw IOException("Enter your token first.")
                 val idToken = GoogleSignIn.idToken(activity)
                 BackendClient.signInWithGoogle(idToken)
+                try {
+                    // The account must be the one the token belongs to (or the first to use it).
+                    BackendClient.redeem(token)
+                } catch (e: IOException) {
+                    BackendClient.signOut()
+                    throw e
+                }
                 runCatching { BackendClient.me() }
                 FlightStore.syncFromServer()
             } catch (_: GoogleSignIn.Cancelled) {

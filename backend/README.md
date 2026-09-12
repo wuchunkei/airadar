@@ -82,6 +82,9 @@ into the app (Settings › Plan). In the Stripe dashboard:
    `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`
    → copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
 
-A token binds to the first Google account that redeems it and then works on
-every device of that account; it stays valid while Stripe reports the
-subscription paid. `/pay/lookup` finds a token again by order number.
+In the app the token comes first (Settings › Account): it is bound to that
+phone, then to the first Google account signed in with it, and is refused
+elsewhere. It stays valid while Stripe reports the subscription paid, plus
+three days of grace. "Forgot token" on the plans page finds it by order
+number; "Upgrade to Premium" keeps the token and credits the unused part of
+the Superior month.

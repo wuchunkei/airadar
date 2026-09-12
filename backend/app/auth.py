@@ -27,8 +27,6 @@ from pydantic import BaseModel
 
 from .db import PALETTE, REFRESH_TOKEN_DAYS
 
-TRIAL_DAYS = 30
-
 ACCESS_TOKEN_MINUTES = 60
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -170,8 +168,6 @@ async def google_login(body: GoogleLogin, request: Request):
                 "givenName": info.get("given_name"),
                 "color": random.choice(PALETTE),
                 "findableByEmail": False,
-                # Superior for the first month; see billing.py.
-                "trialUntil": now + timedelta(days=TRIAL_DAYS),
             },
         },
         upsert=True,

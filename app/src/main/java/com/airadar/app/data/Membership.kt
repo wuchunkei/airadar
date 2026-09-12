@@ -15,13 +15,12 @@ data class Limits(
     val maxUpcomingTrips: Int?,
     val maxTrips: Int?,
     val futureDays: Int?,
-    val historyLookup: Boolean,
     val sharing: Boolean
 ) {
     companion object {
-        val GUEST = Limits(maxPastTrips = 1, maxUpcomingTrips = null, maxTrips = 3, futureDays = 7, historyLookup = false, sharing = false)
-        val SUPERIOR = Limits(maxPastTrips = 5, maxUpcomingTrips = 10, maxTrips = null, futureDays = 30, historyLookup = true, sharing = true)
-        val PREMIUM = Limits(maxPastTrips = null, maxUpcomingTrips = null, maxTrips = null, futureDays = null, historyLookup = true, sharing = true)
+        val GUEST = Limits(maxPastTrips = 1, maxUpcomingTrips = null, maxTrips = 3, futureDays = 7, sharing = false)
+        val SUPERIOR = Limits(maxPastTrips = 5, maxUpcomingTrips = 10, maxTrips = null, futureDays = 30, sharing = true)
+        val PREMIUM = Limits(maxPastTrips = null, maxUpcomingTrips = null, maxTrips = null, futureDays = null, sharing = true)
         fun of(tier: Tier) = when (tier) {
             Tier.GUEST -> GUEST
             Tier.SUPERIOR -> SUPERIOR
@@ -34,15 +33,19 @@ data class Limits(
 data class Membership(
     val tier: Tier,
     val until: Instant?,
-    val trial: Boolean,
+    val grace: Boolean = false,
     val token: String? = null
 ) {
     val limits: Limits get() = Limits.of(tier)
 
     companion object {
-        val GUEST = Membership(Tier.GUEST, null, false)
+        val GUEST = Membership(Tier.GUEST, null)
     }
 }
+
+/** A token the traveller entered and the server accepted for this phone — before or without sign-in. */
+@Immutable
+data class CheckedToken(val token: String, val tier: Tier, val until: Instant, val boundEmail: String?)
 
 /** Plans are bought on the web (Stripe) and redeemed here with a token. */
 object Plans {

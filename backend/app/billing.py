@@ -1,19 +1,23 @@
 """
-Membership tiers, paid through Stripe on a web page, redeemed in the app with a token.
+Membership tiers, paid through Stripe on a web page, unlocked in the app with a token.
 
-  guest     not signed in, or a signed-in account with no live plan
-  superior  $1/month
-  premium   $5/month
+  guest     no token — the app works with small limits, no sign-in
+  superior  US$1/month
+  premium   US$5/month
 
 Paying on /pay (Stripe Checkout) mints a token tied to the Stripe subscription.
-The first account to redeem the token owns it: the token is bound to that
-account's email and works on any number of that person's devices, and is
-refused to any other email. The token stays valid as long as Stripe says the
-subscription is paid; an order number finds the token again.
+In the app the token comes first: it is checked and bound to that phone, and
+only then may the traveller sign in with Google; the first Google account used
+with the token is bound to it too. Another phone, or another account on the
+same phone, is refused. The token stays valid while Stripe says the
+subscription is paid, plus GRACE_DAYS. An order number finds a token again.
 
-A new account starts on a Superior trial (TRIAL_DAYS).
+Upgrading keeps the token: the unused part of the Superior month is credited
+against the first Premium month, the Superior subscription is cancelled, and
+the token simply becomes Premium.
 """
 
+import json
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -26,9 +30,9 @@ from .auth import current_user
 
 router = APIRouter(tags=["billing"])
 
-TRIAL_DAYS = 30
 GRACE_DAYS = 3  # a paid plan keeps working this long after its period ends
 PLANS = {"superior": "Superior", "premium": "Premium"}
+PRICE_CENTS = {"superior": 100, "premium": 500}
 PRICES = {"superior": "US$1 / month", "premium": "US$5 / month"}
 
 
@@ -37,23 +41,21 @@ class Limits(BaseModel):
     maxUpcomingTrips: int | None  # trips in the air or ahead
     maxTrips: int | None  # everything together
     futureDays: int | None
-    historyLookup: bool  # FR24-backed past flights
     sharing: bool
 
 
 LIMITS = {
-    "guest": Limits(maxPastTrips=1, maxUpcomingTrips=None, maxTrips=3, futureDays=7, historyLookup=False, sharing=False),
-    "superior": Limits(maxPastTrips=5, maxUpcomingTrips=10, maxTrips=None, futureDays=30, historyLookup=True, sharing=True),
-    "premium": Limits(maxPastTrips=None, maxUpcomingTrips=None, maxTrips=None, futureDays=None, historyLookup=True, sharing=True),
+    "guest": Limits(maxPastTrips=1, maxUpcomingTrips=None, maxTrips=3, futureDays=7, sharing=False),
+    "superior": Limits(maxPastTrips=5, maxUpcomingTrips=10, maxTrips=None, futureDays=30, sharing=True),
+    "premium": Limits(maxPastTrips=None, maxUpcomingTrips=None, maxTrips=None, futureDays=None, sharing=True),
 }
 
 
 class Membership(BaseModel):
     tier: str  # guest | superior | premium
-    until: datetime | None  # end of the paid period (or trial); grace runs GRACE_DAYS past it
-    trial: bool
+    until: datetime | None  # end of the paid period; grace runs GRACE_DAYS past it
     grace: bool = False  # past the period end, inside the grace days
-    token: str | None = None  # the redeemed token, so the app can show it
+    token: str | None = None
     limits: Limits
 
 
@@ -69,20 +71,20 @@ def _token_live(tok: dict | None) -> bool:
     return end + timedelta(days=GRACE_DAYS) > _now()
 
 
-async def membership(db, user: dict) -> Membership:
-    """The tier in force right now: a redeemed, paid token first, else the trial, else guest."""
-    now = _now()
-    tok = await db.tokens.find_one({"_id": user["tokenId"]}) if user.get("tokenId") else None
-    if tok and _token_live(tok) and tok.get("boundEmail") == user["email"]:
+def _membership_of(tok: dict | None) -> Membership:
+    if tok and _token_live(tok):
         plan = tok["plan"]
-        return Membership(tier=plan, until=tok["currentPeriodEnd"], trial=False,
-                          grace=tok["currentPeriodEnd"] <= now, token=tok["_id"], limits=LIMITS[plan])
-    trial_until = user.get("trialUntil") or (
-        user["createdAt"] + timedelta(days=TRIAL_DAYS) if user.get("createdAt") else None
-    )
-    if trial_until and trial_until > now:
-        return Membership(tier="superior", until=trial_until, trial=True, limits=LIMITS["superior"])
-    return Membership(tier="guest", until=None, trial=False, limits=LIMITS["guest"])
+        return Membership(tier=plan, until=tok["currentPeriodEnd"], grace=tok["currentPeriodEnd"] <= _now(),
+                          token=tok["_id"], limits=LIMITS[plan])
+    return Membership(tier="guest", until=None, limits=LIMITS["guest"])
+
+
+async def membership(db, user: dict) -> Membership:
+    """The tier in force for a signed-in account: its token, if paid and bound to this email."""
+    tok = await db.tokens.find_one({"_id": user["tokenId"]}) if user.get("tokenId") else None
+    if tok and tok.get("boundEmail") == user["email"]:
+        return _membership_of(tok)
+    return _membership_of(None)
 
 
 # ---- Stripe -----------------------------------------------------------------------
@@ -108,40 +110,62 @@ def _public_url(request: Request) -> str:
     return os.environ.get("PUBLIC_URL", "").strip().rstrip("/") or str(request.base_url).rstrip("/")
 
 
+_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
+
+
 def _new_token() -> str:
-    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
-    raw = "".join(secrets.choice(alphabet) for _ in range(12))
+    raw = "".join(secrets.choice(_ALPHABET) for _ in range(12))
     return f"AIR-{raw[:4]}-{raw[4:8]}-{raw[8:]}"
 
 
 def _new_order() -> str:
-    return "ORD-" + "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(8))
+    return "ORD-" + "".join(secrets.choice(_ALPHABET) for _ in range(8))
+
+
+def _sub_state(sub) -> tuple[str, datetime]:
+    status = "active" if sub["status"] in ("active", "trialing", "past_due") else "inactive"
+    return status, datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc)
 
 
 async def _token_for_session(db, session) -> dict:
-    """The token for a paid Checkout session — created once, found again after."""
+    """The token for a paid Checkout session — created (or, for an upgrade, changed) once."""
     existing = await db.tokens.find_one({"sessionId": session["id"]})
     if existing:
         return existing
+    meta = session.get("metadata") or {}
     sub_id = session.get("subscription")
-    plan = (session.get("metadata") or {}).get("plan", "superior")
-    period_end = None
-    status = "active"
+    status, period_end = ("active", _now() + timedelta(days=31))
     if sub_id:
-        sub = _stripe().Subscription.retrieve(sub_id)
-        period_end = datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc)
-        status = "active" if sub["status"] in ("active", "trialing", "past_due") else "inactive"
+        status, period_end = _sub_state(_stripe().Subscription.retrieve(sub_id))
+
+    upgrade_of = meta.get("upgradeToken")
+    if upgrade_of:
+        old = await db.tokens.find_one({"_id": upgrade_of})
+        if old:
+            if old.get("subscriptionId") and old["subscriptionId"] != sub_id:
+                try:
+                    _stripe().Subscription.cancel(old["subscriptionId"])
+                except Exception:
+                    pass  # already gone; the new plan stands either way
+            await db.tokens.update_one(
+                {"_id": upgrade_of},
+                {"$set": {"plan": "premium", "sessionId": session["id"], "subscriptionId": sub_id,
+                          "status": status, "currentPeriodEnd": period_end, "upgradedAt": _now()}},
+            )
+            return await db.tokens.find_one({"_id": upgrade_of})
+
     doc = {
         "_id": _new_token(),
         "order": _new_order(),
-        "plan": plan,
+        "plan": meta.get("plan", "superior"),
         "sessionId": session["id"],
         "subscriptionId": sub_id,
         "customerId": session.get("customer"),
         "buyerEmail": ((session.get("customer_details") or {}).get("email") or session.get("customer_email") or "").lower(),
+        "deviceId": None,
         "boundEmail": None,
         "status": status,
-        "currentPeriodEnd": period_end or (_now() + timedelta(days=31)),
+        "currentPeriodEnd": period_end,
         "createdAt": _now(),
     }
     await db.tokens.insert_one(doc)
@@ -156,7 +180,7 @@ async def stripe_webhook(request: Request):
     secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
     try:
         event = stripe.Webhook.construct_event(payload, request.headers.get("stripe-signature", ""), secret) if secret \
-            else stripe.Event.construct_from(__import__("json").loads(payload), stripe.api_key)
+            else stripe.Event.construct_from(json.loads(payload), stripe.api_key)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Bad webhook: {e}")
 
@@ -168,49 +192,16 @@ async def stripe_webhook(request: Request):
     elif kind in ("customer.subscription.updated", "customer.subscription.deleted", "invoice.paid", "invoice.payment_failed"):
         sub_id = obj.get("id") if kind.startswith("customer.subscription") else obj.get("subscription")
         if sub_id:
-            if kind.startswith("customer.subscription"):
-                sub = obj
-            else:
-                sub = stripe.Subscription.retrieve(sub_id)
-            status = "active" if sub["status"] in ("active", "trialing", "past_due") else "inactive"
-            await db.tokens.update_one(
-                {"subscriptionId": sub_id},
-                {"$set": {"status": status,
-                          "currentPeriodEnd": datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc)}},
-            )
+            sub = obj if kind.startswith("customer.subscription") else stripe.Subscription.retrieve(sub_id)
+            status, period_end = _sub_state(sub)
+            await db.tokens.update_one({"subscriptionId": sub_id}, {"$set": {"status": status, "currentPeriodEnd": period_end}})
     return {"ok": True}
 
 
-# ---- The web page ------------------------------------------------------------------
-
-_STYLE = """<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{font-family:system-ui;margin:0;padding:32px;background:#0f1115;color:#eee;max-width:560px}
-h1{margin:0 0 6px}p.sub{color:#9aa;margin-top:0}.plan{border:1px solid #2a2f3a;border-radius:16px;padding:18px;margin:14px 0}
-.plan h2{margin:0 0 4px}.plan .price{color:#9aa;margin-bottom:12px}ul{margin:0 0 14px 18px;color:#cfd3da}
-button,a.btn{display:inline-block;background:#4f8cff;color:#fff;border:0;padding:12px 20px;border-radius:12px;font-size:16px;text-decoration:none;cursor:pointer}
-code.tok{display:block;font-size:22px;letter-spacing:2px;background:#1a1e26;padding:14px;border-radius:12px;margin:12px 0;word-break:break-all}
-input{font-size:16px;padding:10px;border-radius:10px;border:1px solid #2a2f3a;background:#1a1e26;color:#eee;width:100%;box-sizing:border-box;margin:8px 0}
-small{color:#9aa}</style>"""
+# ---- Checkout, upgrade, lookup --------------------------------------------------------
 
 
-@router.get("/pay", response_class=HTMLResponse)
-async def pay_page():
-    return f"""<!doctype html><title>Airadar plans</title>{_STYLE}<body>
-<h1>Airadar</h1><p class="sub">Pick a plan. You get a token to paste into the app.</p>
-<div class="plan"><h2>Superior</h2><div class="price">{PRICES['superior']}</div>
-<ul><li>Cloud sync, friends & sharing, recycle bin</li><li>5 past trips · 10 trips ahead · add up to 30 days out</li><li>Past flight lookup</li></ul>
-<form method="post" action="/pay/checkout"><input type="hidden" name="plan" value="superior"><button>Subscribe</button></form></div>
-<div class="plan"><h2>Premium</h2><div class="price">{PRICES['premium']}</div>
-<ul><li>Everything in Superior, no limits</li><li>Flown tracks · Gmail & calendar import</li></ul>
-<form method="post" action="/pay/checkout"><input type="hidden" name="plan" value="premium"><button>Subscribe</button></form></div>
-<p><a href="/pay/lookup" style="color:#9aa">Already paid? Find your token by order number.</a></p>
-</body>"""
-
-
-@router.post("/pay/checkout")
-async def pay_checkout(request: Request, plan: str = Form(...)):
-    if plan not in PLANS:
-        raise HTTPException(status_code=400, detail="Unknown plan.")
+def _checkout(request: Request, plan: str, metadata: dict, discounts: list | None = None):
     stripe = _stripe()
     base = _public_url(request)
     session = stripe.checkout.Session.create(
@@ -218,52 +209,93 @@ async def pay_checkout(request: Request, plan: str = Form(...)):
         line_items=[{"price": _price_id(plan), "quantity": 1}],
         success_url=f"{base}/pay/success?session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"{base}/pay",
-        metadata={"plan": plan},
+        metadata=metadata,
+        **({"discounts": discounts} if discounts else {}),
     )
     return RedirectResponse(session["url"], status_code=303)
 
 
-@router.get("/pay/success", response_class=HTMLResponse)
-async def pay_success(session_id: str, request: Request):
-    stripe = _stripe()
-    session = stripe.checkout.Session.retrieve(session_id)
-    if session.get("payment_status") not in ("paid", "no_payment_required"):
-        return HTMLResponse(f"<!doctype html>{_STYLE}<body><h1>Not paid yet</h1><p class='sub'>Stripe has not confirmed this payment.</p></body>")
-    tok = await _token_for_session(request.app.state.db, session)
-    return f"""<!doctype html><title>Your Airadar token</title>{_STYLE}<body>
-<h1>Thank you</h1><p class="sub">{PLANS[tok['plan']]} · order <b>{tok['order']}</b></p>
-<p>Your token — paste it in the app under Settings › Plan:</p>
-<code class="tok" id="t">{tok['_id']}</code>
-<button onclick="navigator.clipboard.writeText(document.getElementById('t').textContent).then(()=>this.textContent='Copied')">Copy token</button>
-<p><small>Keep the order number: it finds this token again at /pay/lookup. The token works on every device signed in with the first Google account that redeems it, and on no other account.</small></p>
-</body>"""
+@router.post("/pay/checkout")
+async def pay_checkout(request: Request, plan: str = Form(...)):
+    if plan not in PLANS:
+        raise HTTPException(status_code=400, detail="Unknown plan.")
+    return _checkout(request, plan, {"plan": plan})
 
 
-@router.get("/pay/lookup", response_class=HTMLResponse)
-async def pay_lookup(request: Request, order: str | None = None):
-    found = None
-    if order:
-        found = await request.app.state.db.tokens.find_one({"order": order.strip().upper()})
-    result = ""
-    if order and not found:
-        result = "<p style='color:#ff8a80'>No order with that number.</p>"
-    elif found:
-        result = f"<p>{PLANS[found['plan']]} · {'active' if _token_live(found) else 'not active'}</p><code class='tok'>{found['_id']}</code>"
-    return f"""<!doctype html><title>Find your token</title>{_STYLE}<body>
-<h1>Find your token</h1><p class="sub">Enter the order number from your receipt.</p>
-<form method="get"><input name="order" placeholder="ORD-XXXXXXXX" value="{order or ''}"><button>Find</button></form>{result}
-<p><a href="/pay" style="color:#9aa">Back to plans</a></p></body>"""
+def _upgrade_credit_cents(tok: dict) -> int:
+    """The unused share of the current Superior month, in cents, capped at the month's price."""
+    end = tok.get("currentPeriodEnd")
+    if not end:
+        return 0
+    remaining = (end - _now()).total_seconds()
+    fraction = max(0.0, min(1.0, remaining / (30 * 24 * 3600)))
+    return int(round(PRICE_CENTS["superior"] * fraction))
 
 
-# ---- Redeeming in the app -----------------------------------------------------------
-
-
-class Redeem(BaseModel):
+class UpgradeCheck(BaseModel):
     token: str
 
 
-@router.post("/billing/redeem", response_model=Membership)
-async def redeem(body: Redeem, request: Request, user: dict = Depends(current_user)):
+@router.post("/pay/api/upgrade-check")
+async def upgrade_check(body: UpgradeCheck, request: Request):
+    """Is this token a live Superior? If so, what will the first Premium month cost?"""
+    tok = await request.app.state.db.tokens.find_one({"_id": body.token.strip().upper()})
+    if not tok:
+        raise HTTPException(status_code=404, detail="No such token.")
+    if tok["plan"] == "premium":
+        raise HTTPException(status_code=400, detail="This token is already Premium.")
+    if not _token_live(tok):
+        raise HTTPException(status_code=402, detail="This token's subscription is not active.")
+    credit = _upgrade_credit_cents(tok)
+    return {"ok": True, "creditCents": credit, "firstMonthCents": PRICE_CENTS["premium"] - credit,
+            "periodEnd": tok["currentPeriodEnd"].isoformat()}
+
+
+@router.post("/pay/upgrade")
+async def pay_upgrade(request: Request, token: str = Form(...)):
+    db = request.app.state.db
+    code = token.strip().upper()
+    tok = await db.tokens.find_one({"_id": code})
+    if not tok or tok["plan"] != "superior" or not _token_live(tok):
+        raise HTTPException(status_code=400, detail="Only a live Superior token can be upgraded.")
+    credit = _upgrade_credit_cents(tok)
+    discounts = None
+    if credit > 0:
+        coupon = _stripe().Coupon.create(amount_off=credit, currency="usd", duration="once",
+                                         name=f"Unused Superior time ({code})")
+        discounts = [{"coupon": coupon["id"]}]
+    return _checkout(request, "premium", {"plan": "premium", "upgradeToken": code}, discounts)
+
+
+@router.get("/pay/api/lookup")
+async def lookup_api(order: str, request: Request):
+    tok = await request.app.state.db.tokens.find_one({"order": order.strip().upper()})
+    if not tok:
+        raise HTTPException(status_code=404, detail="No order with that number.")
+    return {"token": tok["_id"], "plan": tok["plan"], "active": _token_live(tok)}
+
+
+# ---- The app's side of the token -----------------------------------------------------------
+
+
+class TokenCheck(BaseModel):
+    token: str
+    deviceId: str
+
+
+class TokenStatus(BaseModel):
+    plan: str
+    until: datetime
+    grace: bool
+    boundEmail: str | None  # who, if anyone, has already signed in with it
+
+
+@router.post("/billing/token/check", response_model=TokenStatus)
+async def token_check(body: TokenCheck, request: Request):
+    """
+    The app's first step, before any sign-in: the token is validated and bound to
+    this phone if it is not yet bound to one. Another phone is refused.
+    """
     db = request.app.state.db
     code = body.token.strip().upper()
     tok = await db.tokens.find_one({"_id": code})
@@ -271,11 +303,35 @@ async def redeem(body: Redeem, request: Request, user: dict = Depends(current_us
         raise HTTPException(status_code=404, detail="No such token.")
     if not _token_live(tok):
         raise HTTPException(status_code=402, detail="This token's subscription is not active.")
+    if tok.get("deviceId") and tok["deviceId"] != body.deviceId:
+        raise HTTPException(status_code=403, detail="This token is in use on another phone.")
+    if not tok.get("deviceId"):
+        await db.tokens.update_one({"_id": code}, {"$set": {"deviceId": body.deviceId, "deviceBoundAt": _now()}})
+    return TokenStatus(plan=tok["plan"], until=tok["currentPeriodEnd"], grace=tok["currentPeriodEnd"] <= _now(),
+                       boundEmail=tok.get("boundEmail"))
+
+
+@router.post("/billing/redeem", response_model=Membership)
+async def redeem(body: TokenCheck, request: Request, user: dict = Depends(current_user)):
+    """After Google sign-in: ties the token to this account (first come) and raises the plan."""
+    db = request.app.state.db
+    code = body.token.strip().upper()
+    tok = await db.tokens.find_one({"_id": code})
+    if not tok:
+        raise HTTPException(status_code=404, detail="No such token.")
+    if not _token_live(tok):
+        raise HTTPException(status_code=402, detail="This token's subscription is not active.")
+    if tok.get("deviceId") and tok["deviceId"] != body.deviceId:
+        raise HTTPException(status_code=403, detail="This token is in use on another phone.")
     if tok.get("boundEmail") and tok["boundEmail"] != user["email"]:
-        raise HTTPException(status_code=403, detail="This token belongs to another account.")
+        raise HTTPException(status_code=403, detail="This token was set up with a different Google account.")
+    updates = {}
+    if not tok.get("deviceId"):
+        updates["deviceId"] = body.deviceId
     if not tok.get("boundEmail"):
-        # First redemption: the token is this person's from now on.
-        await db.tokens.update_one({"_id": code}, {"$set": {"boundEmail": user["email"], "boundAt": _now()}})
+        updates.update({"boundEmail": user["email"], "boundAt": _now()})
+    if updates:
+        await db.tokens.update_one({"_id": code}, {"$set": updates})
     user = await db.users.find_one_and_update({"_id": user["_id"]}, {"$set": {"tokenId": code}}, return_document=True)
     return await membership(db, user)
 
@@ -283,3 +339,23 @@ async def redeem(body: Redeem, request: Request, user: dict = Depends(current_us
 @router.get("/billing/me", response_model=Membership)
 async def my_membership(request: Request, user: dict = Depends(current_user)):
     return await membership(request.app.state.db, user)
+
+
+# ---- Pages ------------------------------------------------------------------------------------
+
+from .paypage import PAGE, SUCCESS, STYLE  # noqa: E402
+
+
+@router.get("/pay", response_class=HTMLResponse)
+async def pay_page():
+    return PAGE
+
+
+@router.get("/pay/success", response_class=HTMLResponse)
+async def pay_success(session_id: str, request: Request):
+    stripe = _stripe()
+    session = stripe.checkout.Session.retrieve(session_id)
+    if session.get("payment_status") not in ("paid", "no_payment_required"):
+        return HTMLResponse(f"<!doctype html>{STYLE}<body><main><h1>Not paid yet</h1><p class='sub'>Stripe has not confirmed this payment.</p></main></body>")
+    tok = await _token_for_session(request.app.state.db, session)
+    return SUCCESS.replace("{{PLAN}}", PLANS[tok["plan"]]).replace("{{ORDER}}", tok["order"]).replace("{{TOKEN}}", tok["_id"])

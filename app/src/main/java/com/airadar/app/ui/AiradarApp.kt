@@ -129,25 +129,18 @@ fun AiradarApp() {
     // A plan limit was hit somewhere (search, import, a link): explain, offer more.
     val limitHit by FlightStore.limitHit.observeAsState()
     limitHit?.let { hit ->
-        val goSignIn: () -> Unit = {
-            FlightStore.clearLimitHit()
-            overlay = Overlay.SETTINGS
-        }
-        val goWeb: () -> Unit = {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Plans.payUrl)))
-        }
-        val redeemToken: (String) -> Unit = { token -> settingsViewModel.redeem(token) { FlightStore.clearLimitHit() } }
-        val redeemError by settingsViewModel.redeemError.observeAsState()
-        val redeeming by settingsViewModel.redeeming.observeAsState(false)
         MembershipDialog(
             current = settings.membership.tier,
             reason = hit.reason,
             onDismiss = { FlightStore.clearLimitHit() },
-            onSignIn = if (settings.isLoggedIn) null else goSignIn,
-            onGetPlan = if (settings.isLoggedIn) goWeb else null,
-            onRedeem = if (settings.isLoggedIn) redeemToken else null,
-            redeemError = redeemError,
-            busy = redeeming
+            onGetPlan = {
+                FlightStore.clearLimitHit()
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Plans.payUrl)))
+            },
+            onEnterToken = {
+                FlightStore.clearLimitHit()
+                overlay = Overlay.SETTINGS
+            }
         )
     }
 

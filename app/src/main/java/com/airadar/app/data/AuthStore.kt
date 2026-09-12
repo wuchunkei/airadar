@@ -2,6 +2,7 @@ package com.airadar.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.provider.Settings
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -45,9 +46,33 @@ object AuthStore {
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
         _user.value = load()
+        _checkedToken.value = loadCheckedToken()
+        deviceId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
     }
 
     val isSignedIn: Boolean get() = ::prefs.isInitialized && prefs.getString("refreshToken", null) != null
+
+    /** A stable id for this phone; the token binds to it. */
+    lateinit var deviceId: String
+        private set
+
+    private val _checkedToken = MutableLiveData<CheckedToken?>(null)
+    val checkedToken: LiveData<CheckedToken?> = _checkedToken
+
+    fun saveCheckedToken(t: CheckedToken?) {
+        prefs.edit().apply {
+            if (t == null) remove("ct.token").remove("ct.tier").remove("ct.until").remove("ct.email")
+            else putString("ct.token", t.token).putString("ct.tier", t.tier.name)
+                .putLong("ct.until", t.until.toEpochMilli()).putString("ct.email", t.boundEmail)
+        }.apply()
+        _checkedToken.postValue(t)
+    }
+
+    private fun loadCheckedToken(): CheckedToken? {
+        val token = prefs.getString("ct.token", null) ?: return null
+        val tier = runCatching { Tier.valueOf(prefs.getString("ct.tier", null) ?: "") }.getOrDefault(Tier.SUPERIOR)
+        return CheckedToken(token, tier, Instant.ofEpochMilli(prefs.getLong("ct.until", 0L)), prefs.getString("ct.email", null))
+    }
 
     val accessToken: String? get() = prefs.getString("accessToken", null)
     val refreshToken: String? get() = prefs.getString("refreshToken", null)
@@ -82,7 +107,7 @@ object AuthStore {
         prefs.edit()
             .putString("tier", m.tier.name)
             .putLong("tierUntil", m.until?.toEpochMilli() ?: 0L)
-            .putBoolean("tierTrial", m.trial)
+            .putBoolean("tierGrace", m.grace)
             .putString("planToken", m.token)
             .apply()
         _user.postValue(load())
@@ -94,12 +119,15 @@ object AuthStore {
         // A lapsed plan is a guest plan until the server says otherwise; a paid
         // period gets three days of grace after it ends, as on the server.
         val lapsed = until != null && until.plus(3, java.time.temporal.ChronoUnit.DAYS).isBefore(Instant.now())
-        return Membership(if (lapsed) Tier.GUEST else tier, until, prefs.getBoolean("tierTrial", false), prefs.getString("planToken", null))
+        return Membership(if (lapsed) Tier.GUEST else tier, until, prefs.getBoolean("tierGrace", false), prefs.getString("planToken", null))
     }
 
+    /** Signs out; the checked token stays, so signing back in needs no re-entry. */
     fun clear() {
+        val keep = loadCheckedToken()
         prefs.edit().clear().apply()
         _user.postValue(null)
+        saveCheckedToken(keep)
     }
 
     private fun load(): AuthUser? {

@@ -149,14 +149,27 @@ object BackendClient {
             runCatching { java.time.OffsetDateTime.parse(raw).toInstant() }.getOrNull()
                 ?: runCatching { LocalDateTime.parse(raw.take(19)).atOffset(java.time.ZoneOffset.UTC).toInstant() }.getOrNull()
         },
-        trial = o.optBoolean("trial", false),
+        grace = o.optBoolean("grace", false),
         token = o.text("token")
     )
 
-    /** A token bought on the web page: binds it to this account (first come) and raises the plan. */
+    /** Before sign-in: is this token live, and may this phone use it? Binds the phone on first use. */
+    suspend fun checkToken(token: String): CheckedToken = withContext(Dispatchers.IO) {
+        val code = token.trim().uppercase()
+        val o = call("POST", "billing/token/check", JSONObject().put("token", code).put("deviceId", AuthStore.deviceId))
+        CheckedToken(
+            token = code,
+            tier = runCatching { Tier.valueOf(o.optString("plan").uppercase()) }.getOrDefault(Tier.SUPERIOR),
+            until = o.text("until")?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant() }.getOrNull() }
+                ?: java.time.Instant.now(),
+            boundEmail = o.text("boundEmail")
+        ).also(AuthStore::saveCheckedToken)
+    }
+
+    /** After sign-in: ties the token to this account (first come) and raises the plan. */
     suspend fun redeem(token: String): Membership = withContext(Dispatchers.IO) {
-        val o = authed("POST", "billing/redeem", JSONObject().put("token", token.trim().uppercase()))
-        membershipFromJson(o).also(AuthStore::saveMembership)
+        val body = JSONObject().put("token", token.trim().uppercase()).put("deviceId", AuthStore.deviceId)
+        membershipFromJson(authed("POST", "billing/redeem", body)).also(AuthStore::saveMembership)
     }
 
     suspend fun lookup(email: String): Person = withContext(Dispatchers.IO) {

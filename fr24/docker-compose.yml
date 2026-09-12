@@ -1,8 +1,0 @@
-services:
-  history:
-    build: .
-    container_name: airadar-history
-    restart: unless-stopped
-    env_file: .env
-    ports:
-      - "8090:8090"

@@ -18,11 +18,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -39,7 +34,6 @@ private val rows = listOf(
     PlanRow("Cloud sync", "—", "✓", "✓"),
     PlanRow("Friends & sharing", "—", "✓", "✓"),
     PlanRow("Recycle bin", "—", "✓", "✓"),
-    PlanRow("Past flight lookup", "—", "✓", "✓"),
     PlanRow("Flown tracks", "—", "—", "✓"),
     PlanRow("Gmail & calendar import", "—", "—", "✓"),
     PlanRow("Price", "Free", Plans.SUPERIOR_PRICE, Plans.PREMIUM_PRICE)
@@ -55,14 +49,11 @@ fun MembershipDialog(
     current: Tier,
     reason: String? = null,
     onDismiss: () -> Unit,
-    onSignIn: (() -> Unit)? = null,
-    /** Signed in: opens the web page to pay, and takes a pasted token. */
-    onGetPlan: (() -> Unit)? = null,
-    onRedeem: ((token: String) -> Unit)? = null,
-    redeemError: String? = null,
-    busy: Boolean = false
+    /** Opens the web page to buy a plan. */
+    onGetPlan: () -> Unit,
+    /** Goes to Settings › Account to enter the token. */
+    onEnterToken: () -> Unit
 ) {
-    var token by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Plans", fontWeight = FontWeight.Bold) },
@@ -92,60 +83,33 @@ fun MembershipDialog(
                     }
                 }
                 Text(
-                    "New accounts get Superior free for the first 30 days. Paid plans keep working for 3 days after a period ends.",
+                    "Plans are bought on the web and unlocked in the app with a token. Paid plans keep working for 3 days after a period ends.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp)
                 )
-                onGetPlan?.let { getPlan ->
-                    Column(
-                        modifier = Modifier.padding(top = 14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (current != Tier.PREMIUM) {
-                            Button(
-                                onClick = getPlan,
-                                enabled = !busy,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(46.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) { Text("Get a plan on the web", fontWeight = FontWeight.SemiBold) }
-                        }
-                        onRedeem?.let { redeem ->
-                            OutlinedTextField(
-                                value = token,
-                                onValueChange = { token = it.uppercase() },
-                                label = { Text("Token from the web page") },
-                                placeholder = { Text("AIR-XXXX-XXXX-XXXX") },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedButton(
-                                onClick = { redeem(token) },
-                                enabled = !busy && token.length >= 12,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(46.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) { Text("Redeem token") }
-                            redeemError?.let {
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
+                Column(
+                    modifier = Modifier.padding(top = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onGetPlan,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("Get a plan on the web", fontWeight = FontWeight.SemiBold) }
+                    OutlinedButton(
+                        onClick = onEnterToken,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("I have a token") }
                 }
             }
         },
-        confirmButton = {
-            onSignIn?.let {
-                Button(onClick = it, enabled = !busy) { Text("Continue with Google") }
-            } ?: TextButton(onClick = onDismiss) { Text("Close") }
-        },
-        dismissButton = {
-            if (onSignIn != null) TextButton(onClick = onDismiss) { Text("Not now") }
-        }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 
