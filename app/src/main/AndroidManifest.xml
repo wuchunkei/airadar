@@ -30,6 +30,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="airadar" android:host="s" />
             </intent-filter>
+            <!-- And https://<link.host>/s/<token> once the server has a domain and TLS -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="${linkHost}" android:pathPrefix="/s/" />
+            </intent-filter>
         </activity>
 
     </application>

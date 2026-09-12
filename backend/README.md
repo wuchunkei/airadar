@@ -47,5 +47,24 @@ cd airadar && git pull && cd backend && docker compose up -d --build
 | DELETE | `/trips/{id}` | Bearer; to the recycle bin (30 days) |
 | POST | `/trips/{id}/restore` | Bearer |
 
-Open port 8080 in the server firewall (or put nginx + TLS in front — recommended
-before the app talks to it over the public internet).
+## HTTPS
+
+Links people share should be `https://`, and that needs a domain name — a
+certificate cannot be issued for a bare IP. Once a domain's A record points at
+this server:
+
+```bash
+# in .env
+DOMAIN=airadar.example.com
+PUBLIC_URL=https://airadar.example.com
+ANDROID_SHA256_CERTS=AA:BB:...   # from Android Studio > Gradle > signingReport
+
+docker compose --profile https up -d
+```
+
+Caddy takes ports 80/443, fetches a Let's Encrypt certificate and forwards to
+the API. Then set `backend.url=https://airadar.example.com` and
+`link.host=airadar.example.com` in the app's `local.properties`, and Android
+opens shared links straight in the app.
+
+Without a domain the API stays on plain HTTP :8080 and links use the IP.

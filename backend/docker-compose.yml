@@ -22,5 +22,24 @@ services:
     volumes:
       - mongo-data:/data/db
 
+  # HTTPS in front of the API. Needs DOMAIN in .env and that domain's A record
+  # pointing here; Caddy fetches and renews the Let's Encrypt certificate itself.
+  # Start it with: docker compose --profile https up -d
+  caddy:
+    image: caddy:2
+    container_name: airadar-caddy
+    restart: unless-stopped
+    profiles: ["https"]
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    command: caddy reverse-proxy --from ${DOMAIN} --to airadar:8080
+    volumes:
+      - caddy-data:/data
+    depends_on:
+      - airadar
+
 volumes:
   mongo-data:
+  caddy-data:

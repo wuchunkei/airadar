@@ -43,12 +43,12 @@ class MainActivity : ComponentActivity() {
         handleLink(intent)
     }
 
-    /** airadar://s/<token> — a trip someone shared as a link. */
+    /** airadar://s/<token> or https://<host>/s/<token> — a trip someone shared as a link. */
     private fun handleLink(intent: Intent?) {
         val data = intent?.data ?: return
-        if (data.scheme == "airadar" && data.host == "s") {
-            data.lastPathSegment?.let { DeepLinks.shareToken.value = it }
-        }
+        val isLink = (data.scheme == "airadar" && data.host == "s") ||
+                (data.scheme == "https" && data.pathSegments.firstOrNull() == "s")
+        if (isLink) data.lastPathSegment?.let { DeepLinks.shareToken.value = it }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

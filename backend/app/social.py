@@ -11,6 +11,7 @@ the trip goes into their own list). A link share has a token instead of a
 recipient; whoever opens it may copy the trip, and no block is shown for it.
 """
 
+import os
 import secrets
 from datetime import datetime, timezone
 
@@ -28,6 +29,11 @@ router = APIRouter(tags=["social"])
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def public_url(request: Request) -> str:
+    """Where links should point: PUBLIC_URL once TLS and a domain exist, else this server as reached."""
+    return os.environ.get("PUBLIC_URL", "").strip().rstrip("/") or str(request.base_url).rstrip("/")
 
 
 def _given_name(user: dict) -> str:
@@ -202,6 +208,7 @@ class Share(BaseModel):
     status: str  # pending | accepted | rejected | together
     kind: str  # friend | link
     token: str | None = None
+    url: str | None = None  # the shareable link, for link shares
     person: Person | None = None  # the other party, as seen from the caller
     createdAt: datetime
 
@@ -214,10 +221,12 @@ class Respond(BaseModel):
     action: str  # accept | reject | together
 
 
-def _share_out(doc: dict, person: dict | None) -> Share:
+def _share_out(doc: dict, person: dict | None, base: str | None = None) -> Share:
+    token = doc.get("token")
     return Share(
         id=str(doc["_id"]), tripId=doc["tripId"], status=doc["status"], kind=doc["kind"],
-        token=doc.get("token"), person=_person(person) if person else None, createdAt=doc["createdAt"],
+        token=token, url=f"{base}/s/{token}" if token and base else None,
+        person=_person(person) if person else None, createdAt=doc["createdAt"],
     )
 
 
@@ -244,11 +253,11 @@ async def share_trip(trip_id: str, body: ShareRequest, request: Request, user: d
 
     existing = await db.shares.find_one({"tripKey": trip["_id"], "kind": "link"})
     if existing:
-        return _share_out(existing, None)
+        return _share_out(existing, None, public_url(request))
     doc = {"tripKey": trip["_id"], "tripId": trip_id, "ownerId": user["_id"], "kind": "link",
            "token": secrets.token_urlsafe(12), "status": "accepted", "createdAt": _now()}
     await db.shares.insert_one(doc)
-    return _share_out(doc, None)
+    return _share_out(doc, None, public_url(request))
 
 
 @router.get("/shares/outgoing", response_model=list[Share])
@@ -318,6 +327,7 @@ async def unshare(share_id: str, request: Request, user: dict = Depends(current_
 class LinkedTrip(BaseModel):
     trip: Trip
     owner: Person
+    ownerName: str  # full name, for "Shared by ..."
 
 
 async def _by_token(db, token: str) -> tuple[dict, dict, dict]:
@@ -332,7 +342,7 @@ async def _by_token(db, token: str) -> tuple[dict, dict, dict]:
 @router.get("/shares/link/{token}", response_model=LinkedTrip)
 async def link_trip(token: str, request: Request):
     _, trip, owner = await _by_token(request.app.state.db, token)
-    return LinkedTrip(trip=trip_out(trip), owner=_person(owner))
+    return LinkedTrip(trip=trip_out(trip), owner=_person(owner), ownerName=owner.get("name") or _given_name(owner))
 
 
 @router.post("/shares/link/{token}/copy", response_model=Trip)
@@ -359,9 +369,26 @@ async def link_page(token: str, request: Request):
     return f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{t.flightNumber} · Airadar</title>
 <body style="font-family:system-ui;margin:0;padding:32px;background:#0f1115;color:#eee">
-<p style="color:#9aa">{_given_name(owner)} shared a flight</p>
+<p style="color:#9aa">{owner.get("name") or _given_name(owner)} shared a flight</p>
 <h1 style="margin:0">{t.flightNumber} <span style="color:#9aa;font-weight:400">{t.airlineName}</span></h1>
 <h2 style="margin:16px 0">{t.departure} → {t.arrival}</h2>
 <p>{t.departureTime.strftime('%Y-%m-%d %H:%M')} → {t.arrivalTime.strftime('%H:%M')}</p>
 <p style="margin-top:32px"><a href="airadar://s/{token}" style="background:#4f8cff;color:#fff;padding:14px 22px;border-radius:12px;text-decoration:none">Open in Airadar</a></p>
 </body>"""
+
+
+@router.get("/.well-known/assetlinks.json")
+async def assetlinks():
+    """
+    Lets Android open https://<PUBLIC_URL>/s/... straight in the app (App Links).
+    ANDROID_SHA256_CERTS: comma-separated SHA-256 fingerprints of the signing keys.
+    """
+    certs = [c.strip() for c in os.environ.get("ANDROID_SHA256_CERTS", "").split(",") if c.strip()]
+    return [{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "com.airadar.app",
+            "sha256_cert_fingerprints": certs,
+        },
+    }]

@@ -156,13 +156,13 @@ object BackendClient {
         authed("DELETE", "friends/$friendshipId")
     }
 
-    /** Shares with a friend; with no [toUserId] a link is minted and its token returned. */
+    /** Shares with a friend; with no [toUserId] a link is minted and its URL returned. */
     suspend fun shareTrip(tripId: String, toUserId: String? = null): Pair<TripShare?, String?> =
         withContext(Dispatchers.IO) {
             val body = JSONObject()
             toUserId?.let { body.put("toUserId", it) }
             val o = authed("POST", "trips/$tripId/share", body)
-            shareFromJson(o) to o.text("token")
+            shareFromJson(o) to (o.text("url") ?: o.text("token")?.let { linkUrl(it) })
         }
 
     /** Friend shares of my trips: tripId → shares. */
@@ -193,12 +193,15 @@ object BackendClient {
         authed("DELETE", "shares/$shareId")
     }
 
+    class LinkedTrip(val flight: Flight, val owner: Person, val ownerName: String)
+
     /** What a shared link points at; needs no sign-in. */
-    suspend fun linkedTrip(token: String): Pair<Flight, Person> = withContext(Dispatchers.IO) {
+    suspend fun linkedTrip(token: String): LinkedTrip = withContext(Dispatchers.IO) {
         val o = call("GET", "shares/link/$token")
         val trip = flightFromJson(o.getJSONObject("trip"))
         ensureAirports(trip.departure, trip.arrival)
-        trip to personFromJson(o.getJSONObject("owner"))
+        val owner = personFromJson(o.getJSONObject("owner"))
+        LinkedTrip(trip, owner, o.text("ownerName") ?: owner.givenName)
     }
 
     suspend fun copyLinkedTrip(token: String): Flight = withContext(Dispatchers.IO) {

@@ -1,5 +1,22 @@
 package com.airadar.app.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import java.time.format.DateTimeFormatter
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FlightTakeoff
@@ -16,8 +33,6 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
 import com.airadar.app.data.BackendClient
 import com.airadar.app.data.FlightStore
-import com.airadar.app.data.Person
-import com.airadar.app.ui.components.FlightDetailSheet
 import com.airadar.app.ui.screens.FriendsScreen
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -107,8 +122,9 @@ fun AiradarApp() {
         null -> Unit
     }
 
-    // A trip someone sent as a link: shown for the traveller to take into Trips.
-    var linked by remember { mutableStateOf<Pair<Flight, Person>?>(null) }
+    // A trip someone sent as a link: a small card of the flight, who shared it,
+    // and one button to take it into Trips.
+    var linked by remember { mutableStateOf<BackendClient.LinkedTrip?>(null) }
     val token by DeepLinks.shareToken
     LaunchedEffect(token) {
         val t = token ?: return@LaunchedEffect
@@ -118,26 +134,25 @@ fun AiradarApp() {
             DeepLinks.shareToken.value = null
         }
     }
-    linked?.let { (flight, owner) ->
-        FlightDetailSheet(
-            flight = flight.copy(airlineName = "${owner.givenName} shared · ${flight.airlineName}"),
-            forceSystemZone = settings.forceSystemZone,
-            onDismiss = {
-                linked = null
-                DeepLinks.shareToken.value = null
-            },
-            primaryAction = "Add to trips" to {
+    linked?.let { link ->
+        val close = {
+            linked = null
+            DeepLinks.shareToken.value = null
+        }
+        LinkedTripDialog(
+            link = link,
+            onDismiss = close,
+            onAdd = {
                 val t = token
                 scope.launch {
                     if (settings.isLoggedIn && t != null) {
                         runCatching { BackendClient.copyLinkedTrip(t) }
                         runCatching { FlightStore.syncFromServer() }
                     } else {
-                        tripViewModel.addFlight(flight)
+                        tripViewModel.addFlight(link.flight)
                     }
-                    remind(flight)
-                    linked = null
-                    DeepLinks.shareToken.value = null
+                    remind(link.flight)
+                    close()
                     tab = Tab.TRIP
                 }
             }
@@ -213,4 +228,65 @@ fun AiradarApp() {
             )
         }
     }
+}
+
+@Composable
+private fun LinkedTripDialog(link: BackendClient.LinkedTrip, onDismiss: () -> Unit, onAdd: () -> Unit) {
+    val f = link.flight
+    val clock = DateTimeFormatter.ofPattern("HH:mm")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(f.flightNumber, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(f.airlineName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        text = {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(f.departure, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        Text(f.departureAirport?.city ?: "", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("→", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(f.arrival, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        Text(f.arrivalAirport?.city ?: "", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Text(
+                    "${f.departureTime.toLocalDate()} · ${f.departureTime.format(clock)} → ${f.arrivalTime.format(clock)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                Row(modifier = Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .background(link.owner.tint, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(link.ownerName.take(1).uppercase(), color = Color.White,
+                            style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        "Shared by ${link.ownerName}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = link.owner.tint,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = { Button(onClick = onAdd) { Text("Add to trips") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
 }

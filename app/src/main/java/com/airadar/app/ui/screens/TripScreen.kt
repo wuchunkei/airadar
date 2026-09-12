@@ -100,6 +100,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -250,6 +251,22 @@ fun TripScreen(
                 }
             }
     ) {
+        // Friends, where My keeps Settings: top right, over the list.
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp)
+                .size(44.dp)
+                .zIndex(1f),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            tonalElevation = 3.dp
+        ) {
+            IconButton(onClick = onFriendsClick) {
+                Icon(Icons.Outlined.People, contentDescription = "Friends", tint = MaterialTheme.colorScheme.onSurface)
+            }
+        }
+
         PullIndicator(
             pull = pull,
             refreshPx = refreshPx,
@@ -280,7 +297,7 @@ fun TripScreen(
             // "Now" marks the present: either flights in the air, or simply the
             // boundary between what has been flown and what is ahead.
             if (airborne.isNotEmpty()) {
-                item(key = "now-header") { PresentHeader("Now", onFriendsClick) }
+                item(key = "now-header") { SectionTitle("Now") }
                 // Now is today by definition; no heading needed.
                 flightItems(airborne, forceSystemZone, dateHeadings = false, onDelete = delete, swipe = swipe) { selectedId = it.id }
                 item(key = "coming-divider") { TimeDivider() }
@@ -292,7 +309,7 @@ fun TripScreen(
                     Crossfade(
                         targetState = if (flyingToday) "Now" else "Coming",
                         label = "sectionTitle"
-                    ) { title -> PresentHeader(title, onFriendsClick) }
+                    ) { title -> SectionTitle(title) }
                 }
             }
 
@@ -367,28 +384,6 @@ fun TripScreen(
     }
 
     shareFor?.let { ShareSheet(flight = it, onDismiss = { shareFor = null }) }
-}
-
-/** The section title on the present line, with the Friends door on its right. */
-@Composable
-private fun PresentHeader(title: String, onFriendsClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        SectionTitle(title)
-        Surface(
-            modifier = Modifier.size(44.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 3.dp
-        ) {
-            IconButton(onClick = onFriendsClick) {
-                Icon(Icons.Outlined.People, contentDescription = "Friends", tint = MaterialTheme.colorScheme.onSurface)
-            }
-        }
-    }
 }
 
 /** Accept (green) · Together (yellow) · Reject (red); an accepted trip can still be taken together. */

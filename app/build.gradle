@@ -21,6 +21,8 @@ android {
         buildConfigField 'String', 'BACKEND_URL', secret('backend.url')
         buildConfigField 'String', 'BACKEND_TOKEN', secret('backend.token')
         buildConfigField 'String', 'GOOGLE_WEB_CLIENT_ID', secret('google.webClientId')
+        // Domain for https://<host>/s/<token> App Links; a placeholder until there is one.
+        manifestPlaceholders = [linkHost: localProps.getProperty('link.host', 'links.airadar.invalid')]
         minSdk 26
         targetSdk 34
         versionCode 1

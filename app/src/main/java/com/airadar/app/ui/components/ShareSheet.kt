@@ -19,14 +19,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,8 +51,9 @@ import com.airadar.app.data.ShareStatus
 import kotlinx.coroutines.launch
 
 /**
- * Share one of my trips: straight to friends (they get a card to accept, reject
- * or take together), or as a link — copied, or handed to any other app.
+ * Share one of my trips. With friends: a "via" list whose first row is the link
+ * (copy it, or hand it to any app) followed by each friend to send to directly.
+ * Without friends: just the two link buttons.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +62,7 @@ fun ShareSheet(flight: Flight, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var friends by remember { mutableStateOf<List<Friend>>(emptyList()) }
+    var friends by remember { mutableStateOf<List<Friend>?>(null) }
     var chosen by remember { mutableStateOf<Set<String>>(emptySet()) }
     var note by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
@@ -70,6 +72,32 @@ fun ShareSheet(flight: Flight, onDismiss: () -> Unit) {
             .filter { it.status == FriendStatus.ACCEPTED }
     }
     val alreadyShared = flight.shares.associate { it.person.id to it.status }
+
+    val copyLink: () -> Unit = {
+        scope.launch {
+            mintLink(flight)?.let { url ->
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Airadar trip", url))
+                note = "Link copied."
+            } ?: run { note = "Could not create a link." }
+        }
+    }
+    val sendLink: () -> Unit = {
+        scope.launch {
+            mintLink(flight)?.let { url ->
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "${flight.flightNumber} ${flight.departure} → ${flight.arrival}")
+                    putExtra(
+                        Intent.EXTRA_TEXT,
+                        "${flight.flightNumber} ${flight.departure} → ${flight.arrival} on " +
+                                "${flight.departureTime.toLocalDate()}\n$url"
+                    )
+                }
+                context.startActivity(Intent.createChooser(send, "Share trip"))
+            } ?: run { note = "Could not create a link." }
+        }
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
@@ -89,135 +117,128 @@ fun ShareSheet(flight: Flight, onDismiss: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Text(
-                "Friends",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 20.dp, bottom = 6.dp)
-            )
-            if (friends.isEmpty()) {
-                Text(
-                    "No friends yet — add some from the Friends page.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            friends.forEach { f ->
-                val status = alreadyShared[f.person.id]
-                val selected = f.person.id in chosen
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(
-                            if (status == null) Modifier.clickable {
-                                chosen = if (selected) chosen - f.person.id else chosen + f.person.id
-                            } else Modifier
-                        )
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            val list = friends
+            when {
+                list == null -> Unit
+                list.isEmpty() -> Row(
+                    modifier = Modifier.padding(top = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(
+                    OutlinedButton(onClick = copyLink, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
+                        Text("Copy link")
+                    }
+                    OutlinedButton(onClick = sendLink, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
+                        Text("Share via…")
+                    }
+                }
+                else -> {
+                    Text(
+                        "Via",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 20.dp, bottom = 6.dp)
+                    )
+                    // The link comes first: it reaches anyone, app or not.
+                    Row(
                         modifier = Modifier
-                            .size(28.dp)
-                            .background(f.person.tint, CircleShape),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (selected) Icon(Icons.Outlined.Check, contentDescription = null, tint = Color.White)
-                        else Text(f.person.givenName.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                    Text(
-                        f.person.givenName,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = f.person.tint,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(start = 12.dp)
-                    )
-                    status?.let {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(MaterialTheme.colorScheme.primary, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.Link, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        }
                         Text(
-                            it.label(),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = it.blockColor()
+                            "Link",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 12.dp)
+                        )
+                        TextButton(onClick = copyLink) { Text("Copy") }
+                        TextButton(onClick = sendLink) { Text("Send…") }
+                    }
+                    list.forEach { f ->
+                        val status = alreadyShared[f.person.id]
+                        val selected = f.person.id in chosen
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (status == null) Modifier.clickable {
+                                        chosen = if (selected) chosen - f.person.id else chosen + f.person.id
+                                    } else Modifier
+                                )
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .background(f.person.tint, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (selected) Icon(Icons.Outlined.Check, contentDescription = null, tint = Color.White)
+                                else Text(f.person.givenName.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                            Text(
+                                f.person.givenName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = f.person.tint,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 12.dp)
+                            )
+                            status?.let {
+                                Text(it.label(), style = MaterialTheme.typography.labelMedium, color = it.blockColor())
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                sending = true
+                                val people = list.filter { it.person.id in chosen }.map { it.person }
+                                people.forEach { runCatching { FlightStore.shareWith(flight, it) } }
+                                sending = false
+                                onDismiss()
+                            }
+                        },
+                        enabled = chosen.isNotEmpty() && !sending,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .height(46.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            if (chosen.size <= 1) "Send to friend" else "Send to ${chosen.size} friends",
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
             }
-            if (friends.isNotEmpty()) {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            sending = true
-                            val people = friends.filter { it.person.id in chosen }.map { it.person }
-                            people.forEach { runCatching { FlightStore.shareWith(flight, it) } }
-                            sending = false
-                            onDismiss()
-                        }
-                    },
-                    enabled = chosen.isNotEmpty() && !sending,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        if (chosen.size <= 1) "Send to friend" else "Send to ${chosen.size} friends",
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
 
-            HorizontalDivider(Modifier.padding(vertical = 16.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            mintLink(flight)?.let { url ->
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Airadar trip", url))
-                                note = "Link copied."
-                            } ?: run { note = "Could not create a link." }
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
-                ) { Text("Copy link") }
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            mintLink(flight)?.let { url ->
-                                val send = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_SUBJECT, "${flight.flightNumber} ${flight.departure} → ${flight.arrival}")
-                                    putExtra(
-                                        Intent.EXTRA_TEXT,
-                                        "${flight.flightNumber} ${flight.departure} → ${flight.arrival} on " +
-                                                "${flight.departureTime.toLocalDate()}\n$url"
-                                    )
-                                }
-                                context.startActivity(Intent.createChooser(send, "Share trip"))
-                            } ?: run { note = "Could not create a link." }
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
-                ) { Text("Share via…") }
-            }
             note?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
+                    modifier = Modifier.padding(top = 8.dp)
                 )
             }
+            Box(Modifier.height(16.dp))
         }
     }
 }
 
 private suspend fun mintLink(flight: Flight): String? =
-    runCatching { BackendClient.shareTrip(flight.id).second?.let { BackendClient.linkUrl(it) } }.getOrNull()
+    runCatching { BackendClient.shareTrip(flight.id).second }.getOrNull()
 
 fun ShareStatus.label(): String = when (this) {
     ShareStatus.PENDING -> "Pending"
