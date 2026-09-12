@@ -37,9 +37,7 @@ class Flight(BaseModel):
     delayMinutes: int = 0
     callsign: str | None = None
 
-    # Which provider answered, and whether the primary one had to be bypassed.
     source: str
-    fallback: bool = False
 
 
 class Airport(BaseModel):

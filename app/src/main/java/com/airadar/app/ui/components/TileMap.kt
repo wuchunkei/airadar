@@ -130,7 +130,7 @@ fun TileMap(
                         outlinePaint.color = routeColor
                         outlinePaint.strokeWidth = (3f + route.weight).coerceAtMost(9f)
                         outlinePaint.isAntiAlias = true
-                        setMilestoneManagers(listOf(directionArrows(routeColor)))
+                        setMilestoneManagers(arrayListOf(directionArrows(routeColor)))
                     }
                 )
             }
@@ -142,7 +142,7 @@ fun TileMap(
                         outlinePaint.color = routeColor
                         outlinePaint.strokeWidth = 4f
                         outlinePaint.isAntiAlias = true
-                        setMilestoneManagers(listOf(directionArrows(routeColor)))
+                        setMilestoneManagers(arrayListOf(directionArrows(routeColor)))
                     }
                 )
             }
