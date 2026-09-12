@@ -1,0 +1,18 @@
+# Secrets and machine-specific config — never commit
+local.properties
+
+# Build output
+build/
+app/build/
+.gradle/
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+backend/.env
+
+# Claude Code session state
+.claude/

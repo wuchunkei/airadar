@@ -1,0 +1,3 @@
+[submodule "backend/vendor/fuck-ume-trip"]
+	path = backend/vendor/fuck-ume-trip
+	url = https://github.com/andelf/fuck-ume-trip.git
