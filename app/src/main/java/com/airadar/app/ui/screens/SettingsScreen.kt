@@ -6,6 +6,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -52,6 +57,9 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settings.observeAsState(UserSettings())
+    val authError by viewModel.authError.observeAsState()
+    val signingIn by viewModel.signingIn.observeAsState(false)
+    val activity = LocalContext.current
     val systemZoneName = remember {
         ZonedDateTime.now().format(DateTimeFormatter.ofPattern("z", Locale.ENGLISH))
     }
@@ -85,30 +93,58 @@ fun SettingsScreen(
         ) {
             item {
                 SettingsSection("Account") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                if (settings.isLoggedIn) settings.userName ?: "Signed in"
-                                else "Not signed in",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                settings.userEmail ?: "Sync trips across your devices",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        TextButton(
-                            onClick = {
-                                if (settings.isLoggedIn) viewModel.signOut() else viewModel.signIn()
-                            }
+                    if (settings.isLoggedIn) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(if (settings.isLoggedIn) "Sign out" else "Sign in")
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    settings.userName ?: "Signed in",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    settings.userEmail ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            TextButton(onClick = viewModel::signOut) { Text("Sign out") }
+                        }
+                    } else {
+                        Text(
+                            "Keep your trips on every device and in the recycle bin for 30 days.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = { viewModel.signIn(activity) },
+                            enabled = !signingIn,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 12.dp)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (signingIn) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                Text("Continue with Google", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        authError?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
                         }
                     }
                 }

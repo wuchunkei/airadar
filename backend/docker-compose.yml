@@ -6,8 +6,21 @@ services:
     env_file: .env
     ports:
       - "8080:8080"
+    depends_on:
+      - mongo
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health')"]
       interval: 60s
       timeout: 5s
       retries: 3
+
+  mongo:
+    image: mongo:7
+    container_name: airadar-mongo
+    restart: unless-stopped
+    # Not published: only the backend container can reach it.
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:

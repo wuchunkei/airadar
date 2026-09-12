@@ -7,6 +7,10 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import com.airadar.app.data.ThemeMode
+import androidx.lifecycle.Observer
+import com.airadar.app.data.AuthStore
+import com.airadar.app.data.AuthUser
+import com.airadar.app.data.GoogleSignIn
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -49,8 +53,8 @@ class TripViewModel : ViewModel() {
         if (_isRefreshing.value == true) return
         viewModelScope.launch {
             _isRefreshing.value = true
-            delay(900)
-            FlightStore.reseed()
+            delay(400)
+            runCatching { FlightStore.refresh() }
             _isRefreshing.value = false
         }
     }
@@ -150,16 +154,52 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     )
     val settings: LiveData<UserSettings> = _settings
 
-    fun signIn() {
+    private val _authError = MutableLiveData<String?>(null)
+    val authError: LiveData<String?> = _authError
+
+    private val _signingIn = MutableLiveData(false)
+    val signingIn: LiveData<Boolean> = _signingIn
+
+    private val accountObserver = Observer<AuthUser?> { user ->
         _settings.value = _settings.value?.copy(
-            isLoggedIn = true,
-            userName = "Traveller",
-            userEmail = "you@example.com"
+            isLoggedIn = user != null,
+            userName = user?.name,
+            userEmail = user?.email
         )
     }
 
+    init {
+        AuthStore.user.observeForever(accountObserver)
+    }
+
+    override fun onCleared() {
+        AuthStore.user.removeObserver(accountObserver)
+    }
+
+    /** [activity] is the Activity showing Settings; Google's picker is a sheet over it. */
+    fun signIn(activity: Context) {
+        if (_signingIn.value == true) return
+        viewModelScope.launch {
+            _signingIn.value = true
+            _authError.value = null
+            try {
+                val idToken = GoogleSignIn.idToken(activity)
+                BackendClient.signInWithGoogle(idToken)
+                FlightStore.syncFromServer()
+            } catch (_: GoogleSignIn.Cancelled) {
+                // Nothing to say: the traveller closed the picker.
+            } catch (e: IOException) {
+                _authError.value = e.message
+            }
+            _signingIn.value = false
+        }
+    }
+
     fun signOut() {
-        _settings.value = UserSettings()
+        viewModelScope.launch {
+            BackendClient.signOut()
+            FlightStore.onSignedOut()
+        }
     }
 
     fun setCalendarSync(enabled: Boolean) {

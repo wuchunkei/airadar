@@ -1,0 +1,74 @@
+package com.airadar.app.data
+
+import org.json.JSONArray
+import org.json.JSONObject
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeParseException
+
+/** The trip document as the server stores it — the same names as [Flight]. */
+fun Flight.toJson(): JSONObject = JSONObject().apply {
+    put("id", id)
+    put("flightNumber", flightNumber)
+    put("airlineName", airlineName)
+    put("departure", departure)
+    put("arrival", arrival)
+    put("departureTerminal", departureTerminal ?: JSONObject.NULL)
+    put("arrivalTerminal", arrivalTerminal ?: JSONObject.NULL)
+    put("departureGate", departureGate ?: JSONObject.NULL)
+    put("arrivalGate", arrivalGate ?: JSONObject.NULL)
+    put("departureTime", departureTime.toString())
+    put("arrivalTime", arrivalTime.toString())
+    put("status", status.name)
+    put("aircraft", aircraft ?: JSONObject.NULL)
+    put("baggageClaim", baggageClaim ?: JSONObject.NULL)
+    put("delayMinutes", delayMinutes)
+    put("callsign", callsign ?: JSONObject.NULL)
+    put("pnr", pnr ?: JSONObject.NULL)
+    put("isPending", isPending)
+    put("track", track?.let { points ->
+        JSONArray().apply { points.forEach { put(JSONArray().put(it.lat).put(it.lon)) } }
+    } ?: JSONObject.NULL)
+    put("trackFlownOn", trackFlownOn?.toString() ?: JSONObject.NULL)
+}
+
+fun flightFromJson(o: JSONObject): Flight = Flight(
+    id = o.getString("id"),
+    flightNumber = o.getString("flightNumber"),
+    airlineName = o.optString("airlineName"),
+    departure = o.getString("departure"),
+    arrival = o.getString("arrival"),
+    departureTerminal = o.text("departureTerminal"),
+    arrivalTerminal = o.text("arrivalTerminal"),
+    departureGate = o.text("departureGate"),
+    arrivalGate = o.text("arrivalGate"),
+    departureTime = LocalDateTime.parse(o.getString("departureTime").take(19)),
+    arrivalTime = LocalDateTime.parse(o.getString("arrivalTime").take(19)),
+    status = runCatching { FlightStatus.valueOf(o.optString("status")) }.getOrDefault(FlightStatus.SCHEDULED),
+    aircraft = o.text("aircraft"),
+    baggageClaim = o.text("baggageClaim"),
+    delayMinutes = o.optInt("delayMinutes", 0),
+    callsign = o.text("callsign"),
+    pnr = o.text("pnr"),
+    isPending = o.optBoolean("isPending", false),
+    track = o.optJSONArray("track")?.let { arr ->
+        (0 until arr.length()).map { i ->
+            val p = arr.getJSONArray(i)
+            TrackPoint(p.getDouble(0), p.getDouble(1))
+        }
+    },
+    trackFlownOn = o.text("trackFlownOn")?.let { runCatching { LocalDate.parse(it.take(10)) }.getOrNull() },
+    deletedAt = o.text("deletedAt")?.let { raw ->
+        try {
+            OffsetDateTime.parse(raw).toInstant()
+        } catch (_: DateTimeParseException) {
+            // A naive timestamp from the server is UTC.
+            runCatching { LocalDateTime.parse(raw.take(19)).atOffset(ZoneOffset.UTC).toInstant() }.getOrNull()
+        }
+    }
+)
+
+private fun JSONObject.text(key: String): String? =
+    optString(key).takeIf { has(key) && !isNull(key) && it.isNotBlank() && it != "null" }

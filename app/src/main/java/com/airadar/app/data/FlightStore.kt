@@ -2,6 +2,11 @@ package com.airadar.app.data
 
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
@@ -24,8 +29,38 @@ object FlightStore {
     private val _deleted = MutableLiveData<List<Flight>>(emptyList())
     val deleted: LiveData<List<Flight>> = _deleted
 
+    // Server writes go out from here, off the main thread, one after another.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val synced: Boolean get() = AuthStore.isSignedIn
+
     init {
         reseed()
+    }
+
+    /** Pull-to-refresh: the account's trips when signed in, the demo set otherwise. */
+    suspend fun refresh() {
+        if (synced) syncFromServer() else reseed()
+    }
+
+    /**
+     * Replaces everything with what the account holds. Called at sign-in and on
+     * refresh; the demo trips shown while signed out are not carried over.
+     */
+    suspend fun syncFromServer() {
+        val live = BackendClient.listTrips()
+        val binned = BackendClient.listTrips(deleted = true)
+        withContext(Dispatchers.Main) { publish(live + binned) }
+    }
+
+    /** Back to the signed-out demo list. */
+    fun onSignedOut() {
+        all = emptyList()
+        reseed()
+    }
+
+    private fun push(block: suspend () -> Unit) {
+        if (!synced) return
+        scope.launch { runCatching { block() } }
     }
 
     fun reseed() {
@@ -66,31 +101,44 @@ object FlightStore {
     fun add(flight: Flight) {
         val same = all.firstOrNull { it.flightNumber == flight.flightNumber && it.departureTime == flight.departureTime }
         when {
-            same == null -> publish(all + flight)
+            same == null -> {
+                publish(all + flight)
+                push { BackendClient.putTrip(flight) }
+            }
             // Adding a trip that sits in the bin brings it back rather than duplicating it.
             same.deletedAt != null -> restore(same.id)
         }
     }
 
     fun confirm(flight: Flight) {
-        publish(all.map { if (it.id == flight.id) it.copy(isPending = false) else it })
+        val confirmed = flight.copy(isPending = false)
+        publish(all.map { if (it.id == flight.id) confirmed else it })
+        push { BackendClient.putTrip(confirmed) }
     }
 
     fun replace(old: Flight, replacement: Flight) {
-        publish(all.filterNot { it.id == old.id } + replacement.copy(isPending = false))
+        val confirmed = replacement.copy(isPending = false)
+        publish(all.filterNot { it.id == old.id } + confirmed)
+        push {
+            if (old.id != confirmed.id) BackendClient.deleteTrip(old.id)
+            BackendClient.putTrip(confirmed)
+        }
     }
 
     /** Moves the trip to the recycle bin; [restore] undoes it within [RETENTION_DAYS]. */
     fun delete(flightId: String) {
         publish(all.map { if (it.id == flightId) it.copy(deletedAt = Instant.now()) else it })
+        push { BackendClient.deleteTrip(flightId) }
     }
 
     fun restore(flightId: String) {
         publish(all.map { if (it.id == flightId) it.copy(deletedAt = null) else it })
+        push { BackendClient.restoreTrip(flightId) }
     }
 
     fun setTrack(flightId: String, points: List<TrackPoint>, flownOn: LocalDate) {
         publish(all.map { if (it.id == flightId) it.copy(track = points, trackFlownOn = flownOn) else it })
+        all.firstOrNull { it.id == flightId }?.let { updated -> push { BackendClient.putTrip(updated) } }
     }
 
     private fun publish(list: List<Flight>) {

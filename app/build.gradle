@@ -20,6 +20,7 @@ android {
         buildConfigField 'String', 'OPENSKY_CLIENT_SECRET', secret('opensky.clientSecret')
         buildConfigField 'String', 'BACKEND_URL', secret('backend.url')
         buildConfigField 'String', 'BACKEND_TOKEN', secret('backend.token')
+        buildConfigField 'String', 'GOOGLE_WEB_CLIENT_ID', secret('google.webClientId')
         minSdk 26
         targetSdk 34
         versionCode 1
@@ -96,6 +97,13 @@ dependencies {
 
     // Scheduled and ongoing flight notifications
     implementation 'androidx.work:work-runtime-ktx:2.9.0'
+
+    // Sign in with Google through Android's Credential Manager
+    implementation 'androidx.credentials:credentials:1.2.2'
+    implementation 'androidx.credentials:credentials-play-services-auth:1.2.2'
+    implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.0'
+    // Encrypted preferences for the session tokens
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'

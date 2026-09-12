@@ -18,12 +18,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
+import com.airadar.app.data.AuthStore
+import com.airadar.app.data.FlightStore
 import com.airadar.app.data.ThemeMode
 import com.airadar.app.data.UserSettings
 import com.airadar.app.notifications.FlightReminders
 import com.airadar.app.ui.AiradarApp
 import com.airadar.app.ui.theme.AiradarTheme
 import com.airadar.app.ui.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -34,6 +38,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AuthStore.init(this)
+        // A returning traveller's trips come down before the list is first shown.
+        if (AuthStore.isSignedIn) lifecycleScope.launch { runCatching { FlightStore.syncFromServer() } }
         enableEdgeToEdge()
         FlightReminders.ensureChannels(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
