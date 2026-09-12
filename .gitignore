@@ -18,3 +18,4 @@ backend/.env
 .claude/
 __pycache__/
 *.pyc
+/airadar/
