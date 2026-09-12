@@ -20,6 +20,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.airadar.app.data.Airport
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightDatabase
+import com.airadar.app.data.Region
 import com.airadar.app.data.TrackPoint
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
@@ -76,7 +77,9 @@ fun TileMap(
      */
     onLegsClick: ((List<Pair<Airport, Airport>>) -> Unit)? = null,
     /** A tap on the map away from any leg. */
-    onMapTap: (() -> Unit)? = null
+    onMapTap: (() -> Unit)? = null,
+    /** Where to look while there are no legs at all — roughly where the traveller is. */
+    emptyFocus: Region? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -217,7 +220,19 @@ fun TileMap(
             // Frame the network once per route set, so a later redraw does not
             // yank the map out from under a pinch the traveller just made.
             val key = routes.hashCode() * 31 + tracks.hashCode()
-            if ((routes.isNotEmpty() || tracks.isNotEmpty()) && framedFor[0] != key) {
+            if (routes.isEmpty() && tracks.isEmpty()) {
+                // Nothing to frame: settle on the traveller's own region rather than
+                // a world-wide strip of repeated continents.
+                val focusKey = emptyFocus.hashCode()
+                if (emptyFocus != null && framedFor[0] != focusKey) {
+                    framedFor[0] = focusKey
+                    val look = { m: MapView ->
+                        m.controller.setZoom(emptyFocus.zoom)
+                        m.controller.setCenter(OsmGeoPoint(emptyFocus.latitude, emptyFocus.longitude))
+                    }
+                    if (map.width > 0) look(map) else map.addOnFirstLayoutListener { _, _, _, _, _ -> look(map) }
+                }
+            } else if (framedFor[0] != key) {
                 framedFor[0] = key
                 val corners = routes.flatMap {
                     listOf(

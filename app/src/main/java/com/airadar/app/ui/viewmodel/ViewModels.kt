@@ -8,6 +8,8 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import com.airadar.app.data.ThemeMode
 import androidx.lifecycle.Observer
+import com.airadar.app.data.CalendarImporter
+import com.airadar.app.data.TripImporter
 import com.airadar.app.data.AuthStore
 import com.airadar.app.data.AuthUser
 import com.airadar.app.data.GoogleSignIn
@@ -202,9 +204,27 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private val _calendarStatus = MutableLiveData<String?>(null)
+    val calendarStatus: LiveData<String?> = _calendarStatus
+
+    /** Turning the switch on reads the calendars straight away (permission already granted). */
     fun setCalendarSync(enabled: Boolean) {
         prefs.edit().putBoolean("calendarSync", enabled).apply()
         _settings.value = _settings.value?.copy(calendarSyncEnabled = enabled)
+        if (!enabled) {
+            _calendarStatus.value = null
+            return
+        }
+        viewModelScope.launch {
+            _calendarStatus.value = "Reading calendars"
+            val found = runCatching { CalendarImporter.scan(getApplication()) }.getOrDefault(emptyList())
+            val added = TripImporter.import(found)
+            _calendarStatus.value = when {
+                found.isEmpty() -> "No flights found in your calendars."
+                added == 0 -> "Every calendar flight is already in Trips."
+                else -> "$added trips added from your calendars — confirm them in Trips."
+            }
+        }
     }
 
     fun setForceSystemZone(enabled: Boolean) {

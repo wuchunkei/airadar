@@ -30,18 +30,25 @@ object FlightEmailParser {
     /** Words that look like flight numbers but never are. */
     private val decoys = setOf("PNR", "ID", "NO", "REF", "TEL", "FAX", "VAT", "PO", "PIN")
 
-    fun parse(text: String): List<Flight> {
+    /**
+     * Every flight number paired with every date in the text (a confirmation
+     * lists a handful of each; the timetable check later throws out the pairs
+     * that never flew). [fallbackDates] stand in when the text has no date —
+     * a calendar event's own day, say.
+     */
+    fun candidates(text: String, fallbackDates: List<LocalDate> = emptyList()): List<Candidate> {
         val upper = text.uppercase(Locale.ROOT)
-        val dates = extractDates(text)
+        val dates = extractDates(text).ifEmpty { fallbackDates }
         if (dates.isEmpty()) return emptyList()
 
         return flightNumber.findAll(upper)
             .map { it.groupValues[1] + it.groupValues[2] }
             .filterNot { code -> decoys.any { code.startsWith(it) } }
+            // Two letters plus a bare "1" or "12" is far more often a gate or a seat.
+            .filter { code -> code.filter(Char::isDigit).length >= 2 || code.length >= 4 }
             .distinct()
-            .flatMap { code -> dates.asSequence().mapNotNull { FlightDatabase.lookup(code, it) } }
-            .distinctBy { it.id }
-            .map { it.copy(isPending = true) }
+            .flatMap { code -> dates.asSequence().map { Candidate(code, it) } }
+            .distinct()
             .toList()
     }
 

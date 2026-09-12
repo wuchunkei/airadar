@@ -1,5 +1,10 @@
 package com.airadar.app.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -35,7 +40,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -44,9 +48,6 @@ import androidx.compose.ui.unit.sp
 import com.airadar.app.data.ThemeMode
 import com.airadar.app.data.UserSettings
 import com.airadar.app.ui.viewmodel.SettingsViewModel
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 @Composable
 fun SettingsScreen(
@@ -60,8 +61,9 @@ fun SettingsScreen(
     val authError by viewModel.authError.observeAsState()
     val signingIn by viewModel.signingIn.observeAsState(false)
     val activity = LocalContext.current
-    val systemZoneName = remember {
-        ZonedDateTime.now().format(DateTimeFormatter.ofPattern("z", Locale.ENGLISH))
+    val calendarStatus by viewModel.calendarStatus.observeAsState()
+    val askCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) viewModel.setCalendarSync(true)
     }
 
     Column(
@@ -154,16 +156,28 @@ fun SettingsScreen(
                 SettingsSection("Import") {
                     NavigationRow(
                         title = "Read trips from email",
-                        subtitle = "Scan booking confirmations for flights",
                         onClick = onEmailImportClick
                     )
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     ToggleRow(
                         title = "Read trips from calendar",
-                        subtitle = "Pick up flights already in your calendar",
                         checked = settings.calendarSyncEnabled,
-                        onCheckedChange = viewModel::setCalendarSync
+                        onCheckedChange = { on ->
+                            if (!on) viewModel.setCalendarSync(false)
+                            else if (ContextCompat.checkSelfPermission(activity, Manifest.permission.READ_CALENDAR) ==
+                                PackageManager.PERMISSION_GRANTED
+                            ) viewModel.setCalendarSync(true)
+                            else askCalendar.launch(Manifest.permission.READ_CALENDAR)
+                        }
                     )
+                    calendarStatus?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 }
             }
 
@@ -176,8 +190,6 @@ fun SettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     ToggleRow(
                         title = "Show times in my time zone",
-                        subtitle = "Every departure and arrival converted to $systemZoneName; " +
-                                "an airport ahead or behind is tagged (+1), (-8) and so on",
                         checked = settings.forceSystemZone,
                         onCheckedChange = viewModel::setForceSystemZone
                     )
@@ -188,7 +200,6 @@ fun SettingsScreen(
                 SettingsSection("Trips") {
                     NavigationRow(
                         title = "Recycle Bin",
-                        subtitle = "Deleted trips stay here for 30 days, then go for good",
                         onClick = onRecycleBinClick
                     )
                 }
@@ -237,7 +248,6 @@ private fun SettingsSection(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun NavigationRow(
     title: String,
-    subtitle: String,
     onClick: () -> Unit
 ) {
     Row(
@@ -253,11 +263,6 @@ private fun NavigationRow(
                 title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium
-            )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Icon(
@@ -302,7 +307,6 @@ private fun AppearanceRow(mode: ThemeMode, onModeChange: (ThemeMode) -> Unit) {
 @Composable
 private fun ToggleRow(
     title: String,
-    subtitle: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
@@ -318,11 +322,6 @@ private fun ToggleRow(
                 title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium
-            )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)

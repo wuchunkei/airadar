@@ -1,5 +1,14 @@
 package com.airadar.app.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import com.airadar.app.data.HomeRegion
+import com.airadar.app.data.Region
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,6 +96,19 @@ fun MyScreen(
     }
     var openId by remember { mutableStateOf<String?>(null) }
 
+    // With no trips yet the map has nothing to frame, so it looks at where the
+    // traveller is: a coarse fix if they allow it, their country otherwise.
+    val context = LocalContext.current
+    var homeRegion by remember { mutableStateOf<Region?>(null) }
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(history.isEmpty()) {
+        if (history.isNotEmpty()) return@LaunchedEffect
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) !=
+            PackageManager.PERMISSION_GRANTED
+        ) askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        homeRegion = HomeRegion.find(context)
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
 
         // Full-bleed map; pinch to zoom, drag to pan.
@@ -96,6 +118,7 @@ fun MyScreen(
             selected = selectedLegs,
             onLegsClick = { selectedLegs = it },
             onMapTap = { selectedLegs = emptyList() },
+            emptyFocus = homeRegion,
             modifier = Modifier.fillMaxSize()
         )
 
