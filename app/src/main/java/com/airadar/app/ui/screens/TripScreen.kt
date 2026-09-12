@@ -213,14 +213,19 @@ fun TripScreen(
 
     LaunchedEffect(showHistory, anchorIndex) {
         if (!showHistory || past.isEmpty()) return@LaunchedEffect
-        // Close once every past card has scrolled off the top — waiting for the
-        // thin divider to clear as well would feel like nothing happened.
-        // Locking again is only right after the traveller has actually been up
-        // there; otherwise the unlock would undo itself on the very first frame.
+        // Open only by the over-pull; closed again the moment the traveller scrolls
+        // the present back to the top — that is, when the Coming/Now heading is the
+        // first thing on screen. Locking again is only right after they have
+        // actually been up in the past; otherwise the unlock would undo itself on
+        // the very first frame.
         var visitedPast = false
         snapshotFlow { listState.firstVisibleItemIndex }.collect { index ->
-            if (index < past.size) visitedPast = true
-            else if (visitedPast) viewModel.hideHistory()
+            if (index < anchorIndex) visitedPast = true
+            else if (visitedPast) {
+                viewModel.hideHistory()
+                // Settle exactly on the heading, not a few pixels past it.
+                listState.animateScrollToItem(anchorIndex)
+            }
         }
     }
 
