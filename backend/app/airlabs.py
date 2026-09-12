@@ -1,7 +1,7 @@
 """AirLabs — primary status source. Port of the Android AirLabsClient."""
 
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import httpx
 
@@ -55,8 +55,25 @@ async def schedule(client: httpx.AsyncClient, number: str, day: date) -> Flight:
     rows = body.get("response") or []
     if not rows:
         raise AirLabsError(f"AirLabs has no schedule for {number.upper()}.")
-    row = next((r for r in rows if str(r.get("dep_time", "")).startswith(day.isoformat())), rows[0])
-    return _parse(row, number, day)
+    row = next((r for r in rows if str(r.get("dep_time", "")).startswith(day.isoformat())), None)
+    if row is not None:
+        return _parse(row, number, day)
+    # AirLabs only lists the next day or two. Further out, the timetable is the
+    # same clock times on the asked-for day, with nothing live attached to it.
+    return _rebase(_parse(rows[0], number, day), day)
+
+
+def _rebase(f: Flight, day: date) -> Flight:
+    span = (f.arrivalTime.date() - f.departureTime.date()).days
+    return f.model_copy(update={
+        "departureTime": datetime.combine(day, f.departureTime.time()),
+        "arrivalTime": datetime.combine(day + timedelta(days=span), f.arrivalTime.time()),
+        "status": FlightStatus.SCHEDULED,
+        "delayMinutes": 0,
+        "departureGate": None,
+        "arrivalGate": None,
+        "baggageClaim": None,
+    })
 
 
 async def airport(client: httpx.AsyncClient, iata: str) -> Airport:

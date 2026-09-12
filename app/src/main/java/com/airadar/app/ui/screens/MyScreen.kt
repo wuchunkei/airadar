@@ -78,12 +78,11 @@ fun MyScreen(
     }
     val stats = remember(history) { history.travelStats() }
 
-    // The leg the traveller tapped, and the flights that flew it, newest first.
-    var selectedLeg by remember { mutableStateOf<Pair<Airport, Airport>?>(null) }
-    val legFlights = remember(selectedLeg, history) {
-        val (from, to) = selectedLeg ?: return@remember emptyList()
+    // The legs under the traveller's tap, and the flights that flew them, newest first.
+    var selectedLegs by remember { mutableStateOf<List<Pair<Airport, Airport>>>(emptyList()) }
+    val legFlights = remember(selectedLegs, history) {
         history
-            .filter { it.departure == from.iata && it.arrival == to.iata }
+            .filter { f -> selectedLegs.any { (from, to) -> f.departure == from.iata && f.arrival == to.iata } }
             .sortedByDescending { it.departureInstant }
     }
     var openId by remember { mutableStateOf<String?>(null) }
@@ -94,9 +93,9 @@ fun MyScreen(
         TileMap(
             routes = routes,
             tracks = tracks,
-            selected = selectedLeg,
-            onLegClick = { from, to -> selectedLeg = from to to },
-            onMapTap = { selectedLeg = null },
+            selected = selectedLegs,
+            onLegsClick = { selectedLegs = it },
+            onMapTap = { selectedLegs = emptyList() },
             modifier = Modifier.fillMaxSize()
         )
 

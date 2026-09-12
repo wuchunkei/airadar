@@ -48,10 +48,18 @@ async def health():
 
 @app.get("/flights/{number}/{day}", response_model=Flight, dependencies=[Depends(require_token)])
 async def flight(number: str, day: date):
-    # Live status within a day of now, timetable beyond that.
-    near = abs((day - date.today()).days) <= 1
     try:
-        return await (airlabs.flight if near else airlabs.schedule)(_http(), number, day)
+        # Live status if AirLabs has this very day's flight; the timetable otherwise.
+        # A live record for a different day is never passed off as the asked-for one.
+        if abs((day - date.today()).days) <= 1:
+            try:
+                live = await airlabs.flight(_http(), number, day)
+                if live.departureTime.date() == day:
+                    return live
+            except airlabs.AirLabsError as e:
+                if e.quota_exhausted:
+                    raise
+        return await airlabs.schedule(_http(), number, day)
     except airlabs.AirLabsError as e:
         status = 429 if e.quota_exhausted else 502
         raise HTTPException(status_code=status, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})

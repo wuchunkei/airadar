@@ -211,7 +211,9 @@ fun FlightDetailSheet(
                     value = formatDistance(flight.distanceKm)
                 )
                 flight.aircraft?.let { DetailRow(label = "Aircraft", value = it) }
-                flight.baggageClaim?.let { DetailRow(label = "Baggage claim", value = it) }
+                // Belt numbers appear close to landing; the row is always there so the
+                // traveller knows where to look for it later.
+                DetailRow(label = "Baggage claim", value = flight.baggageClaim ?: "–")
                 flight.pnr?.let { DetailRow(label = "Booking reference", value = it) }
 
                 primaryAction?.let { (label, action) ->

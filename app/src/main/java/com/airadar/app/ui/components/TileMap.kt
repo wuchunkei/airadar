@@ -68,10 +68,13 @@ fun TileMap(
     tracks: List<MapTrack> = emptyList(),
     /** False for a thumbnail: touches fall through so the sheet around it still scrolls. */
     interactive: Boolean = true,
-    /** The leg drawn in the accent colour, matched by airport codes. */
-    selected: Pair<Airport, Airport>? = null,
-    /** A tap on a route or track, as its endpoints. */
-    onLegClick: ((from: Airport, to: Airport) -> Unit)? = null,
+    /** Legs drawn in the accent colour, matched by airport codes. */
+    selected: List<Pair<Airport, Airport>> = emptyList(),
+    /**
+     * A tap on or near legs, as their endpoints. Where several legs run together the
+     * list has all of them; a tap on an airport dot lists every leg touching it.
+     */
+    onLegsClick: ((List<Pair<Airport, Airport>>) -> Unit)? = null,
     /** A tap on the map away from any leg. */
     onMapTap: (() -> Unit)? = null
 ) {
@@ -127,21 +130,31 @@ fun TileMap(
 
             map.overlays.clear()
 
-            // Overlays get taps last-added first, so the catch-all goes in at the
-            // bottom and only hears taps no leg or airport claimed.
-            if (onMapTap != null) {
-                map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
-                    override fun singleTapConfirmedHelper(p: OsmGeoPoint?): Boolean {
-                        onMapTap()
-                        return true
-                    }
+            val legs = mutableListOf<Triple<Polyline, Airport, Airport>>()
+            val density = map.resources.displayMetrics.density
 
-                    override fun longPressHelper(p: OsmGeoPoint?): Boolean = false
-                }))
-            }
+            // Taps are resolved here rather than per line: osmdroid's own hit test is
+            // only as wide as the stroke and hands the tap to whichever line is on top,
+            // which makes a bundle of legs out of one hub impossible to pick apart.
+            // Widening rings are tried in turn; the first that catches anything wins,
+            // and everything it catches is reported together.
+            map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
+                override fun singleTapConfirmedHelper(p: OsmGeoPoint?): Boolean {
+                    if (p == null) return false
+                    val hits = listOf(6f, 12f, 20f, 30f).firstNotNullOfOrNull { dp ->
+                        legs.filter { it.first.isCloseTo(p, (dp * density).toDouble(), map) }
+                            .takeIf { it.isNotEmpty() }
+                    }
+                    if (hits != null) onLegsClick?.invoke(hits.map { it.second to it.third })
+                    else onMapTap?.invoke()
+                    return true
+                }
+
+                override fun longPressHelper(p: OsmGeoPoint?): Boolean = false
+            }))
 
             fun isSelected(from: Airport, to: Airport) =
-                selected != null && selected.first.iata == from.iata && selected.second.iata == to.iata
+                selected.any { it.first.iata == from.iata && it.second.iata == to.iata }
 
             fun Polyline.leg(from: Airport, to: Airport, width: Float) {
                 val color = if (isSelected(from, to)) selectedColor else routeColor
@@ -150,12 +163,10 @@ fun TileMap(
                 outlinePaint.isAntiAlias = true
                 // osmdroid clears this list on detach, so it must be a mutable one.
                 setMilestoneManagers(arrayListOf(midpointArrow(distance, color)))
-                // No bubble: a tap is reported upward and the screen decides what to show.
+                // No bubble, and no claim on the tap: the events overlay below decides.
                 infoWindow = null
-                setOnClickListener { _, _, _ ->
-                    onLegClick?.invoke(from, to)
-                    onLegClick != null
-                }
+                setOnClickListener { _, _, _ -> false }
+                legs += Triple(this, from, to)
             }
 
             // Selected leg last, so it paints over the others where they cross.
@@ -191,7 +202,13 @@ fun TileMap(
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                             icon = dotDrawable(nodeColor)
                             infoWindow = null
-                            setOnMarkerClickListener { _, _ -> true }
+                            setOnMarkerClickListener { _, _ ->
+                                val touching = legs
+                                    .filter { it.second.iata == airport.iata || it.third.iata == airport.iata }
+                                    .map { it.second to it.third }
+                                if (touching.isNotEmpty()) onLegsClick?.invoke(touching)
+                                true
+                            }
                         }
                     )
                 }
