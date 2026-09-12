@@ -193,6 +193,7 @@ fun AiradarApp() {
                 forceSystemZone = settings.forceSystemZone,
                 onCommitted = remind,
                 onFriendsClick = { overlay = Overlay.FRIENDS },
+                onCreateFirst = { tab = Tab.SEARCH },
                 signedIn = settings.isLoggedIn,
                 onDeleted = { flight ->
                     FlightReminders.cancel(context, flight.id)

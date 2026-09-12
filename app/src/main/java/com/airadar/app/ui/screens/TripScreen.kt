@@ -128,6 +128,7 @@ fun TripScreen(
     onCommitted: (Flight) -> Unit,
     onDeleted: (Flight) -> Unit,
     onFriendsClick: () -> Unit,
+    onCreateFirst: () -> Unit,
     signedIn: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -356,12 +357,30 @@ fun TripScreen(
 
             if (coming.isEmpty() && airborne.isEmpty()) {
                 item(key = "empty") {
-                    Text(
-                        "No upcoming trips. Pull down to refresh.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 24.dp)
-                    )
+                    if (past.isEmpty()) {
+                        // Nothing at all yet: one line, mid-screen, that opens Search.
+                        Box(
+                            modifier = Modifier
+                                .fillParentMaxHeight(0.7f)
+                                .fillMaxWidth()
+                                .clickable(onClick = onCreateFirst),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Come to create your first trip!",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    } else {
+                        Text(
+                            "No upcoming trips.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 24.dp)
+                        )
+                    }
                 }
             }
 

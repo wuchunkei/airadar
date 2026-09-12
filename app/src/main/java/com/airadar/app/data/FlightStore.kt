@@ -12,8 +12,9 @@ import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
 /**
- * In-memory source of truth shared by the trip list and the mailbox importer.
- * Swap this for a database once trips need to survive a restart.
+ * In-memory source of truth shared by the trip list and the importers. Signed in,
+ * it mirrors the account on the server; signed out, it holds only this session's
+ * additions and starts empty.
  */
 object FlightStore {
 
@@ -33,9 +34,6 @@ object FlightStore {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val synced: Boolean get() = AuthStore.isSignedIn
 
-    init {
-        reseed()
-    }
 
     /** Pull-to-refresh: the account's trips when signed in, the demo set otherwise. */
     suspend fun refresh() {
@@ -95,39 +93,13 @@ object FlightStore {
         scope.launch { runCatching { block() } }
     }
 
+    /**
+     * Signed out, the list is whatever the traveller added on this phone — the
+     * app starts empty. A refresh re-publishes it (recomputing typical durations
+     * and dropping expired bin entries) and nothing more.
+     */
     fun reseed() {
-        val today = LocalDate.now()
-
-        val upcoming = listOfNotNull(
-            FlightDatabase.lookup("CX392", today.plusDays(2)),
-            FlightDatabase.lookup("OZ372", today.plusDays(9)),
-            FlightDatabase.lookup("CA826", today.plusDays(24))
-        )
-
-        val past = listOfNotNull(
-            FlightDatabase.lookup("JL802", today.minusDays(18)),
-            FlightDatabase.lookup("MM28", today.minusDays(45))?.copy(
-                status = FlightStatus.DELAYED,
-                delayMinutes = 45
-            ),
-            FlightDatabase.lookup("SQ862", today.minusDays(76)),
-            FlightDatabase.lookup("NH880", today.minusDays(120)),
-            FlightDatabase.lookup("TG607", today.minusDays(150))
-        )
-
-        val airborne = listOfNotNull(inFlightSample())
-
-        // Keep anything the traveller added or imported, carry fetched tracks across
-        // so a refresh does not throw away a downloaded path, and leave deleted trips
-        // deleted.
-        val kept = all.filter { it.isPending }
-        val tracked = all.filter { it.track != null }.associateBy { it.id }
-        val binned = all.filter { it.deletedAt != null }.associateBy { it.id }
-        val fresh = (kept + airborne + upcoming + past)
-            .distinctBy { it.id }
-            .map { f -> tracked[f.id]?.let { f.copy(track = it.track, trackFlownOn = it.trackFlownOn) } ?: f }
-            .map { f -> binned[f.id]?.let { f.copy(deletedAt = it.deletedAt) } ?: f }
-        publish(fresh + binned.values.filter { b -> fresh.none { it.id == b.id } })
+        publish(all)
     }
 
     fun add(flight: Flight) {
@@ -205,30 +177,5 @@ object FlightStore {
         }
         return if (recent.isEmpty()) flight.durationMinutes
         else recent.sumOf { it.durationMinutes + it.delayMinutes } / recent.size
-    }
-
-    /**
-     * A flight that is airborne right now regardless of the device's own zone, so
-     * the "Now" section has something to show.
-     */
-    private fun inFlightSample(): Flight? {
-        val from = FlightDatabase.airport("SIN") ?: return null
-        val to = FlightDatabase.airport("HKG") ?: return null
-        val now = Instant.now()
-        return Flight(
-            id = "airborne-sample",
-            flightNumber = "SQ862",
-            airlineName = "Singapore Airlines",
-            departure = from.iata,
-            arrival = to.iata,
-            departureTerminal = "3",
-            arrivalTerminal = "1",
-            departureTime = now.minus(105, ChronoUnit.MINUTES).atZone(from.zone).toLocalDateTime(),
-            arrivalTime = now.plus(135, ChronoUnit.MINUTES).atZone(to.zone).toLocalDateTime(),
-            status = FlightStatus.IN_FLIGHT,
-            aircraft = "Airbus A350",
-            baggageClaim = "6",
-            callsign = "SIA862"
-        )
     }
 }
