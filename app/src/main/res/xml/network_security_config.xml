@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- The backend speaks plain HTTP until TLS is in front of it. Allow cleartext to
-     that one host only; every other connection (OSM tiles, OpenSky) stays HTTPS. -->
-<network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">149.118.57.221</domain>
-    </domain-config>
-</network-security-config>
