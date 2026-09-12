@@ -8,6 +8,11 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.rememberCoroutineScope
+import com.airadar.app.ui.screens.RecycleBinScreen
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,7 +42,7 @@ private enum class Tab(val label: String) {
     MY("My")
 }
 
-private enum class Overlay { SETTINGS, EMAIL_IMPORT }
+private enum class Overlay { SETTINGS, EMAIL_IMPORT, RECYCLE_BIN }
 
 @Composable
 fun AiradarApp() {
@@ -54,13 +59,16 @@ fun AiradarApp() {
     // Any flight the traveller commits to gets its reminder chain.
     val remind: (Flight) -> Unit = { FlightReminders.schedule(context, it) }
     val settings by settingsViewModel.settings.observeAsState(UserSettings())
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     when (overlay) {
         Overlay.SETTINGS -> {
             SettingsScreen(
                 viewModel = settingsViewModel,
                 onBackClick = { overlay = null },
-                onEmailImportClick = { overlay = Overlay.EMAIL_IMPORT }
+                onEmailImportClick = { overlay = Overlay.EMAIL_IMPORT },
+                onRecycleBinClick = { overlay = Overlay.RECYCLE_BIN }
             )
             return
         }
@@ -70,10 +78,21 @@ fun AiradarApp() {
             return
         }
 
+        Overlay.RECYCLE_BIN -> {
+            RecycleBinScreen(
+                viewModel = tripViewModel,
+                forceSystemZone = settings.forceSystemZone,
+                onRestored = remind,
+                onBack = { overlay = Overlay.SETTINGS }
+            )
+            return
+        }
+
         null -> Unit
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             NavigationBar {
                 Tab.entries.forEach { entry ->
@@ -105,6 +124,16 @@ fun AiradarApp() {
                 viewModel = tripViewModel,
                 forceSystemZone = settings.forceSystemZone,
                 onCommitted = remind,
+                onDeleted = { flight ->
+                    FlightReminders.cancel(context, flight.id)
+                    scope.launch {
+                        snackbar.currentSnackbarData?.dismiss()
+                        snackbar.showSnackbar(
+                            "Moved to the Recycle Bin. Restore it from My › Settings › Recycle Bin " +
+                                    "within 30 days."
+                        )
+                    }
+                },
                 modifier = Modifier.padding(padding)
             )
 

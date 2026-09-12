@@ -45,7 +45,9 @@ data class Flight(
     /** Actual flown positions from ADS-B, once fetched; null means great circle only. */
     val track: List<TrackPoint>? = null,
     /** The day the stored track was flown — an earlier date when borrowed for a future leg. */
-    val trackFlownOn: java.time.LocalDate? = null
+    val trackFlownOn: java.time.LocalDate? = null,
+    /** Set while the trip sits in the recycle bin; cleared on restore. */
+    val deletedAt: Instant? = null
 ) {
     val departureAirport: Airport? get() = FlightDatabase.airport(departure)
     val arrivalAirport: Airport? get() = FlightDatabase.airport(arrival)

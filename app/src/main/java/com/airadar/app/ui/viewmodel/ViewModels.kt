@@ -32,6 +32,7 @@ sealed interface TrackStatus {
 class TripViewModel : ViewModel() {
 
     val flights: LiveData<List<Flight>> = FlightStore.flights
+    val deleted: LiveData<List<Flight>> = FlightStore.deleted
 
     private val _trackStatus = MutableLiveData<Map<String, TrackStatus>>(emptyMap())
     val trackStatus: LiveData<Map<String, TrackStatus>> = _trackStatus
@@ -73,6 +74,10 @@ class TripViewModel : ViewModel() {
     fun addFlight(flight: Flight) = FlightStore.add(flight)
 
     fun confirmPending(flight: Flight) = FlightStore.confirm(flight)
+
+    fun deleteFlight(flight: Flight) = FlightStore.delete(flight.id)
+
+    fun restoreFlight(flight: Flight) = FlightStore.restore(flight.id)
 
     fun replacePending(old: Flight, replacement: Flight) = FlightStore.replace(old, replacement)
 

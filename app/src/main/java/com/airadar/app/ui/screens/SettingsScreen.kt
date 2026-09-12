@@ -48,6 +48,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBackClick: () -> Unit,
     onEmailImportClick: () -> Unit,
+    onRecycleBinClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settings.observeAsState(UserSettings())
@@ -143,6 +144,16 @@ fun SettingsScreen(
                                 "an airport ahead or behind is tagged (+1), (-8) and so on",
                         checked = settings.forceSystemZone,
                         onCheckedChange = viewModel::setForceSystemZone
+                    )
+                }
+            }
+
+            item {
+                SettingsSection("Trips") {
+                    NavigationRow(
+                        title = "Recycle Bin",
+                        subtitle = "Deleted trips stay here for 30 days, then go for good",
+                        onClick = onRecycleBinClick
                     )
                 }
             }

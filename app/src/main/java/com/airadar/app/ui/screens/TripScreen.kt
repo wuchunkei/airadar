@@ -2,6 +2,18 @@ package com.airadar.app.ui.screens
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.AnchoredDraggableState
+import androidx.compose.foundation.gestures.DraggableAnchors
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.anchoredDraggable
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,8 +95,13 @@ fun TripScreen(
     viewModel: TripViewModel,
     forceSystemZone: Boolean,
     onCommitted: (Flight) -> Unit,
+    onDeleted: (Flight) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val delete: (Flight) -> Unit = {
+        viewModel.deleteFlight(it)
+        onDeleted(it)
+    }
     // Seed from the live value, not an empty list: the first composition is what
     // fixes the list's starting index, and it has to already know the trips.
     val flights by viewModel.flights.observeAsState(viewModel.flights.value.orEmpty())
@@ -203,7 +220,7 @@ fun TripScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (past.isNotEmpty()) {
-                flightItems(past, forceSystemZone, dimmed = true) { selectedId = it.id }
+                flightItems(past, forceSystemZone, dimmed = true, onDelete = delete) { selectedId = it.id }
                 item(key = "past-divider") { TimeDivider() }
             }
 
@@ -212,7 +229,7 @@ fun TripScreen(
             if (airborne.isNotEmpty()) {
                 item(key = "now-header") { SectionTitle("Now") }
                 // Now is today by definition; no heading needed.
-                flightItems(airborne, forceSystemZone, dateHeadings = false) { selectedId = it.id }
+                flightItems(airborne, forceSystemZone, dateHeadings = false, onDelete = delete) { selectedId = it.id }
                 item(key = "coming-divider") { TimeDivider() }
                 item(key = "coming-header") { SectionTitle("Coming") }
             } else {
@@ -224,7 +241,7 @@ fun TripScreen(
                 }
             }
 
-            flightItems(coming, forceSystemZone) { selectedId = it.id }
+            flightItems(coming, forceSystemZone, onDelete = delete) { selectedId = it.id }
 
             if (coming.isEmpty() && airborne.isEmpty()) {
                 item(key = "empty") {
@@ -273,6 +290,7 @@ private fun LazyListScope.flightItems(
     forceSystemZone: Boolean,
     dimmed: Boolean = false,
     dateHeadings: Boolean = true,
+    onDelete: (Flight) -> Unit,
     onSelect: (Flight) -> Unit
 ) {
     // The date heading lives inside the first card's item of each day rather than
@@ -284,12 +302,81 @@ private fun LazyListScope.flightItems(
                 (index == 0 || flights[index - 1].departureTime.toLocalDate() != day)
         Column {
             if (firstOfDay) DateTitle(day.toString(), dimmed)
-            FlightCard(
-                flight = flight,
-                forceSystemZone = forceSystemZone,
-                dimmed = dimmed,
-                onClick = { onSelect(flight) }
-            )
+            SwipeToDelete(onDelete = { onDelete(flight) }) {
+                FlightCard(
+                    flight = flight,
+                    forceSystemZone = forceSystemZone,
+                    dimmed = dimmed,
+                    onClick = { onSelect(flight) }
+                )
+            }
+        }
+    }
+}
+
+private enum class Reveal { CLOSED, OPEN }
+
+private val DeleteWidth = 92.dp
+
+/**
+ * Drag the card leftwards to uncover a Delete button behind it; the card snaps
+ * open or shut, and a tap on the button is what actually deletes.
+ */
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeToDelete(onDelete: () -> Unit, content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    val openPx = with(density) { DeleteWidth.toPx() }
+    val state = remember(openPx) {
+        AnchoredDraggableState(
+            initialValue = Reveal.CLOSED,
+            positionalThreshold = { distance -> distance * 0.5f },
+            velocityThreshold = { with(density) { 120.dp.toPx() } },
+            animationSpec = tween()
+        ).apply {
+            updateAnchors(DraggableAnchors {
+                Reveal.CLOSED at 0f
+                Reveal.OPEN at -openPx
+            })
+        }
+    }
+    val scope = rememberCoroutineScope()
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .padding(start = 8.dp),
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            Surface(
+                onClick = {
+                    scope.launch { state.animateTo(Reveal.CLOSED) }
+                    onDelete()
+                },
+                modifier = Modifier
+                    .width(DeleteWidth - 8.dp)
+                    .fillMaxHeight(),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Outlined.Delete, contentDescription = null)
+                    Text("Delete", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(state.requireOffset().roundToInt(), 0) }
+                .anchoredDraggable(state, Orientation.Horizontal)
+        ) {
+            content()
         }
     }
 }

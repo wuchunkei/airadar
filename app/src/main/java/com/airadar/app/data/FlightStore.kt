@@ -12,8 +12,17 @@ import java.time.temporal.ChronoUnit
  */
 object FlightStore {
 
+    /** How long a deleted trip waits in the recycle bin before it is gone for good. */
+    const val RETENTION_DAYS = 30L
+
+    // Everything, deleted trips included; the two LiveData below are its two halves.
+    private var all: List<Flight> = emptyList()
+
     private val _flights = MutableLiveData<List<Flight>>(emptyList())
     val flights: LiveData<List<Flight>> = _flights
+
+    private val _deleted = MutableLiveData<List<Flight>>(emptyList())
+    val deleted: LiveData<List<Flight>> = _deleted
 
     init {
         reseed()
@@ -41,46 +50,58 @@ object FlightStore {
 
         val airborne = listOfNotNull(inFlightSample())
 
-        // Keep anything the traveller added or imported, and carry fetched tracks
-        // across so a refresh does not throw away a downloaded path.
-        val current = _flights.value.orEmpty()
-        val kept = current.filter { it.isPending }
-        val tracked = current.filter { it.track != null }.associateBy { it.id }
-        publish((kept + airborne + upcoming + past).map { fresh ->
-            tracked[fresh.id]?.let { fresh.copy(track = it.track, trackFlownOn = it.trackFlownOn) } ?: fresh
-        })
+        // Keep anything the traveller added or imported, carry fetched tracks across
+        // so a refresh does not throw away a downloaded path, and leave deleted trips
+        // deleted.
+        val kept = all.filter { it.isPending }
+        val tracked = all.filter { it.track != null }.associateBy { it.id }
+        val binned = all.filter { it.deletedAt != null }.associateBy { it.id }
+        val fresh = (kept + airborne + upcoming + past)
+            .distinctBy { it.id }
+            .map { f -> tracked[f.id]?.let { f.copy(track = it.track, trackFlownOn = it.trackFlownOn) } ?: f }
+            .map { f -> binned[f.id]?.let { f.copy(deletedAt = it.deletedAt) } ?: f }
+        publish(fresh + binned.values.filter { b -> fresh.none { it.id == b.id } })
     }
 
     fun add(flight: Flight) {
-        val existing = _flights.value.orEmpty()
-        if (existing.any { it.flightNumber == flight.flightNumber && it.departureTime == flight.departureTime }) return
-        publish(existing + flight)
+        val same = all.firstOrNull { it.flightNumber == flight.flightNumber && it.departureTime == flight.departureTime }
+        when {
+            same == null -> publish(all + flight)
+            // Adding a trip that sits in the bin brings it back rather than duplicating it.
+            same.deletedAt != null -> restore(same.id)
+        }
     }
 
     fun confirm(flight: Flight) {
-        publish(_flights.value.orEmpty().map {
-            if (it.id == flight.id) it.copy(isPending = false) else it
-        })
+        publish(all.map { if (it.id == flight.id) it.copy(isPending = false) else it })
     }
 
     fun replace(old: Flight, replacement: Flight) {
-        val without = _flights.value.orEmpty().filterNot { it.id == old.id }
-        publish(without + replacement.copy(isPending = false))
+        publish(all.filterNot { it.id == old.id } + replacement.copy(isPending = false))
     }
 
-    fun remove(flight: Flight) {
-        publish(_flights.value.orEmpty().filterNot { it.id == flight.id })
+    /** Moves the trip to the recycle bin; [restore] undoes it within [RETENTION_DAYS]. */
+    fun delete(flightId: String) {
+        publish(all.map { if (it.id == flightId) it.copy(deletedAt = Instant.now()) else it })
+    }
+
+    fun restore(flightId: String) {
+        publish(all.map { if (it.id == flightId) it.copy(deletedAt = null) else it })
     }
 
     fun setTrack(flightId: String, points: List<TrackPoint>, flownOn: LocalDate) {
-        publish(_flights.value.orEmpty().map {
-            if (it.id == flightId) it.copy(track = points, trackFlownOn = flownOn) else it
-        })
+        publish(all.map { if (it.id == flightId) it.copy(track = points, trackFlownOn = flownOn) else it })
     }
 
     private fun publish(list: List<Flight>) {
-        val withDurations = list.map { it.copy(typicalDurationMinutes = typicalDuration(it, list)) }
-        _flights.value = withDurations.sortedBy { it.departureInstant ?: Instant.MAX }
+        val expiry = Instant.now().minus(RETENTION_DAYS, ChronoUnit.DAYS)
+        val live = list.filter { it.deletedAt == null }
+        // Typical durations are averaged over live trips only.
+        all = list
+            .filterNot { it.deletedAt?.isBefore(expiry) == true }
+            .map { it.copy(typicalDurationMinutes = typicalDuration(it, live)) }
+        _flights.value = all.filter { it.deletedAt == null }.sortedBy { it.departureInstant ?: Instant.MAX }
+        _deleted.value = all.filter { it.deletedAt != null }.sortedByDescending { it.deletedAt }
     }
 
     /**

@@ -6,6 +6,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.material3.Typography
 import androidx.compose.ui.graphics.Color
@@ -80,6 +81,7 @@ private val darkColors = darkColorScheme(
 val LocalDarkTheme = staticCompositionLocalOf { false }
 
 @Composable
+@ReadOnlyComposable
 fun isDarkTheme(): Boolean = LocalDarkTheme.current
 
 @Composable
