@@ -31,6 +31,7 @@ async def _startup():
     app.state.http = httpx.AsyncClient()
     app.state.db = db.connect()
     await db.ensure_indexes(app.state.db)
+    await billing.seed_lifetime_tokens(app.state.db)
 
 
 @app.on_event("shutdown")

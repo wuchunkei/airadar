@@ -150,6 +150,11 @@ fun AiradarApp() {
     val token by DeepLinks.shareToken
     LaunchedEffect(token) {
         val t = token ?: return@LaunchedEffect
+        // A guest does not take part in sharing: the link is simply not recognised.
+        if (!settings.isLoggedIn || !settings.membership.limits.sharing) {
+            DeepLinks.shareToken.value = null
+            return@LaunchedEffect
+        }
         linked = runCatching { BackendClient.linkedTrip(t) }.getOrNull()
         if (linked == null) {
             snackbar.showSnackbar("That trip link has expired.")
@@ -218,7 +223,8 @@ fun AiradarApp() {
                 onCommitted = remind,
                 onFriendsClick = { overlay = Overlay.FRIENDS },
                 onCreateFirst = { tab = Tab.SEARCH },
-                signedIn = settings.isLoggedIn,
+                // Friends and sharing are for plan holders; a guest sees neither.
+                signedIn = settings.isLoggedIn && settings.membership.limits.sharing,
                 onDeleted = { flight ->
                     FlightReminders.cancel(context, flight.id)
                     scope.launch {

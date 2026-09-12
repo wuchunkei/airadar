@@ -290,8 +290,8 @@ fun TripScreen(
                 }
             }
     ) {
-        // Friends, where My keeps Settings: top right, over the list.
-        Surface(
+        // Friends, where My keeps Settings: top right, over the list — plan holders only.
+        if (signedIn) Surface(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(16.dp)
@@ -439,7 +439,7 @@ fun TripScreen(
                 onDismiss = { selectedId = null },
                 extraActions = when {
                     share != null && share.status != ShareStatus.TOGETHER -> respondActions
-                    signedIn && !flight.isPending -> shareActions
+                    signedIn && !flight.isPending -> shareActions  // signedIn here means "has a plan"
                     else -> null
                 }
             )

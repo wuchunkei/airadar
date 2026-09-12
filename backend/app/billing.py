@@ -19,6 +19,7 @@ the token simply becomes Premium.
 
 import json
 import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -114,8 +115,33 @@ _ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
 
 
 def _new_token() -> str:
-    raw = "".join(secrets.choice(_ALPHABET) for _ in range(12))
-    return f"AIR-{raw[:4]}-{raw[4:8]}-{raw[8:]}"
+    """16 hex characters, e.g. 3F9A0C7D21B4E8F6."""
+    return secrets.token_hex(8).upper()
+
+
+def normalize(token: str) -> str:
+    return re.sub(r"[^0-9A-Z]", "", token.strip().upper())
+
+
+async def seed_lifetime_tokens(db) -> None:
+    """
+    LIFETIME_PREMIUM_TOKENS: comma-separated tokens that are Premium forever —
+    for testing and for the developer's own phone. Created if missing, never
+    tied to Stripe.
+    """
+    forever = datetime(2999, 1, 1, tzinfo=timezone.utc)
+    for raw in os.environ.get("LIFETIME_PREMIUM_TOKENS", "").split(","):
+        code = normalize(raw)
+        if len(code) < 8:
+            continue
+        await db.tokens.update_one(
+            {"_id": code},
+            {"$setOnInsert": {"order": f"ORD-LIFE-{code[:6]}", "plan": "premium", "status": "active",
+                              "currentPeriodEnd": forever, "deviceId": None, "boundEmail": None,
+                              "lifetime": True, "createdAt": _now()},
+             "$set": {"plan": "premium", "status": "active", "currentPeriodEnd": forever}},
+            upsert=True,
+        )
 
 
 def _new_order() -> str:
@@ -239,7 +265,7 @@ class UpgradeCheck(BaseModel):
 @router.post("/pay/api/upgrade-check")
 async def upgrade_check(body: UpgradeCheck, request: Request):
     """Is this token a live Superior? If so, what will the first Premium month cost?"""
-    tok = await request.app.state.db.tokens.find_one({"_id": body.token.strip().upper()})
+    tok = await request.app.state.db.tokens.find_one({"_id": normalize(body.token)})
     if not tok:
         raise HTTPException(status_code=404, detail="No such token.")
     if tok["plan"] == "premium":
@@ -254,7 +280,7 @@ async def upgrade_check(body: UpgradeCheck, request: Request):
 @router.post("/pay/upgrade")
 async def pay_upgrade(request: Request, token: str = Form(...)):
     db = request.app.state.db
-    code = token.strip().upper()
+    code = normalize(token)
     tok = await db.tokens.find_one({"_id": code})
     if not tok or tok["plan"] != "superior" or not _token_live(tok):
         raise HTTPException(status_code=400, detail="Only a live Superior token can be upgraded.")
@@ -297,7 +323,7 @@ async def token_check(body: TokenCheck, request: Request):
     this phone if it is not yet bound to one. Another phone is refused.
     """
     db = request.app.state.db
-    code = body.token.strip().upper()
+    code = normalize(body.token)
     tok = await db.tokens.find_one({"_id": code})
     if not tok:
         raise HTTPException(status_code=404, detail="No such token.")
@@ -315,7 +341,7 @@ async def token_check(body: TokenCheck, request: Request):
 async def redeem(body: TokenCheck, request: Request, user: dict = Depends(current_user)):
     """After Google sign-in: ties the token to this account (first come) and raises the plan."""
     db = request.app.state.db
-    code = body.token.strip().upper()
+    code = normalize(body.token)
     tok = await db.tokens.find_one({"_id": code})
     if not tok:
         raise HTTPException(status_code=404, detail="No such token.")
