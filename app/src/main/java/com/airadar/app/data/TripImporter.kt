@@ -22,7 +22,8 @@ object TripImporter {
             val already = existing.any { it.flightNumber == c.flightNumber && it.departureTime.toLocalDate() == c.date }
             if (!already) {
                 resolve(c)?.let {
-                    FlightStore.add(it.copy(isPending = true))
+                    // A refusal means the plan is full; the rest would be refused too.
+                    if (!FlightStore.add(it.copy(isPending = true))) return added
                     added++
                 }
             }

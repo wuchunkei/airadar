@@ -1,5 +1,7 @@
 package com.airadar.app.ui
 
+import android.app.Activity
+import com.airadar.app.ui.components.MembershipDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -122,6 +124,26 @@ fun AiradarApp() {
         null -> Unit
     }
 
+    // A plan limit was hit somewhere (search, import, a link): explain, offer more.
+    val limitHit by FlightStore.limitHit.observeAsState()
+    limitHit?.let { hit ->
+        val goSignIn: () -> Unit = {
+            FlightStore.clearLimitHit()
+            overlay = Overlay.SETTINGS
+        }
+        val goSubscribe: (String) -> Unit = { productId ->
+            FlightStore.clearLimitHit()
+            settingsViewModel.subscribe(context as Activity, productId) { }
+        }
+        MembershipDialog(
+            current = settings.membership.tier,
+            reason = hit.reason,
+            onDismiss = { FlightStore.clearLimitHit() },
+            onSignIn = if (settings.isLoggedIn) null else goSignIn,
+            onSubscribe = if (settings.isLoggedIn) goSubscribe else null
+        )
+    }
+
     // A trip someone sent as a link: a small card of the flight, who shared it,
     // and one button to take it into Trips.
     var linked by remember { mutableStateOf<BackendClient.LinkedTrip?>(null) }
@@ -145,15 +167,17 @@ fun AiradarApp() {
             onAdd = {
                 val t = token
                 scope.launch {
-                    if (settings.isLoggedIn && t != null) {
-                        runCatching { BackendClient.copyLinkedTrip(t) }
-                        runCatching { FlightStore.syncFromServer() }
+                    val added = if (settings.isLoggedIn && t != null) {
+                        runCatching { BackendClient.copyLinkedTrip(t) }.isSuccess
+                            .also { runCatching { FlightStore.syncFromServer() } }
                     } else {
                         tripViewModel.addFlight(link.flight)
                     }
-                    remind(link.flight)
+                    if (added) {
+                        remind(link.flight)
+                        tab = Tab.TRIP
+                    }
                     close()
-                    tab = Tab.TRIP
                 }
             }
         )
@@ -212,9 +236,11 @@ fun AiradarApp() {
             Tab.SEARCH -> SearchScreen(
                 viewModel = searchViewModel,
                 onAddFlight = { flight ->
-                    tripViewModel.addFlight(flight)
-                    remind(flight)
-                    tab = Tab.TRIP
+                    // A refusal opens the plans dialog by itself; stay on Search then.
+                    if (tripViewModel.addFlight(flight)) {
+                        remind(flight)
+                        tab = Tab.TRIP
+                    }
                 },
                 // Each screen applies the status bar inset itself; only the nav bar is shared.
                 modifier = Modifier.padding(bottom = padding.calculateBottomPadding())

@@ -10,15 +10,17 @@ import os
 from datetime import date
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 
-from . import airlabs, auth, db, social, trips
+from . import airlabs, auth, billing, db, fr24, social, trips
+from .billing import membership
 from .schema import Airport, Flight
 
 app = FastAPI(title="Airadar backend", version="0.2.0")
 app.include_router(auth.router)
 app.include_router(trips.router)
 app.include_router(social.router)
+app.include_router(billing.router)
 
 
 def _http() -> httpx.AsyncClient:
@@ -52,26 +54,55 @@ async def health():
         "airlabs": bool(os.environ.get("AIRLABS_API_KEY")),
         "google": bool(os.environ.get("GOOGLE_CLIENT_ID")),
         "jwt": bool(os.environ.get("JWT_SECRET")),
+        "history": fr24.enabled(),
+        "playVerification": bool(os.environ.get("PLAY_SERVICE_ACCOUNT_JSON")),
     }
 
 
-@app.get("/flights/{number}/{day}", response_model=Flight, dependencies=[Depends(require_token)])
-async def flight(number: str, day: date):
+async def optional_user(request: Request, authorization: str | None = Header(default=None)) -> dict | None:
+    """The signed-in traveller if a bearer token came along; None otherwise."""
+    if not authorization:
+        return None
     try:
-        # Live status if AirLabs has this very day's flight; the timetable otherwise.
-        # A live record for a different day is never passed off as the asked-for one.
-        if abs((day - date.today()).days) <= 1:
-            try:
-                live = await airlabs.flight(_http(), number, day)
-                if live.departureTime.date() == day:
-                    return live
-            except airlabs.AirLabsError as e:
-                if e.quota_exhausted:
-                    raise
-        return await airlabs.schedule(_http(), number, day)
+        return await auth.current_user(request, authorization)
+    except HTTPException:
+        return None
+
+
+@app.get("/flights/{number}/{day}", response_model=Flight, dependencies=[Depends(require_token)])
+async def flight(number: str, day: date, user: dict | None = Depends(optional_user)):
+    errors: list[str] = []
+    try:
+        return await _airlabs_flight(number, day)
     except airlabs.AirLabsError as e:
-        status = 429 if e.quota_exhausted else 502
-        raise HTTPException(status_code=status, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
+        if e.quota_exhausted:
+            raise HTTPException(status_code=429, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
+        errors.append(str(e))
+
+    # Past flights AirLabs no longer carries: the history service, for Premium only.
+    if user is not None and membership(user).limits.historyLookup and fr24.enabled():
+        try:
+            return await fr24.flight(_http(), app.state.db, number, day)
+        except fr24.HistoryError as e:
+            errors.append(str(e))
+    elif user is not None and fr24.enabled() and day < date.today():
+        errors.append("Past flights beyond the airline's timetable need Premium.")
+
+    raise HTTPException(status_code=502, detail={"flight": number.upper(), "date": day.isoformat(), "error": " ".join(errors)})
+
+
+async def _airlabs_flight(number: str, day: date) -> Flight:
+    # Live status if AirLabs has this very day's flight; the timetable otherwise.
+    # A live record for a different day is never passed off as the asked-for one.
+    if abs((day - date.today()).days) <= 1:
+        try:
+            live = await airlabs.flight(_http(), number, day)
+            if live.departureTime.date() == day:
+                return live
+        except airlabs.AirLabsError as e:
+            if e.quota_exhausted:
+                raise
+    return await airlabs.schedule(_http(), number, day)
 
 
 @app.get("/airports/{iata}", response_model=Airport, dependencies=[Depends(require_token)])

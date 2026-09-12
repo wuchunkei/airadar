@@ -6,6 +6,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.airadar.app.data.colorOf
+import android.app.Activity
+import com.airadar.app.data.Tier
+import com.airadar.app.ui.components.MembershipDialog
+import java.time.ZoneId
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -62,6 +66,10 @@ fun SettingsScreen(
     val authError by viewModel.authError.observeAsState()
     val signingIn by viewModel.signingIn.observeAsState(false)
     val activity = LocalContext.current
+    var showPlans by remember { mutableStateOf(false) }
+    val purchaseError by viewModel.purchaseError.observeAsState()
+    val purchasing by viewModel.purchasing.observeAsState(false)
+    val membership = settings.membership
     val calendarStatus by viewModel.calendarStatus.observeAsState()
     val askCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) viewModel.setCalendarSync(true)
@@ -119,6 +127,18 @@ fun SettingsScreen(
                             TextButton(onClick = viewModel::signOut) { Text("Sign out") }
                         }
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                        NavigationRow(
+                            title = when (membership.tier) {
+                                Tier.PREMIUM -> "Premium"
+                                Tier.SUPERIOR -> if (membership.trial) "Superior · trial" else "Superior"
+                                Tier.GUEST -> "No plan · guest limits"
+                            } + (membership.until?.let { " · until ${it.atZone(ZoneId.systemDefault()).toLocalDate()}" } ?: ""),
+                            onClick = { showPlans = true }
+                        )
+                        purchaseError?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        }
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
                         ToggleRow(
                             title = "Friends can find me by email",
                             checked = settings.findableByEmail,
@@ -131,7 +151,7 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Button(
-                            onClick = { viewModel.signIn(activity) },
+                            onClick = { showPlans = true },
                             enabled = !signingIn,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -231,6 +251,39 @@ fun SettingsScreen(
             }
         }
     }
+
+    PlansHost(
+        show = showPlans,
+        signedIn = settings.isLoggedIn,
+        membership = membership,
+        purchasing = purchasing,
+        onDismiss = { showPlans = false },
+        onSignIn = {
+            showPlans = false
+            viewModel.signIn(activity)
+        },
+        onSubscribe = { productId -> viewModel.subscribe(activity as Activity, productId) { showPlans = false } }
+    )
+}
+
+@Composable
+private fun PlansHost(
+    show: Boolean,
+    signedIn: Boolean,
+    membership: com.airadar.app.data.Membership,
+    purchasing: Boolean,
+    onDismiss: () -> Unit,
+    onSignIn: () -> Unit,
+    onSubscribe: (String) -> Unit
+) {
+    if (!show) return
+    MembershipDialog(
+        current = membership.tier,
+        onDismiss = onDismiss,
+        onSignIn = if (signedIn) null else onSignIn,
+        onSubscribe = if (signedIn) onSubscribe else null,
+        busy = purchasing
+    )
 }
 
 @Composable

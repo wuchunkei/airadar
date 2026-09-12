@@ -6,6 +6,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.time.Instant
 
 /** Who is signed in, as the server describes them. */
 data class AuthUser(
@@ -15,7 +16,8 @@ data class AuthUser(
     val avatarUrl: String?,
     val givenName: String? = null,
     val color: String? = null,
-    val findableByEmail: Boolean = false
+    val findableByEmail: Boolean = false,
+    val membership: Membership = Membership.GUEST
 )
 
 /**
@@ -65,14 +67,32 @@ object AuthStore {
         _user.postValue(user)
     }
 
-    /** Profile fields changed after sign-in (colour, findability). */
-    fun updateProfile(givenName: String?, color: String?, findableByEmail: Boolean) {
+    /** Profile fields changed after sign-in (colour, findability, plan). */
+    fun updateProfile(givenName: String?, color: String?, findableByEmail: Boolean, membership: Membership? = null) {
         prefs.edit()
             .putString("givenName", givenName)
             .putString("color", color)
             .putBoolean("findableByEmail", findableByEmail)
             .apply()
+        membership?.let(::saveMembership)
         _user.postValue(load())
+    }
+
+    fun saveMembership(m: Membership) {
+        prefs.edit()
+            .putString("tier", m.tier.name)
+            .putLong("tierUntil", m.until?.toEpochMilli() ?: 0L)
+            .putBoolean("tierTrial", m.trial)
+            .apply()
+        _user.postValue(load())
+    }
+
+    private fun loadMembership(): Membership {
+        val tier = runCatching { Tier.valueOf(prefs.getString("tier", null) ?: "") }.getOrDefault(Tier.GUEST)
+        val until = prefs.getLong("tierUntil", 0L).takeIf { it > 0 }?.let(Instant::ofEpochMilli)
+        // A lapsed plan is a guest plan until the server says otherwise.
+        val lapsed = until != null && until.isBefore(Instant.now())
+        return Membership(if (lapsed) Tier.GUEST else tier, until, prefs.getBoolean("tierTrial", false))
     }
 
     fun clear() {
@@ -86,7 +106,8 @@ object AuthStore {
         return AuthUser(
             id, email, prefs.getString("name", null), prefs.getString("avatarUrl", null),
             prefs.getString("givenName", null), prefs.getString("color", null),
-            prefs.getBoolean("findableByEmail", false)
+            prefs.getBoolean("findableByEmail", false),
+            loadMembership()
         )
     }
 }

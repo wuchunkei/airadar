@@ -4,12 +4,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import android.app.Application
+import android.app.Activity
+import com.airadar.app.data.Billing
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import com.airadar.app.data.ThemeMode
 import androidx.lifecycle.Observer
 import com.airadar.app.data.CalendarImporter
 import com.airadar.app.data.TripImporter
+import com.airadar.app.data.Membership
 import com.airadar.app.data.AuthStore
 import com.airadar.app.data.AuthUser
 import com.airadar.app.data.GoogleSignIn
@@ -170,8 +173,37 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             userName = user?.name,
             userEmail = user?.email,
             color = user?.color,
-            findableByEmail = user?.findableByEmail ?: false
+            findableByEmail = user?.findableByEmail ?: false,
+            membership = user?.membership ?: Membership.GUEST
         )
+    }
+
+    private val _purchaseError = MutableLiveData<String?>(null)
+    val purchaseError: LiveData<String?> = _purchaseError
+
+    private val _purchasing = MutableLiveData(false)
+    val purchasing: LiveData<Boolean> = _purchasing
+
+    /** Opens Google Play for [productId]; the server raises the plan once Play confirms. */
+    fun subscribe(activity: Activity, productId: String, onDone: () -> Unit) {
+        viewModelScope.launch {
+            _purchasing.value = true
+            _purchaseError.value = null
+            try {
+                Billing.subscribe(activity, productId) { result ->
+                    _purchasing.value = false
+                    result.onFailure { _purchaseError.value = it.message }
+                    result.onSuccess { onDone() }
+                }
+            } catch (e: IOException) {
+                _purchasing.value = false
+                _purchaseError.value = e.message
+            }
+        }
+    }
+
+    fun refreshMembership() {
+        viewModelScope.launch { runCatching { BackendClient.me() } }
     }
 
     fun setFindableByEmail(on: Boolean) {

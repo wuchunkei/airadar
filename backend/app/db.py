@@ -52,3 +52,6 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await db.shares.create_index("toUserId")
     await db.shares.create_index("ownerId")
     await db.shares.create_index("token", sparse=True)
+
+    # Answers from the history service; forgotten after CACHE_DAYS.
+    await db.flightCache.create_index("cachedAt", expireAfterSeconds=90 * 24 * 3600)

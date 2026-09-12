@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from .auth import current_user
+from .billing import membership
 from .schema import FlightStatus
 
 router = APIRouter(prefix="/trips", tags=["trips"])
@@ -83,10 +84,40 @@ async def list_deleted(request: Request, user: dict = Depends(current_user)):
     return [_out(d) async for d in cursor]
 
 
+async def _enforce_limits(db, user: dict, trip: TripIn, key: str) -> None:
+    """
+    Superior: at most 5 past trips, nothing further than a month ahead.
+    Guest-level (lapsed): 1 past trip, a week ahead, 3 trips in all.
+    Premium: no limits. Updating a trip that already exists is always allowed.
+    """
+    m = membership(user)
+    lim = m.limits
+    if lim.maxPastTrips is None and lim.futureDays is None and lim.maxTrips is None:
+        return
+    if await db.trips.find_one({"_id": key, "deletedAt": None}):
+        return
+    today = date.today()
+    trip_day = trip.departureTime.date()
+    cursor = db.trips.find({"userId": user["_id"], "deletedAt": None})
+    existing = [d async for d in cursor]
+    past_count = sum(1 for d in existing if d["departureTime"].date() < today)
+
+    def refuse(reason: str):
+        raise HTTPException(status_code=402, detail={"code": "limit", "tier": m.tier, "error": reason})
+
+    if lim.maxTrips is not None and len(existing) >= lim.maxTrips:
+        refuse(f"{lim.maxTrips} trips is the most this plan keeps.")
+    if trip_day < today and lim.maxPastTrips is not None and past_count >= lim.maxPastTrips:
+        refuse(f"This plan keeps {lim.maxPastTrips} past trip{'s' if lim.maxPastTrips != 1 else ''}.")
+    if trip_day > today and lim.futureDays is not None and (trip_day - today).days > lim.futureDays:
+        refuse(f"This plan adds trips up to {lim.futureDays} days ahead.")
+
+
 @router.put("/{trip_id}", response_model=Trip)
 async def put_trip(trip_id: str, trip: TripIn, request: Request, user: dict = Depends(current_user)):
     if trip.id != trip_id:
         raise HTTPException(status_code=400, detail="Body id does not match the path.")
+    await _enforce_limits(request.app.state.db, user, trip, _key(user, trip_id))
     now = _now()
     doc = await request.app.state.db.trips.find_one_and_update(
         {"_id": _key(user, trip_id)},

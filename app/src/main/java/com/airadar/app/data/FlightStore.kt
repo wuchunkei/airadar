@@ -30,6 +30,14 @@ object FlightStore {
     private val _deleted = MutableLiveData<List<Flight>>(emptyList())
     val deleted: LiveData<List<Flight>> = _deleted
 
+    /** The last plan refusal, for the UI to explain and offer an upgrade. */
+    private val _limitHit = MutableLiveData<LimitReached?>(null)
+    val limitHit: LiveData<LimitReached?> = _limitHit
+
+    fun clearLimitHit() {
+        _limitHit.value = null
+    }
+
     // Server writes go out from here, off the main thread, one after another.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val synced: Boolean get() = AuthStore.isSignedIn
@@ -102,16 +110,36 @@ object FlightStore {
         publish(all)
     }
 
-    fun add(flight: Flight) {
+    /** Adds a trip; returns false (and records why) when the plan does not allow it. */
+    fun add(flight: Flight): Boolean {
         val same = all.firstOrNull { it.flightNumber == flight.flightNumber && it.departureTime == flight.departureTime }
+        if (same == null) {
+            try {
+                Entitlements.checkAdd(flight, all)
+            } catch (e: LimitReached) {
+                _limitHit.value = e
+                return false
+            }
+        }
         when {
             same == null -> {
                 publish(all + flight)
-                push { BackendClient.putTrip(flight) }
+                push {
+                    try {
+                        BackendClient.putTrip(flight)
+                    } catch (e: BackendClient.BackendException) {
+                        // The server's count is the truth; take the trip back out.
+                        if (e.code == 402) withContext(Dispatchers.Main) {
+                            publish(all.filterNot { it.id == flight.id })
+                            _limitHit.value = LimitReached(e.message ?: "Plan limit reached.", Entitlements.membership.tier)
+                        } else throw e
+                    }
+                }
             }
             // Adding a trip that sits in the bin brings it back rather than duplicating it.
             same.deletedAt != null -> restore(same.id)
         }
+        return true
     }
 
     fun confirm(flight: Flight) {

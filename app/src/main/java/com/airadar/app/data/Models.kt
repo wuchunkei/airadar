@@ -131,7 +131,8 @@ data class UserSettings(
     val userName: String? = null,
     /** The traveller's own colour, as friends see them. */
     val color: String? = null,
-    val findableByEmail: Boolean = false
+    val findableByEmail: Boolean = false,
+    val membership: Membership = Membership.GUEST
 )
 
 /** The three countries that still measure road and air distance in miles. */

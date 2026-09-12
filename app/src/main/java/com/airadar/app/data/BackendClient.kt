@@ -38,7 +38,12 @@ object BackendClient {
     /** Status for one flight number on one date; the server picks live vs timetable. */
     suspend fun flight(flightNumber: String, date: LocalDate): Flight = withContext(Dispatchers.IO) {
         val number = flightNumber.uppercase()
-        parse(get("flights/$number/$date"), number, date)
+        val path = "flights/$number/$date"
+        // Signed in, the server also knows the plan: Premium reaches past flights.
+        val row = if (AuthStore.isSignedIn) runCatching { authed("GET", path) }.getOrElse { e ->
+            if (e is BackendException && e.code == 401) call("GET", path) else throw e
+        } else call("GET", path)
+        parse(row, number, date)
     }
 
     /** Reference data for an airport the bundled table does not know. */
@@ -129,11 +134,28 @@ object BackendClient {
 
     private fun profile(o: JSONObject): AuthUser {
         val current = AuthStore.user.value
-        AuthStore.updateProfile(o.text("givenName"), o.text("color"), o.optBoolean("findableByEmail", false))
+        val membership = o.optJSONObject("membership")?.let(::membershipFromJson)
+        AuthStore.updateProfile(o.text("givenName"), o.text("color"), o.optBoolean("findableByEmail", false), membership)
         return AuthUser(
             o.getString("id"), o.getString("email"), o.text("name") ?: current?.name, o.text("avatarUrl"),
-            o.text("givenName"), o.text("color"), o.optBoolean("findableByEmail", false)
+            o.text("givenName"), o.text("color"), o.optBoolean("findableByEmail", false),
+            membership ?: Membership.GUEST
         )
+    }
+
+    private fun membershipFromJson(o: JSONObject): Membership = Membership(
+        tier = runCatching { Tier.valueOf(o.optString("tier").uppercase()) }.getOrDefault(Tier.GUEST),
+        until = o.text("until")?.let { raw ->
+            runCatching { java.time.OffsetDateTime.parse(raw).toInstant() }.getOrNull()
+                ?: runCatching { LocalDateTime.parse(raw.take(19)).atOffset(java.time.ZoneOffset.UTC).toInstant() }.getOrNull()
+        },
+        trial = o.optBoolean("trial", false)
+    )
+
+    /** Hands a Google Play purchase to the server, which verifies it and raises the plan. */
+    suspend fun confirmPurchase(productId: String, purchaseToken: String): Membership = withContext(Dispatchers.IO) {
+        val o = authed("POST", "billing/google", JSONObject().put("productId", productId).put("purchaseToken", purchaseToken))
+        membershipFromJson(o).also(AuthStore::saveMembership)
     }
 
     suspend fun lookup(email: String): Person = withContext(Dispatchers.IO) {
@@ -274,6 +296,7 @@ object BackendClient {
         throw BackendException(
             when (code) {
                 401 -> reason.ifBlank { "The server rejected this build's token (backend.token in local.properties)." }
+                402 -> reason.ifBlank { "This needs a higher plan." }
                 404 -> if (path.startsWith("flights/")) "Nothing found for that flight on that date." else reason.ifBlank { "Not found." }
                 429 -> "AirLabs monthly quota used up on the server."
                 else -> reason.ifBlank { "Airadar server error (HTTP $code)." }
