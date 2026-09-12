@@ -6,6 +6,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.GradientDrawable
 import android.view.MotionEvent
+import java.io.File
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -17,6 +18,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.airadar.app.BuildConfig
 import com.airadar.app.data.Airport
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightDatabase
@@ -35,7 +37,9 @@ import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.milestones.MilestoneManager
 import org.osmdroid.views.overlay.milestones.MilestoneMeterDistanceLister
 import org.osmdroid.views.overlay.milestones.MilestonePathDisplayer
+import kotlin.math.ceil
 import kotlin.math.hypot
+import kotlin.math.log2
 
 data class MapRoute(
     val from: Airport,
@@ -92,8 +96,15 @@ fun TileMap(
     val framedFor = remember(interactive) { intArrayOf(0) }
 
     val mapView = remember(interactive) {
-        // OSM's tile policy requires an identifying user agent.
-        Configuration.getInstance().userAgentValue = context.packageName
+        Configuration.getInstance().apply {
+            // OSM's tile policy requires an identifying user agent.
+            userAgentValue = context.packageName
+            // Cache inside the app's own storage: always writable, cleared with the app.
+            osmdroidBasePath = File(context.cacheDir, "osmdroid")
+            osmdroidTileCache = File(context.cacheDir, "osmdroid/tiles")
+            // Debug builds log every tile request, so a blank map can be diagnosed from logcat.
+            isDebugTileProviders = BuildConfig.DEBUG
+        }
         val view = if (interactive) MapView(context) else object : MapView(context) {
             // Declining every event hands it to the Compose parent untouched.
             override fun dispatchTouchEvent(ev: MotionEvent?): Boolean = false
@@ -104,8 +115,16 @@ fun TileMap(
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
             isHorizontalMapRepetitionEnabled = true
             isVerticalMapRepetitionEnabled = false
-            setMinZoomLevel(2.0)
+            // Nothing past the poles: the map stops at the top and bottom of the world.
+            val tiles = MapView.getTileSystem()
+            setScrollableAreaLimitLatitude(tiles.maxLatitude, tiles.minLatitude, 0)
             setMaxZoomLevel(18.0)
+            // And no grey bands: the world may never be shorter than the screen.
+            addOnFirstLayoutListener { v, _, _, _, _ ->
+                val worldFits = ceil(log2(v.height / 256.0)).coerceAtLeast(2.0)
+                setMinZoomLevel(worldFits)
+                if (zoomLevelDouble < worldFits) controller.setZoom(worldFits)
+            }
         }
     }
 
