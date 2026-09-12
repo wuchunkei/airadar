@@ -5,7 +5,6 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.GradientDrawable
 import android.view.MotionEvent
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -21,6 +20,7 @@ import com.airadar.app.data.Airport
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightDatabase
 import com.airadar.app.data.TrackPoint
+import com.airadar.app.ui.theme.isDarkTheme
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -80,7 +80,7 @@ fun TileMap(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val dark = isSystemInDarkTheme()
+    val dark = isDarkTheme()
 
     val routeColor = (if (dark) Color(0xFF4FD8C4) else Color(0xFF0B6FD4)).toArgb()
     val selectedColor = (if (dark) Color(0xFFFFD166) else Color(0xFFE8590C)).toArgb()

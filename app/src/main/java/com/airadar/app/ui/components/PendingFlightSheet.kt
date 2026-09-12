@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightDatabase
+import com.airadar.app.ui.theme.isDarkTheme
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -58,7 +58,7 @@ fun PendingFlightSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
-    val dark = isSystemInDarkTheme()
+    val dark = isDarkTheme()
 
     val correctColor = if (dark) Color(0xFF3FBF87) else Color(0xFF127A4D)
     val wrongColor = if (dark) Color(0xFFFF7A6E) else Color(0xFFC0392B)

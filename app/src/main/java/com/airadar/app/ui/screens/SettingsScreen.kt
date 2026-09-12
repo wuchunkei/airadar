@@ -16,11 +16,15 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.airadar.app.data.ThemeMode
 import com.airadar.app.data.UserSettings
 import com.airadar.app.ui.viewmodel.SettingsViewModel
 import java.time.ZonedDateTime
@@ -127,6 +132,11 @@ fun SettingsScreen(
 
             item {
                 SettingsSection("Display") {
+                    AppearanceRow(
+                        mode = settings.themeMode,
+                        onModeChange = viewModel::setThemeMode
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     ToggleRow(
                         title = "Show times in my time zone",
                         subtitle = "Every departure and arrival converted to $systemZoneName; " +
@@ -208,6 +218,37 @@ private fun NavigationRow(
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/** System / Light / Dark, as a segmented control under its own label. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppearanceRow(mode: ThemeMode, onModeChange: (ThemeMode) -> Unit) {
+    Column(modifier = Modifier.padding(vertical = 6.dp)) {
+        Text("Appearance", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
+        ) {
+            val modes = ThemeMode.entries
+            modes.forEachIndexed { index, entry ->
+                SegmentedButton(
+                    selected = mode == entry,
+                    onClick = { onModeChange(entry) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size)
+                ) {
+                    Text(
+                        when (entry) {
+                            ThemeMode.SYSTEM -> "System"
+                            ThemeMode.LIGHT -> "Light"
+                            ThemeMode.DARK -> "Dark"
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 

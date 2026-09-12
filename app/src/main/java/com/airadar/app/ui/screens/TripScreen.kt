@@ -211,7 +211,8 @@ fun TripScreen(
             // boundary between what has been flown and what is ahead.
             if (airborne.isNotEmpty()) {
                 item(key = "now-header") { SectionTitle("Now") }
-                flightItems(airborne, forceSystemZone) { selectedId = it.id }
+                // Now is today by definition; no heading needed.
+                flightItems(airborne, forceSystemZone, dateHeadings = false) { selectedId = it.id }
                 item(key = "coming-divider") { TimeDivider() }
                 item(key = "coming-header") { SectionTitle("Coming") }
             } else {
@@ -271,6 +272,7 @@ private fun LazyListScope.flightItems(
     flights: List<Flight>,
     forceSystemZone: Boolean,
     dimmed: Boolean = false,
+    dateHeadings: Boolean = true,
     onSelect: (Flight) -> Unit
 ) {
     // The date heading lives inside the first card's item of each day rather than
@@ -278,7 +280,8 @@ private fun LazyListScope.flightItems(
     // on — stay one per flight.
     itemsIndexed(flights, key = { _, it -> it.id }) { index, flight ->
         val day = flight.departureTime.toLocalDate()
-        val firstOfDay = index == 0 || flights[index - 1].departureTime.toLocalDate() != day
+        val firstOfDay = dateHeadings &&
+                (index == 0 || flights[index - 1].departureTime.toLocalDate() != day)
         Column {
             if (firstOfDay) DateTitle(day.toString(), dimmed)
             FlightCard(

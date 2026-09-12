@@ -3,6 +3,10 @@ package com.airadar.app.ui.viewmodel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
+import android.app.Application
+import android.content.Context
+import androidx.lifecycle.AndroidViewModel
+import com.airadar.app.data.ThemeMode
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -143,9 +147,19 @@ class SearchViewModel : ViewModel() {
     }
 }
 
-class SettingsViewModel : ViewModel() {
+class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val _settings = MutableLiveData(UserSettings())
+    private val prefs = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
+
+    private val _settings = MutableLiveData(
+        UserSettings(
+            calendarSyncEnabled = prefs.getBoolean("calendarSync", false),
+            forceSystemZone = prefs.getBoolean("forceSystemZone", false),
+            themeMode = prefs.getString("themeMode", null)
+                ?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
+                ?: ThemeMode.SYSTEM
+        )
+    )
     val settings: LiveData<UserSettings> = _settings
 
     fun signIn() {
@@ -161,11 +175,18 @@ class SettingsViewModel : ViewModel() {
     }
 
     fun setCalendarSync(enabled: Boolean) {
+        prefs.edit().putBoolean("calendarSync", enabled).apply()
         _settings.value = _settings.value?.copy(calendarSyncEnabled = enabled)
     }
 
     fun setForceSystemZone(enabled: Boolean) {
+        prefs.edit().putBoolean("forceSystemZone", enabled).apply()
         _settings.value = _settings.value?.copy(forceSystemZone = enabled)
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        prefs.edit().putString("themeMode", mode.name).apply()
+        _settings.value = _settings.value?.copy(themeMode = mode)
     }
 
 }

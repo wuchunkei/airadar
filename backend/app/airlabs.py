@@ -46,7 +46,7 @@ async def flight(client: httpx.AsyncClient, number: str, day: date) -> Flight:
             f"AirLabs has no live record of {number.upper()}; it only tracks flights "
             "around the current day."
         )
-    return _parse(row, number, day)
+    return _parse(await _with_airline_name(client, row, number), number, day)
 
 
 async def schedule(client: httpx.AsyncClient, number: str, day: date) -> Flight:
@@ -57,10 +57,10 @@ async def schedule(client: httpx.AsyncClient, number: str, day: date) -> Flight:
         raise AirLabsError(f"AirLabs has no schedule for {number.upper()}.")
     row = next((r for r in rows if str(r.get("dep_time", "")).startswith(day.isoformat())), None)
     if row is not None:
-        return _parse(row, number, day)
+        return _parse(await _with_airline_name(client, row, number), number, day)
     # AirLabs only lists the next day or two. Further out, the timetable is the
     # same clock times on the asked-for day, with nothing live attached to it.
-    return _rebase(_parse(rows[0], number, day), day)
+    return _rebase(_parse(await _with_airline_name(client, rows[0], number), number, day), day)
 
 
 def _rebase(f: Flight, day: date) -> Flight:
@@ -74,6 +74,31 @@ def _rebase(f: Flight, day: date) -> Flight:
         "arrivalGate": None,
         "baggageClaim": None,
     })
+
+
+_airline_names: dict[str, str] = {}
+
+
+async def airline_name(client: httpx.AsyncClient, iata: str) -> str | None:
+    """Timetable rows carry only the airline code; the name comes from /airlines, once."""
+    iata = iata.upper()
+    if iata not in _airline_names:
+        try:
+            body = await _get(client, "airlines", iata_code=iata)
+            rows = body.get("response") or []
+            _airline_names[iata] = (rows[0].get("name") if rows else None) or ""
+        except AirLabsError:
+            return None
+    return _airline_names[iata] or None
+
+
+async def _with_airline_name(client: httpx.AsyncClient, row: dict, number: str) -> dict:
+    if not row.get("airline_name"):
+        code = row.get("airline_iata") or number[:2]
+        name = await airline_name(client, code)
+        if name:
+            row = {**row, "airline_name": name}
+    return row
 
 
 async def airport(client: httpx.AsyncClient, iata: str) -> Airport:

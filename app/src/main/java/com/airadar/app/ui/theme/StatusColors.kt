@@ -1,6 +1,5 @@
 package com.airadar.app.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
@@ -9,7 +8,7 @@ import com.airadar.app.data.FlightStatus
 @Composable
 @ReadOnlyComposable
 fun FlightStatus.statusColor(): Color {
-    val dark = isSystemInDarkTheme()
+    val dark = isDarkTheme()
     return when (this) {
         FlightStatus.ON_TIME,
         FlightStatus.LANDED -> if (dark) Color(0xFF5BD9A8) else Color(0xFF067A54)

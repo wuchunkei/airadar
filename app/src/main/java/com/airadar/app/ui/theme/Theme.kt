@@ -5,6 +5,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.material3.Typography
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -74,6 +76,12 @@ private val darkColors = darkColorScheme(
     inversePrimary = InversePrimaryDark,
 )
 
+/** Whether the app is drawn dark — the traveller's choice, not necessarily the phone's. */
+val LocalDarkTheme = staticCompositionLocalOf { false }
+
+@Composable
+fun isDarkTheme(): Boolean = LocalDarkTheme.current
+
 @Composable
 fun AiradarTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -84,11 +92,13 @@ fun AiradarTheme(
         else -> lightColors
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }
 
 val Typography = Typography(

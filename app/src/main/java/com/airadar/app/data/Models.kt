@@ -108,11 +108,14 @@ data class TravelStats(
     val cityCount: Int
 )
 
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
 data class UserSettings(
     val isLoggedIn: Boolean = false,
     val calendarSyncEnabled: Boolean = false,
     /** Show every time in the phone's zone instead of each airport's own. */
     val forceSystemZone: Boolean = false,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val userEmail: String? = null,
     val userName: String? = null
 )
