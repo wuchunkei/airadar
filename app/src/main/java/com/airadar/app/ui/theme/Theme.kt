@@ -1,5 +1,9 @@
 package com.airadar.app.ui.theme
 
+import android.os.Build
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -89,7 +93,12 @@ fun AiradarTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
+    // On Android 12+ the palette is the phone's own, drawn from the wallpaper, the
+    // way every Pixel app does it; the hand-picked schemes are the fallback.
+    val context = LocalContext.current
     val colorScheme = when {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         darkTheme -> darkColors
         else -> lightColors
     }

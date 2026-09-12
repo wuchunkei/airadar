@@ -2,7 +2,6 @@ package com.airadar.app.ui.screens
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.DraggableAnchors
@@ -12,8 +11,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -332,7 +333,10 @@ private fun SwipeToDelete(onDelete: () -> Unit, content: @Composable () -> Unit)
             initialValue = Reveal.CLOSED,
             positionalThreshold = { distance -> distance * 0.5f },
             velocityThreshold = { with(density) { 120.dp.toPx() } },
-            animationSpec = tween()
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            )
         ).apply {
             updateAnchors(DraggableAnchors {
                 Reveal.CLOSED at 0f
@@ -340,24 +344,23 @@ private fun SwipeToDelete(onDelete: () -> Unit, content: @Composable () -> Unit)
             })
         }
     }
-    val scope = rememberCoroutineScope()
-
     Box(modifier = Modifier.fillMaxWidth()) {
+        // The button fades in with the drag, so a closed card hides it completely.
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .padding(start = 8.dp),
+                .padding(start = 8.dp)
+                .graphicsLayer { alpha = (-state.requireOffset() / openPx).coerceIn(0f, 1f) },
             contentAlignment = Alignment.CenterEnd
         ) {
             Surface(
                 onClick = {
-                    scope.launch { state.animateTo(Reveal.CLOSED) }
                     onDelete()
                 },
                 modifier = Modifier
                     .width(DeleteWidth - 8.dp)
                     .fillMaxHeight(),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.error,
                 contentColor = MaterialTheme.colorScheme.onError
             ) {
@@ -482,7 +485,7 @@ fun FlightCard(
     dimmed: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(20.dp)
     val dashed = flight.isPending
 
     Card(
@@ -501,7 +504,9 @@ fun FlightCard(
         colors = CardDefaults.cardColors(
             containerColor = when {
                 dashed -> MaterialTheme.colorScheme.surface
+                // Composited, not translucent: nothing behind the card may show through.
                 dimmed -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    .compositeOver(MaterialTheme.colorScheme.background)
                 else -> MaterialTheme.colorScheme.surface
             }
         ),

@@ -24,7 +24,6 @@ import com.airadar.app.ui.theme.isDarkTheme
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint as OsmGeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
@@ -32,6 +31,7 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.TilesOverlay
 import org.osmdroid.views.overlay.milestones.MilestoneManager
 import org.osmdroid.views.overlay.milestones.MilestoneMeterDistanceLister
 import org.osmdroid.views.overlay.milestones.MilestonePathDisplayer
@@ -59,21 +59,6 @@ fun List<Flight>.toMapRoutes(): List<MapRoute> =
         .groupingBy { it }
         .eachCount()
         .map { (pair, count) -> MapRoute(pair.first, pair.second, count) }
-
-/**
- * A proper night style for the map. CARTO's Dark Matter is OpenStreetMap data drawn
- * dark, served free with attribution; inverting the daytime tiles looked like a negative.
- */
-private val DarkMatter = XYTileSource(
-    "CartoDarkMatter", 0, 20, 512, "@2x.png",
-    arrayOf(
-        "https://a.basemaps.cartocdn.com/dark_all/",
-        "https://b.basemaps.cartocdn.com/dark_all/",
-        "https://c.basemaps.cartocdn.com/dark_all/",
-        "https://d.basemaps.cartocdn.com/dark_all/"
-    ),
-    "© OpenStreetMap contributors © CARTO"
-)
 
 /** OpenStreetMap tile map with great-circle routes and flown tracks drawn on top. */
 @Composable
@@ -140,8 +125,8 @@ fun TileMap(
         // map down here cannot race a final draw the way onDispose can.
         onRelease = { it.onDetach() },
         update = { map ->
-            val source = if (dark) DarkMatter else TileSourceFactory.MAPNIK
-            if (map.tileProvider.tileSource !== source) map.setTileSource(source)
+            // OSM serves one style only; at night its tiles are inverted in place.
+            map.overlayManager.tilesOverlay.setColorFilter(if (dark) TilesOverlay.INVERT_COLORS else null)
 
             map.overlays.clear()
 

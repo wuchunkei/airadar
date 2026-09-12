@@ -1,9 +1,11 @@
 package com.airadar.app.data
 
+import androidx.compose.runtime.Immutable
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 
+@Immutable
 data class Airport(
     val iata: String,
     /** ICAO location indicator — what ADS-B feeds key airports by. */
@@ -20,6 +22,7 @@ data class Airport(
     val zone: ZoneId get() = ZoneId.of(zoneId)
 }
 
+@Immutable
 data class Flight(
     val id: String = "",
     val flightNumber: String,
@@ -88,6 +91,7 @@ data class Flight(
 
 enum class FlightPhase { PAST, IN_PROGRESS, UPCOMING }
 
+@Immutable
 data class TrackPoint(val lat: Double, val lon: Double)
 
 enum class FlightStatus {
@@ -112,6 +116,7 @@ data class TravelStats(
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+@Immutable
 data class UserSettings(
     val isLoggedIn: Boolean = false,
     val calendarSyncEnabled: Boolean = false,
