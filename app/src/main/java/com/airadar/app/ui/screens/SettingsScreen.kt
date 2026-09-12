@@ -159,20 +159,13 @@ fun SettingsScreen(
                         }
 
                         // 2. Token accepted for this phone: sign in with Google, or swap the token.
+                        // Nothing about the plan is shown until the account is signed in.
                         !settings.isLoggedIn -> {
-                            PlanLine(
-                                tier = checked.tier,
-                                until = checked.until,
-                                grace = false,
-                                note = checked.boundEmail?.let { "Sign in with $it" }
-                            )
-                            // Two full-width rows: the sign-in first, the swap under it.
                             Button(
                                 onClick = { viewModel.signIn(activity) },
                                 enabled = !signingIn,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 10.dp)
                                     .height(48.dp),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
