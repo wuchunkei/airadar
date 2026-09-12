@@ -174,10 +174,6 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    fun setColor(hex: String) {
-        viewModelScope.launch { runCatching { BackendClient.updateProfile(color = hex) } }
-    }
-
     fun setFindableByEmail(on: Boolean) {
         viewModelScope.launch { runCatching { BackendClient.updateProfile(findableByEmail = on) } }
     }

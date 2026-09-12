@@ -21,7 +21,7 @@ enum class FriendStatus { ACCEPTED, INCOMING, OUTGOING }
 @Immutable
 data class Friend(val friendshipId: String, val person: Person, val status: FriendStatus)
 
-/** The colours a traveller may pick; the server rejects anything else. */
+/** The colours the server deals out at sign-up, one per traveller, for good. */
 val PersonPalette = listOf(
     "#E53935", "#F4511E", "#FB8C00", "#F9A825", "#7CB342", "#43A047",
     "#00897B", "#00ACC1", "#1E88E5", "#3949AB", "#8E24AA", "#D81B60"

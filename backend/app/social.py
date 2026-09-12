@@ -59,8 +59,7 @@ class Me(Person):
 
 
 class ProfilePatch(BaseModel):
-    color: str | None = None
-    givenName: str | None = None
+    """The colour is dealt at sign-up and never changes; only findability is the traveller's to set."""
     findableByEmail: bool | None = None
 
 
@@ -83,8 +82,6 @@ async def me(user: dict = Depends(current_user)):
 @router.patch("/me", response_model=Me)
 async def patch_me(body: ProfilePatch, request: Request, user: dict = Depends(current_user)):
     changes = {k: v for k, v in body.model_dump().items() if v is not None}
-    if "color" in changes and changes["color"] not in PALETTE:
-        raise HTTPException(status_code=400, detail="Pick a colour from the palette.")
     if changes:
         user = await request.app.state.db.users.find_one_and_update(
             {"_id": user["_id"]}, {"$set": changes}, return_document=True

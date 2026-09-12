@@ -98,7 +98,7 @@ fun EmailImportScreen(
         }
     }
 
-    val connect = {
+    val connect: () -> Unit = {
         scan = Scan.Reading(0, 0)
         val request = AuthorizationRequest.builder()
             .setRequestedScopes(listOf(Scope(GmailImporter.SCOPE)))

@@ -113,6 +113,7 @@ import com.airadar.app.ui.components.formatDuration
 import com.airadar.app.ui.components.label
 import com.airadar.app.ui.theme.statusColor
 import com.airadar.app.ui.viewmodel.TripViewModel
+import java.time.LocalDate
 import kotlin.math.roundToInt
 
 private val RefreshThreshold = 64.dp
@@ -285,9 +286,11 @@ fun TripScreen(
                 item(key = "coming-divider") { TimeDivider() }
                 item(key = "coming-header") { SectionTitle("Coming") }
             } else {
+                // "Now" only when a flight departs today; otherwise what is ahead is "Coming".
+                val flyingToday = coming.any { it.departureTime.toLocalDate() == LocalDate.now() }
                 item(key = "coming-header") {
                     Crossfade(
-                        targetState = if (showHistory) "Now" else "Coming",
+                        targetState = if (flyingToday) "Now" else "Coming",
                         label = "sectionTitle"
                     ) { title -> PresentHeader(title, onFriendsClick) }
                 }

@@ -123,13 +123,9 @@ object BackendClient {
 
     suspend fun me(): AuthUser = withContext(Dispatchers.IO) { profile(authed("GET", "me")) }
 
-    suspend fun updateProfile(color: String? = null, findableByEmail: Boolean? = null): AuthUser =
-        withContext(Dispatchers.IO) {
-            val body = JSONObject()
-            color?.let { body.put("color", it) }
-            findableByEmail?.let { body.put("findableByEmail", it) }
-            profile(authed("PATCH", "me", body))
-        }
+    suspend fun updateProfile(findableByEmail: Boolean): AuthUser = withContext(Dispatchers.IO) {
+        profile(authed("PATCH", "me", JSONObject().put("findableByEmail", findableByEmail)))
+    }
 
     private fun profile(o: JSONObject): AuthUser {
         val current = AuthStore.user.value
