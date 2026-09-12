@@ -63,8 +63,8 @@ fun WheelDatePickerDialog(
         if (day > daysInMonth) day = daysInMonth
     }
 
-    val currentYear = LocalDate.now().year
-    val years = remember { (currentYear - 5..currentYear + 2).toList() }
+    // Any year a traveller might log or plan; the wheel opens on the chosen one.
+    val years = remember { (1950..LocalDate.now().year + 10).toList() }
     val months = remember { (1..12).toList() }
     val days = remember(daysInMonth) { (1..daysInMonth).toList() }
 

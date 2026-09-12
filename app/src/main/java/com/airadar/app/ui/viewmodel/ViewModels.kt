@@ -13,7 +13,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airadar.app.data.Flight
 import com.airadar.app.data.BackendClient
-import com.airadar.app.data.FlightDatabase
 import com.airadar.app.data.FlightPhase
 import com.airadar.app.data.FlightStore
 import com.airadar.app.data.OpenSkyClient
@@ -125,22 +124,6 @@ class SearchViewModel : ViewModel() {
             } catch (e: IOException) {
                 _searchResults.value = emptyList()
                 _error.value = e.message
-            }
-            _isSearching.value = false
-        }
-    }
-
-    fun searchByPnr(pnr: String, lastName: String) {
-        viewModelScope.launch {
-            _isSearching.value = true
-            _error.value = null
-            delay(400)
-            val matches = FlightDatabase.lookupByPnr(pnr, lastName)
-            _searchResults.value = matches
-            if (matches.isEmpty()) {
-                _error.value = "Booking lookup isn't connected yet. " +
-                        "It needs an airline or GDS account — no open service returns " +
-                        "a booking from a reference alone. Search by flight number meanwhile."
             }
             _isSearching.value = false
         }

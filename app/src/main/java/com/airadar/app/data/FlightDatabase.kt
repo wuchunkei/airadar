@@ -109,13 +109,6 @@ object FlightDatabase {
         return schedule.toFlight(date)
     }
 
-    /**
-     * Booking lookup needs a GDS contract (Amadeus, Sabre, Travelport) or each
-     * airline's own member API — there is no open source for it, so nothing is
-     * resolved locally.
-     */
-    fun lookupByPnr(pnr: String, lastName: String): List<Flight> = emptyList()
-
     private fun Flight.defaultStatus(): FlightStatus = when (phase) {
         FlightPhase.PAST -> FlightStatus.COMPLETED
         FlightPhase.IN_PROGRESS -> FlightStatus.IN_FLIGHT
