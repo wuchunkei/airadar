@@ -16,3 +16,5 @@ backend/.env
 
 # Claude Code session state
 .claude/
+__pycache__/
+*.pyc
