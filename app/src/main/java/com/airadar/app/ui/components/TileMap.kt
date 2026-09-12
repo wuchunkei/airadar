@@ -22,17 +22,19 @@ import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightDatabase
 import com.airadar.app.data.TrackPoint
 import org.osmdroid.config.Configuration
+import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint as OsmGeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.TilesOverlay
 import org.osmdroid.views.overlay.milestones.MilestoneManager
+import org.osmdroid.views.overlay.milestones.MilestoneMeterDistanceLister
 import org.osmdroid.views.overlay.milestones.MilestonePathDisplayer
-import org.osmdroid.views.overlay.milestones.MilestonePixelDistanceLister
 
 data class MapRoute(
     val from: Airport,
@@ -65,13 +67,20 @@ fun TileMap(
     modifier: Modifier = Modifier,
     tracks: List<MapTrack> = emptyList(),
     /** False for a thumbnail: touches fall through so the sheet around it still scrolls. */
-    interactive: Boolean = true
+    interactive: Boolean = true,
+    /** The leg drawn in the accent colour, matched by airport codes. */
+    selected: Pair<Airport, Airport>? = null,
+    /** A tap on a route or track, as its endpoints. */
+    onLegClick: ((from: Airport, to: Airport) -> Unit)? = null,
+    /** A tap on the map away from any leg. */
+    onMapTap: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val dark = isSystemInDarkTheme()
 
     val routeColor = (if (dark) Color(0xFF4FD8C4) else Color(0xFF0B6FD4)).toArgb()
+    val selectedColor = (if (dark) Color(0xFFFFD166) else Color(0xFFE8590C)).toArgb()
     val nodeColor = (if (dark) Color(0xFF9DF5E6) else Color(0xFF0A4F96)).toArgb()
 
     val framedFor = remember(interactive) { intArrayOf(0) }
@@ -118,7 +127,39 @@ fun TileMap(
 
             map.overlays.clear()
 
-            routes.forEach { route ->
+            // Overlays get taps last-added first, so the catch-all goes in at the
+            // bottom and only hears taps no leg or airport claimed.
+            if (onMapTap != null) {
+                map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
+                    override fun singleTapConfirmedHelper(p: OsmGeoPoint?): Boolean {
+                        onMapTap()
+                        return true
+                    }
+
+                    override fun longPressHelper(p: OsmGeoPoint?): Boolean = false
+                }))
+            }
+
+            fun isSelected(from: Airport, to: Airport) =
+                selected != null && selected.first.iata == from.iata && selected.second.iata == to.iata
+
+            fun Polyline.leg(from: Airport, to: Airport, width: Float) {
+                val color = if (isSelected(from, to)) selectedColor else routeColor
+                outlinePaint.color = color
+                outlinePaint.strokeWidth = width
+                outlinePaint.isAntiAlias = true
+                // osmdroid clears this list on detach, so it must be a mutable one.
+                setMilestoneManagers(arrayListOf(midpointArrow(distance, color)))
+                // No bubble: a tap is reported upward and the screen decides what to show.
+                infoWindow = null
+                setOnClickListener { _, _, _ ->
+                    onLegClick?.invoke(from, to)
+                    onLegClick != null
+                }
+            }
+
+            // Selected leg last, so it paints over the others where they cross.
+            routes.sortedBy { isSelected(it.from, it.to) }.forEach { route ->
                 map.overlays.add(
                     Polyline(map).apply {
                         setPoints(
@@ -127,22 +168,16 @@ fun TileMap(
                                 GeoPoint(route.to.latitude, route.to.longitude)
                             ).map { OsmGeoPoint(it.lat, it.lon) }
                         )
-                        outlinePaint.color = routeColor
-                        outlinePaint.strokeWidth = (3f + route.weight).coerceAtMost(9f)
-                        outlinePaint.isAntiAlias = true
-                        setMilestoneManagers(arrayListOf(directionArrows(routeColor)))
+                        leg(route.from, route.to, (3f + route.weight).coerceAtMost(9f))
                     }
                 )
             }
 
-            tracks.forEach { track ->
+            tracks.sortedBy { isSelected(it.from, it.to) }.forEach { track ->
                 map.overlays.add(
                     Polyline(map).apply {
                         setPoints(track.points.map { OsmGeoPoint(it.lat, it.lon) })
-                        outlinePaint.color = routeColor
-                        outlinePaint.strokeWidth = 4f
-                        outlinePaint.isAntiAlias = true
-                        setMilestoneManagers(arrayListOf(directionArrows(routeColor)))
+                        leg(track.from, track.to, 4f)
                     }
                 )
             }
@@ -155,7 +190,8 @@ fun TileMap(
                             position = OsmGeoPoint(airport.latitude, airport.longitude)
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                             icon = dotDrawable(nodeColor)
-                            title = "${airport.iata} · ${airport.city}"
+                            infoWindow = null
+                            setOnMarkerClickListener { _, _ -> true }
                         }
                     )
                 }
@@ -183,14 +219,14 @@ fun TileMap(
 }
 
 /**
- * Arrowheads stamped along a line every ~110 px, pointing the way the flight goes.
- * Pixel spacing keeps the density the same whether zoomed to a city or the globe.
+ * One arrowhead halfway along a line, pointing the way the flight goes.
+ * [lengthMeters] is the line's own length, so the head lands on its middle at any zoom.
  */
-private fun directionArrows(color: Int): MilestoneManager {
+private fun midpointArrow(lengthMeters: Double, color: Int): MilestoneManager {
     val head = Path().apply {
-        moveTo(-7f, -6f)
-        lineTo(7f, 0f)
-        lineTo(-7f, 6f)
+        moveTo(-9f, -8f)
+        lineTo(9f, 0f)
+        lineTo(-9f, 8f)
         close()
     }
     val paint = Paint().apply {
@@ -199,7 +235,7 @@ private fun directionArrows(color: Int): MilestoneManager {
         isAntiAlias = true
     }
     return MilestoneManager(
-        MilestonePixelDistanceLister(60.0, 110.0),
+        MilestoneMeterDistanceLister(doubleArrayOf(lengthMeters / 2)),
         MilestonePathDisplayer(0.0, true, head, paint)
     )
 }

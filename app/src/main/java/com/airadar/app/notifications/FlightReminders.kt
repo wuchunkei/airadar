@@ -19,7 +19,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.airadar.app.MainActivity
-import com.airadar.app.data.AirLabsClient
+import com.airadar.app.data.BackendClient
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightStatus
 import java.io.IOException
@@ -168,7 +168,7 @@ object FlightReminders {
 
         private suspend fun fetch(number: String, date: LocalDate): Flight? =
             try {
-                if (AirLabsClient.isConfigured) AirLabsClient.flight(number, date) else null
+                if (BackendClient.isConfigured) BackendClient.flight(number, date) else null
             } catch (_: IOException) {
                 null
             }

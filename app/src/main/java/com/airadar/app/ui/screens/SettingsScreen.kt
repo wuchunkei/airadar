@@ -33,7 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.airadar.app.BuildConfig
-import com.airadar.app.data.AirLabsClient
+import com.airadar.app.data.BackendClient
 import com.airadar.app.data.UserSettings
 import com.airadar.app.ui.viewmodel.SettingsViewModel
 import java.time.ZonedDateTime
@@ -145,9 +145,10 @@ fun SettingsScreen(
             item {
                 SettingsSection("Data sources") {
                     SourceRow(
-                        name = "AirLabs",
-                        role = "Schedule, status, gates and delays. airlabs.apiKey in local.properties.",
-                        configured = AirLabsClient.isConfigured
+                        name = "Airadar server (AirLabs)",
+                        role = "Schedule, status, gates and delays, via your own backend. " +
+                                "backend.url / backend.token in local.properties.",
+                        configured = BackendClient.isConfigured
                     )
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     SourceRow(

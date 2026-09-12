@@ -8,7 +8,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airadar.app.data.Flight
-import com.airadar.app.data.AirLabsClient
+import com.airadar.app.data.BackendClient
 import com.airadar.app.data.FlightDatabase
 import com.airadar.app.data.FlightPhase
 import com.airadar.app.data.FlightStore
@@ -111,12 +111,8 @@ class SearchViewModel : ViewModel() {
             _isSearching.value = true
             _error.value = null
             try {
-                // Live status covers the current day; anything further out is a
-                // timetable row until the airline starts publishing status for it.
-                val daysAhead = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), date)
-                val flight = if (daysAhead in -1..1) AirLabsClient.flight(flightNumber, date)
-                else AirLabsClient.schedule(flightNumber, date)
-                _searchResults.value = listOf(flight)
+                // The server decides between live status and a timetable row.
+                _searchResults.value = listOf(BackendClient.flight(flightNumber, date))
             } catch (e: IOException) {
                 _searchResults.value = emptyList()
                 _error.value = e.message

@@ -18,7 +18,8 @@ android {
 
         buildConfigField 'String', 'OPENSKY_CLIENT_ID', secret('opensky.clientId')
         buildConfigField 'String', 'OPENSKY_CLIENT_SECRET', secret('opensky.clientSecret')
-        buildConfigField 'String', 'AIRLABS_API_KEY', secret('airlabs.apiKey')
+        buildConfigField 'String', 'BACKEND_URL', secret('backend.url')
+        buildConfigField 'String', 'BACKEND_TOKEN', secret('backend.token')
         minSdk 26
         targetSdk 34
         versionCode 1

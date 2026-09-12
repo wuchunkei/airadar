@@ -3,40 +3,60 @@ package com.airadar.app.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.airadar.app.data.Airport
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightPhase
 import com.airadar.app.data.systemPrefersMetric
+import com.airadar.app.ui.components.FlightDetailSheet
 import com.airadar.app.ui.components.MapRoute
 import com.airadar.app.ui.components.MapTrack
 import com.airadar.app.ui.components.TileMap
 import com.airadar.app.ui.components.toMapRoutes
+import com.airadar.app.ui.viewmodel.TrackStatus
 import com.airadar.app.ui.viewmodel.travelStats
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 fun MyScreen(
     flights: List<Flight>,
+    forceSystemZone: Boolean,
+    trackStatus: Map<String, TrackStatus>,
+    onLoadTrack: (Flight) -> Unit,
     onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -56,12 +76,25 @@ fun MyScreen(
     }
     val stats = remember(history) { history.travelStats() }
 
+    // The leg the traveller tapped, and the flights that flew it, newest first.
+    var selectedLeg by remember { mutableStateOf<Pair<Airport, Airport>?>(null) }
+    val legFlights = remember(selectedLeg, history) {
+        val (from, to) = selectedLeg ?: return@remember emptyList()
+        history
+            .filter { it.departure == from.iata && it.arrival == to.iata }
+            .sortedByDescending { it.departureInstant }
+    }
+    var openId by remember { mutableStateOf<String?>(null) }
+
     Box(modifier = modifier.fillMaxSize()) {
 
         // Full-bleed map; pinch to zoom, drag to pan.
         TileMap(
             routes = routes,
             tracks = tracks,
+            selected = selectedLeg,
+            onLegClick = { from, to -> selectedLeg = from to to },
+            onMapTap = { selectedLeg = null },
             modifier = Modifier.fillMaxSize()
         )
 
@@ -84,35 +117,141 @@ fun MyScreen(
             }
         }
 
-        Surface(
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(12.dp),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            tonalElevation = 6.dp
         ) {
+            if (legFlights.isNotEmpty()) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(legFlights, key = { it.id }) { flight ->
+                        LegCard(flight, onClick = { openId = flight.id })
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                tonalElevation = 6.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp, horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    val metric = systemPrefersMetric()
+                    val distance = if (metric) stats.totalDistanceKm
+                    else (stats.totalDistanceKm * 0.621371).toInt()
+
+                    StatCell(
+                        value = "%,d".format(distance),
+                        unit = if (metric) "km" else "mi",
+                        label = "Distance"
+                    )
+                    StatCell(value = "${stats.flightCount}", unit = "", label = "Flights")
+                    StatCell(value = "${stats.countryCount}", unit = "", label = "Countries")
+                    StatCell(value = "${stats.cityCount}", unit = "", label = "Cities")
+                }
+            }
+        }
+    }
+
+    openId?.let { id ->
+        val flight = flights.firstOrNull { it.id == id } ?: return@let
+        FlightDetailSheet(
+            flight = flight,
+            forceSystemZone = forceSystemZone,
+            trackStatus = trackStatus[flight.id],
+            onLoadTrack = { onLoadTrack(flight) },
+            onDismiss = { openId = null }
+        )
+    }
+}
+
+private val legDate: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd (EEE)", Locale.ENGLISH)
+
+/** One flight on the tapped leg: who flew it, when, and between which airports. */
+@Composable
+private fun LegCard(flight: Flight, onClick: () -> Unit) {
+    val from = flight.departureAirport
+    val to = flight.arrivalAirport
+    Card(
+        onClick = onClick,
+        modifier = Modifier.width(260.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    flight.airlineName,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Text(
+                    flight.flightNumber,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+            Text(
+                flight.departureTime.toLocalDate().format(legDate),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 16.dp, horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                    .padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                val metric = systemPrefersMetric()
-                val distance = if (metric) stats.totalDistanceKm
-                else (stats.totalDistanceKm * 0.621371).toInt()
-
-                StatCell(
-                    value = "%,d".format(distance),
-                    unit = if (metric) "km" else "mi",
-                    label = "Distance"
+                LegEnd(flight.departure, from, Modifier.weight(1f))
+                Text(
+                    "→",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 8.dp)
                 )
-                StatCell(value = "${stats.flightCount}", unit = "", label = "Flights")
-                StatCell(value = "${stats.countryCount}", unit = "", label = "Countries")
-                StatCell(value = "${stats.cityCount}", unit = "", label = "Cities")
+                LegEnd(flight.arrival, to, Modifier.weight(1f), alignEnd = true)
             }
         }
+    }
+}
+
+@Composable
+private fun LegEnd(code: String, airport: Airport?, modifier: Modifier, alignEnd: Boolean = false) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
+    ) {
+        Text(code, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            airport?.city ?: "",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
