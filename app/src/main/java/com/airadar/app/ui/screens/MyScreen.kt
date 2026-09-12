@@ -3,7 +3,6 @@ package com.airadar.app.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,9 +11,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +52,7 @@ import com.airadar.app.ui.viewmodel.travelStats
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MyScreen(
     flights: List<Flight>,
@@ -123,12 +125,20 @@ fun MyScreen(
                 .fillMaxWidth()
         ) {
             if (legFlights.isNotEmpty()) {
+                // Same width as the stats panel below; several flights on one leg page sideways.
+                val cardsState = rememberLazyListState()
                 LazyRow(
-                    contentPadding = PaddingValues(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    state = cardsState,
+                    flingBehavior = rememberSnapFlingBehavior(cardsState),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp)
                 ) {
                     items(legFlights, key = { it.id }) { flight ->
-                        LegCard(flight, onClick = { openId = flight.id })
+                        LegCard(
+                            flight,
+                            onClick = { openId = flight.id },
+                            modifier = Modifier.fillParentMaxWidth()
+                        )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -181,12 +191,12 @@ private val legDate: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd
 
 /** One flight on the tapped leg: who flew it, when, and between which airports. */
 @Composable
-private fun LegCard(flight: Flight, onClick: () -> Unit) {
+private fun LegCard(flight: Flight, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val from = flight.departureAirport
     val to = flight.arrivalAirport
     Card(
         onClick = onClick,
-        modifier = Modifier.width(260.dp),
+        modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
