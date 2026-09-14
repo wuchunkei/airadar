@@ -120,6 +120,8 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     var callsign: String?
     var pnr: String?
     var isPending: Bool = false
+    /// Typed in by hand because no source knew it; shown with a warning block.
+    var isManual: Bool = false
     var track: [TrackPoint]?
     var trackFlownOn: String?  // yyyy-MM-dd
     var deletedAt: Date?
@@ -130,7 +132,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     // The wire carries the track as [[lat, lon]]; everything else is one-to-one.
     enum CodingKeys: String, CodingKey {
         case id, flightNumber, airlineName, departure, arrival, departureTerminal, arrivalTerminal, departureGate, arrivalGate
-        case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, callsign, pnr, isPending
+        case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, callsign, pnr, isPending, isManual
         case track, trackFlownOn, deletedAt, sharedBy, shares
     }
 
@@ -165,6 +167,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         callsign = try c.decodeIfPresent(String.self, forKey: .callsign)
         pnr = try c.decodeIfPresent(String.self, forKey: .pnr)
         isPending = try c.decodeIfPresent(Bool.self, forKey: .isPending) ?? false
+        isManual = try c.decodeIfPresent(Bool.self, forKey: .isManual) ?? false
         track = try c.decodeIfPresent([[Double]].self, forKey: .track)?.compactMap { $0.count >= 2 ? TrackPoint(lat: $0[0], lon: $0[1]) : nil }
         trackFlownOn = try c.decodeIfPresent(String.self, forKey: .trackFlownOn).map { String($0.prefix(10)) }
         deletedAt = try c.decodeIfPresent(Date.self, forKey: .deletedAt)
@@ -192,6 +195,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         try c.encodeIfPresent(callsign, forKey: .callsign)
         try c.encodeIfPresent(pnr, forKey: .pnr)
         try c.encode(isPending, forKey: .isPending)
+        try c.encode(isManual, forKey: .isManual)
         try c.encodeIfPresent(track?.map { [$0.lat, $0.lon] }, forKey: .track)
         try c.encodeIfPresent(trackFlownOn, forKey: .trackFlownOn)
     }

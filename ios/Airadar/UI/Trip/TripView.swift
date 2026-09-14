@@ -116,7 +116,10 @@ struct TripView: View {
             // Looked up by id so the sheet sees the refreshed Flight once a track is stored on it.
             if let flight = store.flights.first(where: { $0.id == id }) { detailSheet(flight) }
         }
-        .sheet(item: $shareFor) { ShareSheetView(flight: $0) }
+        .background {
+            // The share flow presents its own sheets; it just needs to exist while sharing.
+            if let f = shareFor { ShareFlow(flight: f) { shareFor = nil } }
+        }
     }
 
     @ViewBuilder

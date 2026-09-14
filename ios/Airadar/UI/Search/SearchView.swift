@@ -11,6 +11,7 @@ struct SearchView: View {
     @State private var searching = false
     @State private var error: String?
     @State private var result: Flight?
+    @State private var showManual = false
 
     private static let shown: DateFormatter = {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US"); f.dateFormat = "yyyy-MM-dd (EEEE)"; return f
@@ -49,7 +50,14 @@ struct SearchView: View {
                     .buttonStyle(.glassProminent)
                     .disabled(number.count < 3 || searching)
 
-                    if let error { Text(error).font(.caption).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading) }
+                    if let error {
+                        Text(error).font(.caption).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+                        // No source knew it: let the traveller record it by hand.
+                        Button { showManual = true } label: {
+                            Text("Add manually").fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 8)
+                        }
+                        .buttonStyle(.glass)
+                    }
                 }
                 .padding(16)
             }
@@ -65,6 +73,12 @@ struct SearchView: View {
                 Button("Done") { showPicker = false }.buttonStyle(.glassProminent).padding(.bottom)
             }
             .presentationDetents([.height(320)])
+        }
+        .sheet(isPresented: $showManual) {
+            ManualFlightForm(flightNumber: number, date: date) { flight in
+                error = nil
+                onAdd(flight)
+            }
         }
         .sheet(item: $result) { f in
             FlightDetailSheet(flight: f, forceSystemZone: settings.forceSystemZone, onDismiss: { result = nil },

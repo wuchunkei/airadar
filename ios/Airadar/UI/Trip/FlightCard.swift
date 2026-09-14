@@ -36,6 +36,7 @@ struct FlightCard: View {
                            ink: ink, muted: inkMuted)
                 HStack(spacing: 8) {
                     StatusChip(flight: flight)
+                    if flight.isManual { NameBlock(name: "Manual", color: Color(red: 0.96, green: 0.65, blue: 0.14), dashed: false) }
                     ShareBlocks(flight: flight, ink: ink, expanded: $expandedShares)
                     Spacer(minLength: 4)
                     Text("Usually \(formatDuration(flight.typicalDurationMinutes ?? flight.durationMinutes))")
