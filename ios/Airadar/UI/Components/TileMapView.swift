@@ -144,7 +144,7 @@ struct TileMapView: UIViewRepresentable {
         init(_ parent: TileMapView) { self.parent = parent }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let leg = overlay as? LegPolyline { return ArrowedPolylineRenderer(polyline: leg) }
+            if let leg = overlay as? LegPolyline { return ArrowedPolylineRenderer(overlay: leg) }
             return MKOverlayRenderer(overlay: overlay)
         }
 
@@ -227,9 +227,10 @@ extension Airport {
 
 /// The line plus one arrowhead at its midpoint, pointing the way the flight goes.
 final class ArrowedPolylineRenderer: MKPolylineRenderer {
-    override init(polyline: MKPolyline) {
-        super.init(polyline: polyline)
-        let leg = polyline as? LegPolyline
+    // init(overlay:) is the designated initializer MapKit actually calls.
+    override init(overlay: MKOverlay) {
+        super.init(overlay: overlay)
+        let leg = overlay as? LegPolyline
         strokeColor = leg?.color ?? .systemBlue
         lineWidth = leg?.width ?? 3
         lineJoin = .round
