@@ -79,6 +79,9 @@ final class FlightStore: ObservableObject {
             !(inc.sharedBy?.status == .together &&
               live.contains { $0.flightNumber == inc.flightNumber && $0.departureTime == inc.departureTime })
         }
+        // What moved since the last look — a delay, a gate, a status — is announced.
+        let before = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+        for f in mine { if let old = before[f.id] { FlightReminders.announceChange(from: old, to: f) } }
         publish(mine + binned + rest)
         for f in mine where f.phase == .upcoming { SiriSuggestions.donate(f) }
     }

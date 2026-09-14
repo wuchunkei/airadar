@@ -220,6 +220,15 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     var arrivalAirport: Airport? { AirportDatabase.shared.airport(arrival) }
 
     var departureInstant: Date? { departureAirport.map { departureTime.date(in: $0.zone) } }
+
+    /// Share of the flight done by the timetable clock, delay included: 0 before, 1 after.
+    var fractionFlown: Double {
+        guard let dep = departureInstant, let arr = arrivalInstant else { return 0 }
+        let delay = TimeInterval(delayMinutes * 60)
+        let total = arr.timeIntervalSince(dep)
+        guard total > 0 else { return 0 }
+        return min(1, max(0, Date().timeIntervalSince(dep + delay) / total))
+    }
     var arrivalInstant: Date? { arrivalAirport.map { arrivalTime.date(in: $0.zone) } }
 
     /// Cross-zone: an instant comparison, not a clock one.

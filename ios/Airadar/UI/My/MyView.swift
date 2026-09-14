@@ -12,11 +12,12 @@ struct MyView: View {
     @State private var homeRegion: Region?
     @State private var trackStatus: [String: TrackStatus] = [:]
 
-    private var history: [Flight] { store.flights.filter { $0.phase == .past && !$0.isPending } }
+    /// Flown legs, and the one in the air right now with the plane on it.
+    private var history: [Flight] { store.flights.filter { ($0.phase == .past || $0.phase == .inProgress) && !$0.isPending } }
     private var tracks: [MapTrack] {
         history.compactMap { f in
             guard let a = f.departureAirport, let b = f.arrivalAirport, let t = f.track else { return nil }
-            return MapTrack(from: a, to: b, points: t)
+            return MapTrack(from: a, to: b, points: t, live: f.phase == .inProgress)
         }
     }
     private var routes: [MapRoute] { history.filter { $0.track == nil }.toMapRoutes() }

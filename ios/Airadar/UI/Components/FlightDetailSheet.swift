@@ -25,11 +25,6 @@ struct FlightDetailSheet<Actions: View>: View {
                     .frame(height: 180)
                     .clipShape(.rect(cornerRadius: 16))
 
-                // Only a leg that has flown (or is flying) has a track to fetch.
-                if let onLoadTrack, flight.callsign != nil, flight.phase != .upcoming {
-                    TrackLoader(phase: flight.phase, flownOn: flight.trackFlownOn, status: trackStatus, onLoad: onLoadTrack)
-                }
-
                 header
                 codes
                 facts
@@ -61,6 +56,10 @@ struct FlightDetailSheet<Actions: View>: View {
         }
         .presentationDetents(detents)
         .presentationDragIndicator(.visible)
+        // In the air: the path flown so far is fetched quietly, so the plane sits where it really is.
+        .task(id: flight.id) {
+            if flight.phase == .inProgress, flight.trackFlownOn == nil, flight.callsign != nil { onLoadTrack?() }
+        }
     }
 
     /// Just tall enough for the content; only content that does not fit on one
@@ -88,11 +87,10 @@ struct FlightDetailSheet<Actions: View>: View {
     }
 
     private var codes: some View {
-        HStack {
+        HStack(spacing: 12) {
             BigCode(code: flight.departure, terminal: flight.departureTerminal, city: flight.departureAirport?.cityCountry, trailing: false)
-            Spacer()
-            Image(systemName: "airplane").foregroundStyle(.secondary)
-            Spacer()
+            // The way between: an arrow before departure, the plane along a dashed line in the air, done after.
+            FlightProgressLine(flight: flight).frame(maxWidth: .infinity).frame(height: 18)
             BigCode(code: flight.arrival, terminal: flight.arrivalTerminal, city: flight.arrivalAirport?.cityCountry, trailing: true)
         }
     }
@@ -117,12 +115,13 @@ struct FlightDetailSheet<Actions: View>: View {
 
     private var routes: [MapRoute] {
         guard flight.track == nil, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
-        return [MapRoute(from: a, to: b, rank: 0, isReturn: false)]
+        let progress: Double? = flight.phase == .inProgress ? flight.fractionFlown : nil
+        return [MapRoute(from: a, to: b, rank: 0, isReturn: false, progress: progress)]
     }
 
     private var tracks: [MapTrack] {
         guard let t = flight.track, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
-        return [MapTrack(from: a, to: b, points: t)]
+        return [MapTrack(from: a, to: b, points: t, live: flight.phase == .inProgress)]
     }
 
     private func longDay(_ day: String) -> String {
@@ -175,27 +174,34 @@ struct DetailRow: View {
     }
 }
 
-private struct TrackLoader: View {
-    let phase: FlightPhase
-    let flownOn: String?
-    let status: TrackStatus?
-    let onLoad: () -> Void
+/// The same line as on the lock screen: arrow → before departure; in the air a
+/// dashed line, the flown share green with the plane at its head; a full green
+/// line once landed.
+struct FlightProgressLine: View {
+    let flight: Flight
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                if let text { Text(text).font(.caption).foregroundStyle(.secondary) }
-                Spacer()
-                if status == .loading { ProgressView().controlSize(.small) }
-                else { Button(flownOn == nil ? "Load flown track" : "Reload", action: onLoad).font(.caption) }
+        GeometryReader { g in
+            let w = g.size.width, midY = g.size.height / 2
+            switch flight.phase {
+            case .upcoming:
+                Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: w - 6, y: midY)) }
+                    .stroke(Color.secondary, lineWidth: 1.5)
+                Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                    .position(x: w - 4, y: midY)
+            case .inProgress, .past:
+                let f = flight.phase == .past ? 1 : flight.fractionFlown
+                let green = Color(red: 0.20, green: 0.70, blue: 0.30)
+                Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: w - 8, y: midY)) }
+                    .stroke(Color.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: (w - 8) * f, y: midY)) }
+                    .stroke(green, lineWidth: 2)
+                Circle().fill(Color.secondary).frame(width: 6, height: 6).position(x: w - 4, y: midY)
+                if flight.phase == .inProgress {
+                    Image(systemName: "airplane").font(.system(size: 12)).foregroundStyle(green)
+                        .position(x: max(6, (w - 8) * f), y: midY)
+                }
             }
-            if case .failed(let reason) = status { Text(reason).font(.caption).foregroundStyle(.red) }
         }
-    }
-
-    private var text: String? {
-        if status == .loading { return "Fetching ADS-B track" }
-        if flownOn == nil { return nil }
-        return phase == .inProgress ? "Showing the path flown so far" : "Showing the path actually flown"
     }
 }

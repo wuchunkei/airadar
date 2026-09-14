@@ -5,8 +5,17 @@ import MapKit
 /// the same two airports: each repeat bows a little further out, so none overlap.
 /// `isReturn` marks the direction opposite to the pair's first flight; it bows to
 /// the other side of the line between the two, mirroring the outbound arcs.
-struct MapRoute: Hashable { let from: Airport; let to: Airport; let rank: Int; let isReturn: Bool }
-struct MapTrack: Hashable { let from: Airport; let to: Airport; let points: [TrackPoint] }
+struct MapRoute: Hashable {
+    let from: Airport; let to: Airport; let rank: Int; let isReturn: Bool
+    /// Set while the flight is in the air with no real track: the share of the way
+    /// flown by the clock. The arc is then dashed, the flown part green, a plane at the point.
+    var progress: Double? = nil
+}
+struct MapTrack: Hashable {
+    let from: Airport; let to: Airport; let points: [TrackPoint]
+    /// Still flying: the track is drawn green with the plane at its end.
+    var live: Bool = false
+}
 
 extension Array where Element == Flight {
     /// A leg per flight, oldest first, ranked among its repeats.
@@ -21,7 +30,8 @@ extension Array where Element == Flight {
             let rank = seen[way] ?? 0
             seen[way] = rank + 1
             if firstFrom[pair] == nil { firstFrom[pair] = a.iata }
-            out.append(MapRoute(from: a, to: b, rank: rank, isReturn: firstFrom[pair] != a.iata))
+            out.append(MapRoute(from: a, to: b, rank: rank, isReturn: firstFrom[pair] != a.iata,
+                                progress: f.phase == .inProgress ? f.fractionFlown : nil))
         }
         return out
     }
@@ -73,18 +83,35 @@ struct TileMapView: UIViewRepresentable {
 
         for r in routes {
             let coords = Self.arcPath(r.from, r.to, rank: r.rank)
+            if let p = r.progress {
+                // Whole way dashed; the part flown solid green; the plane at the point reached.
+                let whole = LegPolyline(coordinates: coords, count: coords.count)
+                whole.color = UIColor.secondaryLabel.withAlphaComponent(0.6); whole.width = 1.0; whole.dashed = true; whole.arrow = false
+                map.addOverlay(whole, level: .aboveLabels)
+                let n = max(2, Int(Double(coords.count - 1) * p) + 1)
+                let flown = LegPolyline(coordinates: Array(coords.prefix(n)), count: n)
+                flown.color = Coordinator.liveColor; flown.width = 1.6; flown.arrow = false
+                map.addOverlay(flown, level: .aboveLabels)
+                map.addAnnotation(PlaneAnnotation(coordinate: coords[n - 1], heading: Self.bearing(coords[max(0, n - 2)], coords[n - 1])))
+                legs.append(.init(line: whole, from: r.from, to: r.to))
+                continue
+            }
             let line = LegPolyline(coordinates: coords, count: coords.count)
             line.color = isSelected(r.from, r.to) ? Coordinator.selectedColor : (r.isReturn ? Coordinator.returnColor : Coordinator.routeColor)
-            line.width = 1.3
+            line.width = 1.0
             map.addOverlay(line, level: .aboveLabels)
             legs.append(.init(line: line, from: r.from, to: r.to))
         }
         for t in tracks {
             let coords = t.points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
             let line = LegPolyline(coordinates: coords, count: coords.count)
-            line.color = isSelected(t.from, t.to) ? Coordinator.selectedColor : Coordinator.routeColor
-            line.width = 1.6
+            line.color = isSelected(t.from, t.to) ? Coordinator.selectedColor : (t.live ? Coordinator.liveColor : Coordinator.routeColor)
+            line.width = t.live ? 1.6 : 1.2
+            line.arrow = !t.live
             map.addOverlay(line, level: .aboveLabels)
+            if t.live, coords.count >= 2 {
+                map.addAnnotation(PlaneAnnotation(coordinate: coords[coords.count - 1], heading: Self.bearing(coords[coords.count - 2], coords[coords.count - 1])))
+            }
             legs.append(.init(line: line, from: t.from, to: t.to))
         }
         context.coordinator.legs = legs
@@ -146,6 +173,15 @@ struct TileMapView: UIViewRepresentable {
         return out
     }
 
+    /// Compass bearing from one point to the next, degrees clockwise from north.
+    static func bearing(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+        let rad = Double.pi / 180
+        let dLon = (b.longitude - a.longitude) * rad
+        let y = sin(dLon) * cos(b.latitude * rad)
+        let x = cos(a.latitude * rad) * sin(b.latitude * rad) - sin(a.latitude * rad) * cos(b.latitude * rad) * cos(dLon)
+        return (atan2(y, x) / rad + 360).truncatingRemainder(dividingBy: 360)
+    }
+
     /// The shortest path over the globe; kept for measuring, not drawing.
     static func greatCirclePath(_ a: Airport, _ b: Airport) -> [CLLocationCoordinate2D] {
         let steps = 64
@@ -177,6 +213,7 @@ struct TileMapView: UIViewRepresentable {
     final class Coordinator: NSObject, MKMapViewDelegate {
         static let routeColor = UIColor(red: 0.04, green: 0.44, blue: 0.83, alpha: 1)
         static let returnColor = UIColor(red: 0.00, green: 0.60, blue: 0.53, alpha: 1)
+        static let liveColor = UIColor(red: 0.20, green: 0.70, blue: 0.30, alpha: 1)
         static let selectedColor = UIColor(red: 0.91, green: 0.35, blue: 0.05, alpha: 1)
 
         struct Leg { let line: LegPolyline; let from: Airport; let to: Airport }
@@ -203,6 +240,15 @@ struct TileMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if let plane = annotation as? PlaneAnnotation {
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: "plane") ?? MKAnnotationView(annotation: annotation, reuseIdentifier: "plane")
+                view.annotation = annotation
+                view.image = Self.plane
+                // The glyph points up; turn it to the heading.
+                view.transform = CGAffineTransform(rotationAngle: plane.heading * .pi / 180)
+                view.canShowCallout = false
+                return view
+            }
             guard annotation is AirportAnnotation else { return nil }
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: "airport") ?? MKAnnotationView(annotation: annotation, reuseIdentifier: "airport")
             view.annotation = annotation
@@ -265,6 +311,18 @@ struct TileMapView: UIViewRepresentable {
             return hypot(p.x - cx, p.y - cy)
         }
 
+        static let plane: UIImage = {
+            let cfg = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+            let glyph = UIImage(systemName: "airplane", withConfiguration: cfg)!.withTintColor(liveColor, renderingMode: .alwaysOriginal)
+            // Rotated once so "up" is north; the annotation view turns it to the heading.
+            let size = CGSize(width: 20, height: 20)
+            return UIGraphicsImageRenderer(size: size).image { ctx in
+                ctx.cgContext.translateBy(x: 10, y: 10)
+                ctx.cgContext.rotate(by: -.pi / 2)
+                glyph.draw(in: CGRect(x: -glyph.size.width / 2, y: -glyph.size.height / 2, width: glyph.size.width, height: glyph.size.height))
+            }
+        }()
+
         static let dot: UIImage = {
             let size = CGSize(width: 12, height: 12)
             return UIGraphicsImageRenderer(size: size).image { ctx in
@@ -289,6 +347,15 @@ final class SizedMapView: MKMapView {
 final class LegPolyline: MKPolyline {
     var color: UIColor = .systemBlue
     var width: CGFloat = 3
+    var dashed = false
+    var arrow = true
+}
+
+/// The aircraft, at the point reached, turned to its heading.
+final class PlaneAnnotation: NSObject, MKAnnotation {
+    let coordinate: CLLocationCoordinate2D
+    let heading: Double
+    init(coordinate: CLLocationCoordinate2D, heading: Double) { self.coordinate = coordinate; self.heading = heading }
 }
 
 final class AirportAnnotation: NSObject, MKAnnotation {
@@ -312,26 +379,27 @@ final class ArrowedPolylineRenderer: MKPolylineRenderer {
         lineWidth = leg?.width ?? 3
         lineJoin = .round
         lineCap = .round
+        if leg?.dashed == true { lineDashPattern = [4, 4] }
     }
 
     /// Thinner the further out the map is: full weight around city level, a third
     /// of it when a continent is on screen, so a network does not clot.
     private func weight(at zoomScale: MKZoomScale) -> CGFloat {
         let level = log2(Double(zoomScale)) + 20  // ~20 at street level, ~3 for a continent
-        return CGFloat(min(1.0, max(0.35, 0.35 + (level - 3) * 0.1)))
+        return CGFloat(min(1.0, max(0.25, 0.25 + (level - 3) * 0.09)))
     }
 
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
         let w = weight(at: zoomScale)
         lineWidth = ((polyline as? LegPolyline)?.width ?? 3) * w
         super.draw(mapRect, zoomScale: zoomScale, in: context)
-        guard let leg = polyline as? LegPolyline, leg.pointCount >= 2 else { return }
+        guard let leg = polyline as? LegPolyline, leg.arrow, leg.pointCount >= 2 else { return }
         let pts = leg.points()
         let mid = leg.pointCount / 2
         let a = point(for: pts[max(0, mid - 1)]), b = point(for: pts[min(leg.pointCount - 1, mid + 1)])
         let m = point(for: pts[mid])
         let angle: CGFloat = atan2(b.y - a.y, b.x - a.x)
-        let size: CGFloat = 9 * w / zoomScale
+        let size: CGFloat = 7 * w / zoomScale
         context.saveGState()
         context.translateBy(x: m.x, y: m.y)
         context.rotate(by: angle)

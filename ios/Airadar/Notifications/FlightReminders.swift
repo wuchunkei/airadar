@@ -44,6 +44,26 @@ enum FlightReminders {
              body: "Arrived \(flight.arrival) · usually \(formatDuration(flight.typicalDurationMinutes ?? flight.durationMinutes))")
     }
 
+    /// A flight of the day whose delay, status or gate changed since the last sync: say so now.
+    static func announceChange(from old: Flight, to new: Flight) {
+        guard let dep = new.departureInstant, abs(dep.timeIntervalSinceNow) < 36 * 3600 else { return }
+        var lines: [String] = []
+        if new.delayMinutes != old.delayMinutes {
+            let t = new.shownTime(arrival: false, forceSystemZone: false)
+            lines.append(new.delayMinutes > 0 ? "Delayed \(new.delayMinutes) min — now departing \(t.clock)" : "Back on time — departing \(t.clock)")
+        }
+        if new.status != old.status, new.delayMinutes == old.delayMinutes { lines.append(new.status.label) }
+        if new.departureGate != old.departureGate, let g = new.departureGate { lines.append("Gate \(g)") }
+        if new.baggageClaim != old.baggageClaim, let b = new.baggageClaim { lines.append("Baggage belt \(b)") }
+        guard !lines.isEmpty else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "\(new.flightNumber) \(new.departure) → \(new.arrival)"
+        content.body = lines.joined(separator: " · ")
+        content.sound = .default
+        content.threadIdentifier = new.id
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "change:\(new.id):\(Date().timeIntervalSince1970)", content: content, trigger: nil))
+    }
+
     static func cancel(_ flightId: String) {
         let ids = Stage.allCases.map { id(flightId, $0) }
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
