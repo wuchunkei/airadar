@@ -98,7 +98,11 @@ async def _refresh_live(state, doc: dict) -> dict:
     if isinstance(checked, datetime) and now - checked.replace(tzinfo=None) < LIVE_EVERY:
         return doc
     try:
-        live = await airlabs.lookup(state.http, doc["flightNumber"], dep.date())
+        # The live record only: a timetable row knows nothing of today's delay and
+        # would wipe one already stored.
+        live = await airlabs.flight(state.http, doc["flightNumber"], dep.date())
+        if live.departureTime.date() != dep.date():
+            raise airlabs.AirLabsError("live record is for another day")
     except Exception:
         # A miss is not news; try again after the same interval.
         await db.trips.update_one({"_id": doc["_id"]}, {"$set": {"liveCheckedAt": now}})

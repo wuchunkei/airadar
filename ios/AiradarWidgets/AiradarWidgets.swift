@@ -240,21 +240,12 @@ private struct StatusText: View {
     }
 }
 
-/// The live digits alone: 1:14:05 while more than an hour remains, 14:05 inside
-/// the last hour — the system's own ticking timer, which keeps counting while the
-/// app sleeps and always fits.
+/// The countdown as words — "1h04m" above an hour, "4m50s" inside it — written by
+/// the app at each update (every minute, every half minute in the last hour).
 private struct CountdownDigits: View {
     let state: FlightActivityAttributes.ContentState
     var body: some View {
-        let now = Date()
-        switch state.stage {
-        case .before:
-            Text(timerInterval: now...state.departureDate, countsDown: true, showsHours: state.hoursToGo >= 1)
-        case .airborne:
-            Text(timerInterval: now...state.arrivalDate, countsDown: true, showsHours: state.arrivalDate.timeIntervalSinceNow >= 3600)
-        case .landed:
-            Text("Landed")
-        }
+        if state.stage == .landed { Text("Landed") } else { Text(state.countdown) }
     }
 }
 

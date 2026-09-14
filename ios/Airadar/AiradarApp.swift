@@ -38,15 +38,17 @@ struct AiradarApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active, auth.isSignedIn { Task { try? await store.syncFromServer() } }
                 }
-                // While a flight is near: the Live Activity redrawn every minute (its colours and
-                // the plane's place move with the clock), the server asked every second minute.
+                // While a flight is near: the Live Activity rewritten every minute (its countdown,
+                // colours and the plane's place are the app's to write), every half minute inside
+                // the last hour; the server asked every second minute.
                 .task {
-                    var minute = 0
+                    var tick = 0
                     while !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(60))
-                        minute += 1
+                        let lastHour = LiveActivities.inLastHour(store.flights)
+                        try? await Task.sleep(for: .seconds(lastHour ? 30 : 60))
+                        tick += lastHour ? 1 : 2
                         guard store.hasFlightNearNow else { continue }
-                        if minute % 2 == 0, auth.isSignedIn { try? await store.syncFromServer() }
+                        if tick % 4 == 0, auth.isSignedIn { try? await store.syncFromServer() }
                         else { LiveActivities.sync(store.flights) }
                     }
                 }

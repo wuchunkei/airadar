@@ -16,6 +16,7 @@ struct FlightDetailSheet<Actions: View>: View {
 
     /// Measured content height: the sheet opens just tall enough, not full screen.
     @State private var contentHeight: CGFloat = 0
+    @State private var fullMap = false
     @State private var footerHeight: CGFloat = 0
 
     var body: some View {
@@ -24,6 +25,12 @@ struct FlightDetailSheet<Actions: View>: View {
                 TileMapView(routes: routes, tracks: tracks, interactive: false, cityLabels: true)
                     .frame(height: 180)
                     .clipShape(.rect(cornerRadius: 16))
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption.weight(.bold))
+                            .padding(6).background(.thinMaterial, in: .circle).padding(8)
+                    }
+                    .contentShape(.rect)
+                    .onTapGesture { fullMap = true }
 
                 header
                 codes
@@ -59,6 +66,24 @@ struct FlightDetailSheet<Actions: View>: View {
         // In the air: the path flown so far is fetched quietly, so the plane sits where it really is.
         .task(id: flight.id) {
             if flight.phase == .inProgress, flight.trackFlownOn == nil, flight.callsign != nil { onLoadTrack?() }
+        }
+        // The whole map. While the flight is in the air the track is asked for again every
+        // minute; with nothing new from the network the line drawn last stays.
+        .fullScreenCover(isPresented: $fullMap) {
+            NavigationStack {
+                TileMapView(routes: routes, tracks: tracks, interactive: true, cityLabels: true)
+                    .ignoresSafeArea(edges: .bottom)
+                    .navigationTitle("\(flight.flightNumber) · \(flight.departure) → \(flight.arrival)")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { fullMap = false } } }
+                    .task {
+                        guard flight.phase == .inProgress, flight.callsign != nil else { return }
+                        while !Task.isCancelled {
+                            try? await Task.sleep(for: .seconds(60))
+                            onLoadTrack?()
+                        }
+                    }
+            }
         }
     }
 

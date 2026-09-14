@@ -21,7 +21,7 @@ enum LiveActivities {
             Task { await a.end(nil, dismissalPolicy: .immediate) }
         }
         for f in wanted {
-            let content = ActivityContent(state: contentState(f), staleDate: now.addingTimeInterval(30 * 60))
+            let content = ActivityContent(state: contentState(f), staleDate: now.addingTimeInterval(3 * 60))
             if let a = running.first(where: { $0.attributes.tripId == f.id }) {
                 // Attributes cannot change; one started before its mark arrived is replaced.
                 if a.attributes.logo == nil, let logo = AirlineLogos.thumbnail(for: f.flightNumber, onArrival: {}) {
@@ -69,7 +69,30 @@ enum LiveActivities {
             departureDate: (f.departureInstant ?? Date()) + delay, arrivalDate: (f.arrivalInstant ?? Date()) + delay,
             departureClock: dep.clock, arrivalClock: arr.clock,
             departureGate: f.departureGate, arrivalGate: f.arrivalGate, baggageClaim: f.baggageClaim,
-            delayMinutes: f.delayMinutes, landed: f.status == .landed || f.status == .completed)
+            delayMinutes: f.delayMinutes, landed: f.status == .landed || f.status == .completed,
+            countdown: countdown(f, delay: delay))
+    }
+
+    /// "1h04m" above an hour, "4m50s" inside it; to departure before, to landing in the air.
+    static func countdown(_ f: Flight, delay: TimeInterval) -> String {
+        let now = Date()
+        guard let dep = f.departureInstant, let arr = f.arrivalInstant else { return "" }
+        let target = now < dep + delay ? dep + delay : arr + delay
+        let left = max(0, Int(target.timeIntervalSince(now)))
+        if left >= 3600 { return String(format: "%dh%02dm", left / 3600, (left % 3600) / 60) }
+        return String(format: "%dm%02ds", left / 60, left % 60)
+    }
+
+    /// Something to count down within the hour: the activity is then rewritten every half minute.
+    static func inLastHour(_ flights: [Flight]) -> Bool {
+        let now = Date()
+        return flights.contains { f in
+            guard let dep = f.departureInstant, let arr = f.arrivalInstant else { return false }
+            let delay = TimeInterval(f.delayMinutes * 60)
+            let target = now < dep + delay ? dep + delay : arr + delay
+            let left = target.timeIntervalSince(now)
+            return left > 0 && left < 3600
+        }
     }
 
     private static func kind(_ s: FlightStatus) -> FlightActivityAttributes.StatusKind {

@@ -19,6 +19,8 @@ struct FlightActivityAttributes: ActivityAttributes {
         var delayMinutes: Int
         /// Set once the airline reports the flight down; the arrival clock is then the landing time.
         var landed: Bool = false
+        /// The countdown as words — "1h04m", "4m50s" — worked out by the app at each update.
+        var countdown: String = ""
     }
 
     enum StatusKind: String, Codable, Hashable { case scheduled, live, good, warn, bad }
