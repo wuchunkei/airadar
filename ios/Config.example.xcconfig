@@ -1,0 +1,11 @@
+// Copy to Config.xcconfig (gitignored) and fill in. Values reach the code through Info.plist / build settings.
+BACKEND_URL = https:/$()/airadar.wuchunkei.com
+BACKEND_TOKEN = your-app-token
+OPENSKY_CLIENT_ID = wuchunkei-api-client
+OPENSKY_CLIENT_SECRET = your-opensky-secret
+LINK_HOST = airadar.wuchunkei.com
+// Google Cloud Console → Credentials → OAuth client of type iOS (bundle id com.airadar.app)
+GID_CLIENT_ID = 377774753423-xxxxxxxx.apps.googleusercontent.com
+GID_REVERSED_CLIENT_ID = com.googleusercontent.apps.377774753423-xxxxxxxx
+// The existing Web client: the ID token is minted for it, so the backend can verify it unchanged.
+GID_SERVER_CLIENT_ID = 377774753423-r34l0235o8jpjfflksl59ghshfl3upgg.apps.googleusercontent.com

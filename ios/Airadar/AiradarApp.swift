@@ -1,0 +1,67 @@
+import SwiftUI
+import GoogleSignIn
+
+@main
+struct AiradarApp: App {
+    @StateObject private var store = FlightStore.shared
+    @StateObject private var auth = AuthStore.shared
+    @StateObject private var settings = SettingsModel.shared
+
+    init() {
+        GoogleAuth.configure()
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+                .environmentObject(store)
+                .environmentObject(auth)
+                .environmentObject(settings)
+                .preferredColorScheme(settings.themeMode.colorScheme)
+                .onOpenURL { url in
+                    // airadar://s/<token> and https://<host>/s/<token>: a trip someone shared.
+                    if GIDSignIn.sharedInstance.handle(url) { return }
+                    let isLink = (url.scheme == "airadar" && url.host == "s") ||
+                        (url.scheme == "https" && url.pathComponents.dropFirst().first == "s")
+                    if isLink, let token = url.pathComponents.last, token != "s" { DeepLinks.shared.shareToken = token }
+                }
+                .task {
+                    await FlightReminders.requestPermission()
+                    if auth.isSignedIn {
+                        _ = try? await BackendClient.me()
+                        try? await store.syncFromServer()
+                    }
+                }
+        }
+    }
+}
+
+/// A trip link opened from outside; the root view shows it.
+@MainActor
+final class DeepLinks: ObservableObject {
+    static let shared = DeepLinks()
+    @Published var shareToken: String?
+}
+
+/// Preferences that live on the phone: appearance, zone display, calendar switch.
+@MainActor
+final class SettingsModel: ObservableObject {
+    static let shared = SettingsModel()
+    private let defaults = UserDefaults.standard
+
+    @Published var themeMode: ThemeMode { didSet { defaults.set(themeMode.rawValue, forKey: "themeMode") } }
+    @Published var forceSystemZone: Bool { didSet { defaults.set(forceSystemZone, forKey: "forceSystemZone") } }
+    @Published var calendarSync: Bool { didSet { defaults.set(calendarSync, forKey: "calendarSync") } }
+
+    private init() {
+        themeMode = ThemeMode(rawValue: defaults.string(forKey: "themeMode") ?? "") ?? .system
+        forceSystemZone = defaults.bool(forKey: "forceSystemZone")
+        calendarSync = defaults.bool(forKey: "calendarSync")
+    }
+}
+
+extension ThemeMode {
+    var colorScheme: ColorScheme? {
+        switch self { case .system: nil; case .light: .light; case .dark: .dark }
+    }
+}

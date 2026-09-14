@@ -1,0 +1,237 @@
+import SwiftUI
+
+/// The timeline: Past (hidden until an over-pull), Now, Coming. Pull to refresh;
+/// pull further and let go to reveal the past; scroll the present back to the
+/// top and the past folds away again. Tapping the Trip tab again resets.
+struct TripView: View {
+    let resetSignal: Int
+    let canShare: Bool
+    let onDeleted: (Flight) -> Void
+
+    @EnvironmentObject private var store: FlightStore
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var settings: SettingsModel
+
+    @State private var showHistory = false
+    @State private var visitedPast = false
+    @State private var pull: CGFloat = 0
+    @State private var selectedId: String?
+    @State private var shareFor: Flight?
+    @State private var showFriends = false
+    @State private var presentY: CGFloat = 0
+    @State private var trackStatus: [String: TrackStatus] = [:]
+
+    private let historyThreshold: CGFloat = 128
+
+    private var past: [Flight] { store.flights.filter { $0.phase == .past } }
+    private var airborne: [Flight] { store.flights.filter { $0.phase == .inProgress } }
+    private var coming: [Flight] { store.flights.filter { $0.phase == .upcoming } }
+
+    var body: some View {
+        NavigationStack {
+            ScrollViewReader { proxy in
+                // A List, because swipe-to-delete is the platform's own row gesture.
+                List {
+                    Group {
+                        if showHistory && !past.isEmpty {
+                            SectionTitle("Past")
+                            cards(past, dimmed: true, headings: true)
+                            Divider().padding(.vertical, 6)
+                        }
+
+                        Color.clear.frame(height: 1).id("present")
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("trip")).minY } action: { presentY = $0 }
+
+                        if !airborne.isEmpty {
+                            SectionTitle("Now")
+                            cards(airborne, dimmed: false, headings: false)
+                            Divider().padding(.vertical, 6)
+                            SectionTitle("Coming")
+                        } else {
+                            // "Now" only when a flight departs today; otherwise what is ahead is "Coming".
+                            let today = LocalDateTime.from(Date(), in: .current).dayString
+                            SectionTitle(coming.contains { $0.departureDay == today } ? "Now" : "Coming")
+                        }
+                        cards(coming, dimmed: false, headings: true)
+
+                        if coming.isEmpty && airborne.isEmpty {
+                            if past.isEmpty {
+                                // Nothing at all yet: one line, mid-screen, that opens Search.
+                                EmptyInvite()
+                            } else {
+                                Text("No upcoming trips.").font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 24)
+                            }
+                        }
+                        // Room below a short present so it can always sit at the top.
+                        Color.clear.frame(height: 520)
+                    }
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .coordinateSpace(name: "trip")
+                .refreshable { await store.refresh() }
+                // The over-pull: past the refresh distance and released, the past unfolds.
+                .onScrollGeometryChange(for: CGFloat.self) { g in -(g.contentOffset.y + g.contentInsets.top) } action: { _, new in
+                    pull = max(0, new)
+                }
+                .onScrollPhaseChange { old, new in
+                    if old == .interacting, new != .interacting, pull >= historyThreshold, !past.isEmpty, !showHistory {
+                        withAnimation(.snappy) { showHistory = true; visitedPast = false }
+                    }
+                    // Closed again once the present heading is back at the top after a visit to the past.
+                    if showHistory, new == .idle {
+                        if presentY > 60 { visitedPast = true }
+                        else if visitedPast, presentY <= 12 {
+                            withAnimation(.snappy) { showHistory = false }
+                        }
+                    }
+                }
+                .onChange(of: resetSignal) { withAnimation(.snappy) { showHistory = false }; proxy.scrollTo("present", anchor: .top) }
+                .onChange(of: showHistory) { _, on in if on { Task { proxy.scrollTo("present", anchor: .top) } } }
+            }
+            .navigationTitle("Trip")
+            .toolbar {
+                // Friends, where My keeps Settings: top right — plan holders only.
+                if canShare {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showFriends = true } label: { Image(systemName: "person.2") }
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $showFriends) { FriendsView() }
+        }
+        .sheet(item: Binding(get: { selectedId.flatMap { id in store.flights.first { $0.id == id } } },
+                             set: { if $0 == nil { selectedId = nil } })) { flight in
+            detailSheet(flight)
+        }
+        .sheet(item: $shareFor) { ShareSheetView(flight: $0) }
+    }
+
+    @ViewBuilder
+    private func cards(_ list: [Flight], dimmed: Bool, headings: Bool) -> some View {
+        ForEach(Array(list.enumerated()), id: \.element.id) { index, flight in
+            if headings, index == 0 || list[index - 1].departureDay != flight.departureDay {
+                DateTitle(flight.departureDay, dimmed: dimmed)
+            }
+            FlightCard(flight: flight, forceSystemZone: settings.forceSystemZone, dimmed: dimmed) { selectedId = flight.id }
+                .swipeToDelete {
+                    store.delete(flight.id)
+                    onDeleted(flight)
+                }
+        }
+    }
+
+    @ViewBuilder
+    private func detailSheet(_ flight: Flight) -> some View {
+        if flight.isPending {
+            PendingFlightSheet(flight: flight,
+                               onConfirm: { store.confirm($0); FlightReminders.schedule($0); selectedId = nil },
+                               onReplace: { old, new in store.replace(old, with: new); FlightReminders.schedule(new); selectedId = nil },
+                               onDismiss: { selectedId = nil })
+        } else {
+            FlightDetailSheet(
+                flight: flight,
+                forceSystemZone: settings.forceSystemZone,
+                trackStatus: trackStatus[flight.id],
+                onLoadTrack: { loadTrack(flight) },
+                onDismiss: { selectedId = nil },
+                extraActions: {
+                    if let share = flight.sharedBy, share.status != .together {
+                        RespondButtons(status: share.status) { action in
+                            selectedId = nil
+                            Task { try? await store.respondToShare(flight, action: action) }
+                            if action != "reject" { FlightReminders.schedule(flight) }
+                        }
+                    } else if canShare, !flight.isPending {
+                        Button { shareFor = flight } label: {
+                            Label("Share", systemImage: "square.and.arrow.up").fontWeight(.semibold)
+                                .frame(maxWidth: .infinity).padding(.vertical, 6)
+                        }
+                        .buttonStyle(.glass)
+                    }
+                }
+            )
+        }
+    }
+
+    private func loadTrack(_ flight: Flight) {
+        trackStatus[flight.id] = .loading
+        Task {
+            do {
+                let fetched = try await OpenSkyClient.shared.fetchTrack(flight)
+                store.setTrack(flight.id, points: fetched.points, flownOn: fetched.flownOn)
+                trackStatus[flight.id] = .loaded
+            } catch {
+                trackStatus[flight.id] = .failed(error.localizedDescription)
+            }
+        }
+    }
+}
+
+enum TrackStatus: Equatable { case loading, loaded, failed(String) }
+
+struct SectionTitle: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View { Text(text).font(.title.bold()).padding(.vertical, 4) }
+}
+
+/// A day's heading over its cards: the section title's shape, at a smaller size.
+struct DateTitle: View {
+    let text: String
+    let dimmed: Bool
+    init(_ text: String, dimmed: Bool) { self.text = text; self.dimmed = dimmed }
+    var body: some View {
+        Text(text).font(.headline).foregroundStyle(dimmed ? .secondary : .primary).padding(.vertical, 6)
+    }
+}
+
+private struct EmptyInvite: View {
+    var body: some View {
+        // The tab switch is done by the search tab itself: this just says where to go.
+        Text("Come to create your first trip!")
+            .font(.headline).foregroundStyle(.tint)
+            .frame(maxWidth: .infinity, minHeight: 360)
+    }
+}
+
+/// Accept (green) · Together (yellow) · Reject (red); an accepted trip can still be taken together.
+struct RespondButtons: View {
+    let status: ShareStatus
+    let onRespond: (String) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if status == .pending {
+                button("Accept", "accept", ShareStatus.accepted.blockColor, .white)
+            }
+            if status != .together {
+                button("Together", "together", ShareStatus.together.blockColor, Color(white: 0.07))
+            }
+            if status == .pending {
+                button("Reject", "reject", ShareStatus.rejected.blockColor, .white)
+            }
+        }
+    }
+
+    private func button(_ title: String, _ action: String, _ bg: Color, _ fg: Color) -> some View {
+        Button { onRespond(action) } label: {
+            Text(title).fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 12)
+        }
+        .buttonStyle(.glass)
+        .tint(bg)
+        .foregroundStyle(fg)
+    }
+}
+
+extension View {
+    /// Drag left to uncover Delete — the platform's own gesture, not a full-swipe dismiss.
+    func swipeToDelete(_ action: @escaping () -> Void) -> some View {
+        self.swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive, action: action) { Label("Delete", systemImage: "trash") }
+        }
+    }
+}

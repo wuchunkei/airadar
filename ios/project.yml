@@ -1,0 +1,68 @@
+# XcodeGen spec — `brew install xcodegen && cd ios && xcodegen generate`, then open Airadar.xcodeproj.
+name: Airadar
+options:
+  bundleIdPrefix: com.airadar
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "26.0"
+  createIntermediateGroups: true
+
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: "8.0.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""   # your Apple team id
+
+targets:
+  Airadar:
+    type: application
+    platform: iOS
+    sources:
+      - path: Airadar
+    dependencies:
+      - package: GoogleSignIn
+        product: GoogleSignIn
+    info:
+      path: Airadar/Info.plist
+      properties:
+        CFBundleDisplayName: Airadar
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSCalendarsFullAccessUsageDescription: Airadar reads your calendars to find flights you already have.
+        NSLocationWhenInUseUsageDescription: Used only to centre the map on your region until you have trips.
+        NSSupportsLiveActivities: true
+        LSApplicationQueriesSchemes: [googlegmail]
+        # Sign in with Google: the *iOS* OAuth client id, and its reversed form as a URL scheme.
+        GIDClientID: $(GID_CLIENT_ID)
+        GIDServerClientID: $(GID_SERVER_CLIENT_ID)
+        # Read by Config.swift
+        BACKEND_URL: $(BACKEND_URL)
+        BACKEND_TOKEN: $(BACKEND_TOKEN)
+        OPENSKY_CLIENT_ID: $(OPENSKY_CLIENT_ID)
+        OPENSKY_CLIENT_SECRET: $(OPENSKY_CLIENT_SECRET)
+        LINK_HOST: $(LINK_HOST)
+        CFBundleURLTypes:
+          - CFBundleURLSchemes: [airadar, $(GID_REVERSED_CLIENT_ID)]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.airadar.app
+        # Fill these in Config.xcconfig (not committed) — see Config.example.xcconfig
+        BACKEND_URL: $(BACKEND_URL)
+        BACKEND_TOKEN: $(BACKEND_TOKEN)
+        OPENSKY_CLIENT_ID: $(OPENSKY_CLIENT_ID)
+        OPENSKY_CLIENT_SECRET: $(OPENSKY_CLIENT_SECRET)
+        LINK_HOST: $(LINK_HOST)
+    configFiles:
+      Debug: Config.xcconfig
+      Release: Config.xcconfig
+    entitlements:
+      path: Airadar/Airadar.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:$(LINK_HOST)
