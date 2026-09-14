@@ -93,16 +93,18 @@ final class FlightStore: ObservableObject {
     }
 
     func confirm(_ flight: Flight) {
-        var confirmed = flight; confirmed.isPending = false
+        // A `let` copy: a @Sendable closure may not capture a `var`.
+        let confirmed = flight.confirmed()
         publish(all.map { $0.id == flight.id ? confirmed : $0 })
         push { try await BackendClient.putTrip(confirmed) }
     }
 
     func replace(_ old: Flight, with replacement: Flight) {
-        var confirmed = replacement; confirmed.isPending = false
-        publish(all.filter { $0.id != old.id } + [confirmed])
+        let confirmed = replacement.confirmed()
+        let oldId = old.id
+        publish(all.filter { $0.id != oldId } + [confirmed])
         push {
-            if old.id != confirmed.id { try await BackendClient.deleteTrip(old.id) }
+            if oldId != confirmed.id { try await BackendClient.deleteTrip(oldId) }
             try await BackendClient.putTrip(confirmed)
         }
     }
@@ -166,4 +168,8 @@ final class FlightStore: ObservableObject {
         if recent.isEmpty { return flight.durationMinutes }
         return recent.reduce(0) { $0 + $1.durationMinutes + $1.delayMinutes } / recent.count
     }
+}
+
+private extension Flight {
+    func confirmed() -> Flight { var f = self; f.isPending = false; return f }
 }
