@@ -34,6 +34,9 @@ struct FlightDetailSheet<Actions: View>: View {
                     }
                     .contentShape(.rect)
                     .onTapGesture { fullMap = true }
+                    // Presented from inside the content: a presentation modifier on the sheet's
+                    // root would swallow the detents declared beneath it.
+                    .fullScreenCover(isPresented: $fullMap) { fullMapView }
 
                 header
                 codes
@@ -64,8 +67,6 @@ struct FlightDetailSheet<Actions: View>: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             }
         }
-        .presentationDetents(detents, selection: $detent)
-        .presentationDragIndicator(.visible)
         // Measured: settle on the fitted height rather than leaving the sheet at whatever it
         // opened at. Small re-measurements (a label wrapping) are ignored so it does not twitch;
         // the selection is asserted again a beat later, after the detent set has taken it in.
@@ -81,9 +82,14 @@ struct FlightDetailSheet<Actions: View>: View {
         .task(id: flight.id) {
             if flight.phase == .inProgress, flight.trackFlownOn == nil, flight.callsign != nil { onLoadTrack?() }
         }
-        // The whole map. While the flight is in the air the track is asked for again every
-        // minute; with nothing new from the network the line drawn last stays.
-        .fullScreenCover(isPresented: $fullMap) {
+        // Outermost, so nothing between them and the sheet can swallow them.
+        .presentationDetents(detents, selection: $detent)
+        .presentationDragIndicator(.visible)
+    }
+
+    /// The whole map. While the flight is in the air the track is asked for again every
+    /// minute and a half; with nothing new from the network the line drawn last stays.
+    private var fullMapView: some View {
             NavigationStack {
                 TileMapView(routes: routes, tracks: tracks, interactive: true, cityLabels: true)
                     .ignoresSafeArea(edges: .bottom)
@@ -110,7 +116,6 @@ struct FlightDetailSheet<Actions: View>: View {
                         }
                     }
             }
-        }
     }
 
     private var trackCaption: String {
