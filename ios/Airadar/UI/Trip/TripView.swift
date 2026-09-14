@@ -76,6 +76,7 @@ struct TripView: View {
                 // Rows are as tall as their content — the 44pt minimum would pad every heading.
                 .environment(\.defaultMinListRowHeight, 1)
                 .scrollContentBackground(.hidden)
+                .background(NoBottomBounce())
                 .coordinateSpace(name: "trip")
                 .refreshable { await store.refresh() }
                 // The over-pull: past the refresh distance and released, the past unfolds.
