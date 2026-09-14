@@ -47,6 +47,12 @@ struct FlightCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(cardBackground, in: .rect(cornerRadius: 20))
             .overlay {
+                // A hairline so the card still separates from the page when the fill is faint.
+                if !dashed {
+                    RoundedRectangle(cornerRadius: 20).strokeBorder(Color(.separator).opacity(0.5), lineWidth: 0.5)
+                }
+            }
+            .overlay {
                 if dashed {
                     RoundedRectangle(cornerRadius: 20)
                         .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [8, 6]))
@@ -62,7 +68,9 @@ struct FlightCard: View {
             // Waiting on my answer: the friend's colour only as an outline and a tint.
             return AnyShapeStyle(dashed ? ground.opacity(0.18) : ground)
         }
-        return AnyShapeStyle(dimmed ? Color(.secondarySystemBackground).opacity(0.6) : Color(.secondarySystemGroupedBackground))
+        // secondarySystemBackground reads on the page's plain background in both themes;
+        // the grouped variant is white-on-white in light mode.
+        return AnyShapeStyle(dimmed ? Color(.secondarySystemBackground).opacity(0.55) : Color(.secondarySystemBackground))
     }
 }
 
