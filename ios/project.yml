@@ -26,9 +26,12 @@ targets:
     platform: iOS
     sources:
       - path: Airadar
+      - path: Shared
     dependencies:
       - package: GoogleSignIn
         product: GoogleSignIn
+      - target: AiradarWidgets
+        embed: true
     info:
       path: Airadar/Info.plist
       properties:
@@ -69,6 +72,27 @@ targets:
         # Empty on a personal team (no Associated Domains there); the file with universal
         # links on a paid team. Chosen in Config.xcconfig.
         CODE_SIGN_ENTITLEMENTS: $(AIRADAR_ENTITLEMENTS)
+    configFiles:
+      Debug: Config.xcconfig
+      Release: Config.xcconfig
+
+  # Live Activity / Dynamic Island. Shares the attributes file with the app.
+  AiradarWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: AiradarWidgets
+      - path: Shared
+    info:
+      path: AiradarWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Airadar
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.airadar.app.widgets
+        CODE_SIGN_ENTITLEMENTS: ""
     configFiles:
       Debug: Config.xcconfig
       Release: Config.xcconfig
