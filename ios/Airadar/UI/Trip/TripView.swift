@@ -37,18 +37,23 @@ struct TripView: View {
                             if past.isEmpty {
                                 Text("No past trips yet.").font(.subheadline).foregroundStyle(.secondary).padding(.top, 6)
                             }
-                        } else if !airborne.isEmpty {
-                            SectionTitle("Now")
-                            cards(airborne, dimmed: false, headings: false)
-                            Divider().padding(.top, 10).padding(.bottom, 4)
-                            SectionTitle("Coming")
                         } else {
-                            // "Now" only when a flight departs today; otherwise what is ahead is "Coming".
+                            // Now: in the air, or leaving today. Coming: everything after today.
                             let today = LocalDateTime.from(Date(), in: .current).dayString
-                            SectionTitle(coming.contains { $0.departureDay == today } ? "Now" : "Coming")
+                            let now = airborne + coming.filter { $0.departureDay == today }
+                            let later = coming.filter { $0.departureDay != today }
+                            if !now.isEmpty {
+                                SectionTitle("Now")
+                                cards(now, dimmed: false, headings: false)
+                            }
+                            if !later.isEmpty {
+                                if !now.isEmpty { Divider().padding(.top, 10).padding(.bottom, 4) }
+                                SectionTitle("Coming")
+                                cards(later, dimmed: false, headings: true)
+                            }
+                            if now.isEmpty && later.isEmpty { SectionTitle("Coming") }
                         }
                         if scope == .present {
-                            cards(coming, dimmed: false, headings: true)
                             if coming.isEmpty && airborne.isEmpty {
                                 if past.isEmpty {
                                     // Nothing at all yet: one line, mid-screen, that opens Search.
