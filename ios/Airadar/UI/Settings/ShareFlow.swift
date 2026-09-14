@@ -13,6 +13,7 @@ struct ShareFlow: View {
     @State private var chosen: Set<String> = []
     @State private var shareItems: ShareItems?
     @State private var preparing = false
+    @State private var linkError: String?
     @State private var note: String?
     @State private var showPicker = false
 
@@ -28,6 +29,10 @@ struct ShareFlow: View {
                 ActivityView(items: items.items)
             }
             .overlay { if preparing { ProgressView().padding(24).glassEffect(.regular, in: .rect(cornerRadius: 16)) } }
+            // A picture without its QR code is worth knowing about.
+            .alert("No link for this trip", isPresented: Binding(get: { linkError != nil }, set: { if !$0 { linkError = nil } })) {
+                Button("OK") {}
+            } message: { Text(linkError ?? "") }
     }
 
     /// What the system sheet gets: a picture of the trip first, the link beside it.
@@ -94,7 +99,9 @@ struct ShareFlow: View {
         preparing = true
         defer { preparing = false }
         // The link first: the picture carries it as a QR code.
-        let url = (try? await BackendClient.shareTrip(flight.id).url).flatMap { URL(string: $0) }
+        var url: URL?
+        do { url = try await BackendClient.shareTrip(flight.id).url.flatMap { URL(string: $0) } }
+        catch { linkError = error.localizedDescription }
         let image = await ShareImage.render(flight, link: url, forceSystemZone: settings.forceSystemZone)
         // The itinerary text (link inside, ready to be an email) and the picture.
         var items: [Any] = [ShareText(flight: flight, link: url, forceSystemZone: settings.forceSystemZone, icon: image)]
