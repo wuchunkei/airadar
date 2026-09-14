@@ -62,6 +62,15 @@ enum ShareStatus: String, Codable, Sendable {
 
     var label: String { rawValue.capitalized }
 
+    // The server writes "accepted"; the raw values are upper-case like the Android enum.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        guard let v = ShareStatus(rawValue: raw.uppercased()) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown share status \(raw)"))
+        }
+        self = v
+    }
+
     /// The block colours: yellow, grey, green, red.
     var blockColor: Color {
         switch self {
