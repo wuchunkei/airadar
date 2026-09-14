@@ -95,10 +95,11 @@ struct ShareFlow: View {
         defer { preparing = false }
         async let link = try? BackendClient.shareTrip(flight.id).url
         let image = await ShareImage.render(flight, forceSystemZone: settings.forceSystemZone)
-        var items: [Any] = []
+        let url = (await link).flatMap { URL(string: $0) }
+        // The itinerary text (link inside, ready to be an email) and the picture.
+        var items: [Any] = [ShareText(flight: flight, link: url, forceSystemZone: settings.forceSystemZone, icon: image)]
         if let image, let file = ShareImage.file(image, for: flight) { items.append(file) }
-        if let s = await link, let url = URL(string: s) { items.append(url) }
-        guard !items.isEmpty else {
+        guard url != nil || image != nil else {
             note = "Could not prepare the share."
             if friends?.isEmpty ?? true { onDone() }
             return

@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import LinkPresentation
 
 /// The picture handed to the iOS share sheet: the route on a map, the flight
 /// underneath — what a traveller sends to someone who has no Airadar.
@@ -114,5 +115,60 @@ private struct ShareCardView: View {
             .padding(.top, 4)
         }
         .foregroundStyle(.black)
+    }
+}
+
+/// The words that go with the picture: an itinerary in the shape the mail import
+/// recognises — flight code and ISO date on their own lines — with the link at the
+/// end. Sent as an email, Airadar on the other side files the trip by itself.
+@MainActor
+final class ShareText: NSObject, UIActivityItemSource {
+    let flight: Flight
+    let link: URL?
+    let forceSystemZone: Bool
+    let icon: UIImage?
+
+    init(flight: Flight, link: URL?, forceSystemZone: Bool, icon: UIImage?) {
+        self.flight = flight; self.link = link; self.forceSystemZone = forceSystemZone; self.icon = icon
+    }
+
+    var subject: String { "Flight \(flight.flightNumber) on \(flight.departureDay) · Airadar itinerary" }
+
+    var body: String {
+        let dep = flight.shownTime(arrival: false, forceSystemZone: forceSystemZone)
+        let arr = flight.shownTime(arrival: true, forceSystemZone: forceSystemZone)
+        // Airport codes are three letters and cities are spelt out, so nothing here
+        // reads as a second flight number to the parser.
+        func place(_ a: Airport?, _ code: String, _ terminal: String?) -> String {
+            var s = a.map { "\($0.city) (\(code))" } ?? code
+            if let terminal { s += ", Terminal \(terminal)" }
+            return s
+        }
+        var lines = [
+            "Airadar itinerary",
+            "",
+            "Flight \(flight.flightNumber) · \(flight.airlineName)",
+            "Date: \(flight.departureDay)",
+            "Departure: \(place(flight.departureAirport, flight.departure, flight.departureTerminal)) \(dep.clock) \(dep.zone)",
+            "Arrival: \(place(flight.arrivalAirport, flight.arrival, flight.arrivalTerminal)) \(arr.clock) \(arr.zone)",
+        ]
+        if let link {
+            lines += ["", "Open in Airadar: \(link.absoluteString)"]
+        }
+        lines += ["", "If Airadar reads your mailbox, this email adds the trip on its own."]
+        return lines.joined(separator: "\n")
+    }
+
+    func activityViewControllerPlaceholderItem(_ vc: UIActivityViewController) -> Any { body }
+    func activityViewController(_ vc: UIActivityViewController, itemForActivityType type: UIActivity.ActivityType?) -> Any? { body }
+    func activityViewController(_ vc: UIActivityViewController, subjectForActivityType type: UIActivity.ActivityType?) -> String { subject }
+
+    func activityViewControllerLinkMetadata(_ vc: UIActivityViewController) -> LPLinkMetadata? {
+        let meta = LPLinkMetadata()
+        meta.title = "\(flight.flightNumber) \(flight.departure) → \(flight.arrival) · \(flight.departureDay)"
+        meta.originalURL = link
+        meta.url = link
+        if let icon { meta.iconProvider = NSItemProvider(object: icon) }
+        return meta
     }
 }
