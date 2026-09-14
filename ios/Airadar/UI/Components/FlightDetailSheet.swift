@@ -33,7 +33,7 @@ struct FlightDetailSheet<Actions: View>: View {
                 facts
                 extraActions()
             }
-            .padding(20)
+            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 8)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
         // The main action sits at the very bottom, whatever the sheet's height.
@@ -51,11 +51,13 @@ struct FlightDetailSheet<Actions: View>: View {
         .presentationDragIndicator(.visible)
     }
 
-    /// Just tall enough for the content (plus the grabber); taller content can still be pulled to full height.
+    /// Just tall enough for the content; only content that does not fit on one
+    /// screen can be pulled up to full height.
     private var detents: Set<PresentationDetent> {
-        let fitted = contentHeight + footerHeight + 28
+        let fitted = contentHeight + footerHeight
         guard fitted > 0 else { return [.large] }
-        return [.height(fitted), .large]
+        let screen = UIScreen.main.bounds.height
+        return fitted < screen * 0.88 ? [.height(fitted)] : [.height(screen * 0.88), .large]
     }
 
     private var header: some View {
