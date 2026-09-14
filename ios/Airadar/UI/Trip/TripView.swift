@@ -92,17 +92,21 @@ struct TripView: View {
                 .onScrollGeometryChange(for: CGFloat.self) { $0.contentInsets.top } action: { _, new in topInset = new }
                 .onScrollPhaseChange { old, new in
                     if old == .interacting, new != .interacting, pull >= historyThreshold, !past.isEmpty, !showHistory {
-                        withAnimation(.snappy) { showHistory = true; visitedPast = false }
+                        // The past unfolds above; scrolling to the present heading in the same
+                        // transaction keeps the viewport where it was — the past's tail just
+                        // above, the rest reached by scrolling up.
+                        withAnimation(.snappy) { showHistory = true; visitedPast = false; proxy.scrollTo("present", anchor: .top) }
                     }
                     // Closed again once the present heading is back at the top after a visit to
                     // the past. The heading's position is compared with the viewport's top edge,
                     // which sits below the status bar by the content inset.
-                    if showHistory, new == .idle, visitedPast, presentY - topInset <= 24 {
-                        withAnimation(.snappy) { showHistory = false }
+                    // Folding the past away and pinning the heading to the top in one transaction:
+                    // the content above shrinks by exactly what the offset drops, so nothing moves.
+                    if showHistory, new == .idle, visitedPast, presentY - topInset <= 80 {
+                        withAnimation(.snappy) { showHistory = false; proxy.scrollTo("present", anchor: .top) }
                     }
                 }
                 .onChange(of: resetSignal) { withAnimation(.snappy) { showHistory = false }; proxy.scrollTo("present", anchor: .top) }
-                .onChange(of: showHistory) { _, on in if on { Task { proxy.scrollTo("present", anchor: .top) } } }
             }
             .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
