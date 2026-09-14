@@ -19,6 +19,7 @@ struct TripView: View {
     @State private var shareFor: Flight?
     @State private var showFriends = false
     @State private var presentY: CGFloat = 0
+    @State private var topInset: CGFloat = 0
     @State private var trackStatus: [String: TrackStatus] = [:]
 
     private let historyThreshold: CGFloat = 128
@@ -79,14 +80,18 @@ struct TripView: View {
                 .onScrollGeometryChange(for: CGFloat.self) { g in -(g.contentOffset.y + g.contentInsets.top) } action: { _, new in
                     pull = max(0, new)
                 }
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentInsets.top } action: { _, new in topInset = new }
                 .onScrollPhaseChange { old, new in
                     if old == .interacting, new != .interacting, pull >= historyThreshold, !past.isEmpty, !showHistory {
                         withAnimation(.snappy) { showHistory = true; visitedPast = false }
                     }
-                    // Closed again once the present heading is back at the top after a visit to the past.
+                    // Closed again once the present heading is back at the top after a visit to
+                    // the past. The heading's position is compared with the viewport's top edge,
+                    // which sits below the status bar by the content inset.
                     if showHistory, new == .idle {
-                        if presentY > 60 { visitedPast = true }
-                        else if visitedPast, presentY <= 12 {
+                        let fromTop = presentY - topInset
+                        if fromTop > 60 { visitedPast = true }
+                        else if visitedPast, fromTop <= 24 {
                             withAnimation(.snappy) { showHistory = false }
                         }
                     }
@@ -96,6 +101,7 @@ struct TripView: View {
             }
             .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
+            .toolbar(.visible, for: .navigationBar)
             .toolbar {
                 // Friends, where My keeps Settings: top right — plan holders only.
                 if canShare {

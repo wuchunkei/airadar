@@ -38,6 +38,13 @@ targets:
         NSCalendarsFullAccessUsageDescription: Airadar reads your calendars to find flights you already have.
         NSLocationWhenInUseUsageDescription: Used only to centre the map on your region until you have trips.
         NSSupportsLiveActivities: true
+        # OpenSky's TLS setup lacks the forward-secrecy ciphers ATS insists on.
+        NSAppTransportSecurity:
+          NSExceptionDomains:
+            opensky-network.org:
+              NSIncludesSubdomains: true
+              NSExceptionRequiresForwardSecrecy: false
+              NSExceptionMinimumTLSVersion: TLSv1.2
         LSApplicationQueriesSchemes: [googlegmail]
         # Sign in with Google: the *iOS* OAuth client id, and its reversed form as a URL scheme.
         GIDClientID: $(GID_CLIENT_ID)

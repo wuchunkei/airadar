@@ -50,6 +50,7 @@ final class FlightStore: ObservableObject {
               live.contains { $0.flightNumber == inc.flightNumber && $0.departureTime == inc.departureTime })
         }
         publish(mine + binned + rest)
+        for f in mine where f.phase == .upcoming { SiriSuggestions.donate(f) }
     }
 
     /// Back to the signed-out list: empty.
@@ -79,6 +80,7 @@ final class FlightStore: ObservableObject {
             return true
         }
         publish(all + [flight])
+        SiriSuggestions.donate(flight)
         if synced {
             Task { [weak self] in
                 do { try await BackendClient.putTrip(flight) } catch let e as BackendClient.BackendError where e.code == 402 {
@@ -96,6 +98,7 @@ final class FlightStore: ObservableObject {
         // A `let` copy: a @Sendable closure may not capture a `var`.
         let confirmed = flight.confirmed()
         publish(all.map { $0.id == flight.id ? confirmed : $0 })
+        SiriSuggestions.donate(confirmed)
         push { try await BackendClient.putTrip(confirmed) }
     }
 
@@ -117,6 +120,7 @@ final class FlightStore: ObservableObject {
             return
         }
         publish(all.map { var f = $0; if f.id == id { f.deletedAt = Date() }; return f })
+        SiriSuggestions.forget(id)
         push { try await BackendClient.deleteTrip(id) }
     }
 
