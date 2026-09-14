@@ -323,11 +323,17 @@ func formatDuration(_ minutes: Int) -> String {
 }
 
 func greatCircleKm(_ lat1: Double, _ lon1: Double, _ lat2: Double, _ lon2: Double) -> Double {
-    let r = 6371.0
-    let p1 = lat1 * .pi / 180, p2 = lat2 * .pi / 180
-    let dp = (lat2 - lat1) * .pi / 180, dl = (lon2 - lon1) * .pi / 180
-    let a = sin(dp / 2) * sin(dp / 2) + cos(p1) * cos(p2) * sin(dl / 2) * sin(dl / 2)
-    return r * 2 * atan2(sqrt(a), sqrt(1 - a))
+    let r: Double = 6371.0
+    let rad: Double = Double.pi / 180
+    let p1: Double = lat1 * rad
+    let p2: Double = lat2 * rad
+    let dp: Double = (lat2 - lat1) * rad
+    let dl: Double = (lon2 - lon1) * rad
+    let sdp: Double = sin(dp / 2)
+    let sdl: Double = sin(dl / 2)
+    let a: Double = sdp * sdp + cos(p1) * cos(p2) * sdl * sdl
+    let c: Double = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return r * c
 }
 
 extension Color {
@@ -341,7 +347,10 @@ extension Color {
     /// Black or white, whichever reads on this colour.
     var onColor: Color {
         guard let c = UIColor(self).cgColor.components, c.count >= 3 else { return .white }
-        let l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+        let r: CGFloat = 0.2126 * c[0]
+        let g: CGFloat = 0.7152 * c[1]
+        let b: CGFloat = 0.0722 * c[2]
+        let l: CGFloat = r + g + b
         return l > 0.45 ? Color(white: 0.07) : .white
     }
 }

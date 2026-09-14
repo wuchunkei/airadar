@@ -111,18 +111,29 @@ struct TileMapView: UIViewRepresentable {
 
     private func greatCirclePath(_ a: Airport, _ b: Airport) -> [CLLocationCoordinate2D] {
         let steps = 64
-        let lat1 = a.latitude * .pi / 180, lon1 = a.longitude * .pi / 180
-        let lat2 = b.latitude * .pi / 180, lon2 = b.longitude * .pi / 180
-        let d = 2 * asin(sqrt(pow(sin((lat1 - lat2) / 2), 2) + cos(lat1) * cos(lat2) * pow(sin((lon1 - lon2) / 2), 2)))
+        let rad: Double = Double.pi / 180
+        let lat1: Double = a.latitude * rad, lon1: Double = a.longitude * rad
+        let lat2: Double = b.latitude * rad, lon2: Double = b.longitude * rad
+        let sLat: Double = sin((lat1 - lat2) / 2)
+        let sLon: Double = sin((lon1 - lon2) / 2)
+        let h: Double = sLat * sLat + cos(lat1) * cos(lat2) * sLon * sLon
+        let d: Double = 2 * asin(sqrt(h))
         if d == 0 { return [a.coordinate, b.coordinate] }
-        return (0...steps).map { i in
-            let f = Double(i) / Double(steps)
-            let A = sin((1 - f) * d) / sin(d), B = sin(f * d) / sin(d)
-            let x = A * cos(lat1) * cos(lon1) + B * cos(lat2) * cos(lon2)
-            let y = A * cos(lat1) * sin(lon1) + B * cos(lat2) * sin(lon2)
-            let z = A * sin(lat1) + B * sin(lat2)
-            return CLLocationCoordinate2D(latitude: atan2(z, sqrt(x * x + y * y)) * 180 / .pi, longitude: atan2(y, x) * 180 / .pi)
+        let sinD: Double = sin(d)
+        var out: [CLLocationCoordinate2D] = []
+        out.reserveCapacity(steps + 1)
+        for i in 0...steps {
+            let f: Double = Double(i) / Double(steps)
+            let A: Double = sin((1 - f) * d) / sinD
+            let B: Double = sin(f * d) / sinD
+            let x: Double = A * cos(lat1) * cos(lon1) + B * cos(lat2) * cos(lon2)
+            let y: Double = A * cos(lat1) * sin(lon1) + B * cos(lat2) * sin(lon2)
+            let z: Double = A * sin(lat1) + B * sin(lat2)
+            let lat: Double = atan2(z, sqrt(x * x + y * y)) / rad
+            let lon: Double = atan2(y, x) / rad
+            out.append(CLLocationCoordinate2D(latitude: lat, longitude: lon))
         }
+        return out
     }
 
     final class Coordinator: NSObject, MKMapViewDelegate {
@@ -181,10 +192,16 @@ struct TileMapView: UIViewRepresentable {
         }
 
         private func distance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
-            let dx = b.x - a.x, dy = b.y - a.y
-            let l2 = dx * dx + dy * dy
-            let t = l2 == 0 ? 0 : max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2))
-            return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+            let dx: CGFloat = b.x - a.x, dy: CGFloat = b.y - a.y
+            let l2: CGFloat = dx * dx + dy * dy
+            var t: CGFloat = 0
+            if l2 != 0 {
+                let dot: CGFloat = (p.x - a.x) * dx + (p.y - a.y) * dy
+                t = max(0, min(1, dot / l2))
+            }
+            let cx: CGFloat = a.x + t * dx
+            let cy: CGFloat = a.y + t * dy
+            return hypot(p.x - cx, p.y - cy)
         }
 
         static let dot: UIImage = {
@@ -232,7 +249,7 @@ final class ArrowedPolylineRenderer: MKPolylineRenderer {
         let mid = leg.pointCount / 2
         let a = point(for: pts[max(0, mid - 1)]), b = point(for: pts[min(leg.pointCount - 1, mid + 1)])
         let m = point(for: pts[mid])
-        let angle = atan2(b.y - a.y, b.x - a.x)
+        let angle: CGFloat = atan2(b.y - a.y, b.x - a.x)
         let size: CGFloat = 9 / zoomScale
         context.saveGState()
         context.translateBy(x: m.x, y: m.y)
