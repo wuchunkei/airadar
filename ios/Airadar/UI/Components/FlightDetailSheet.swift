@@ -27,19 +27,19 @@ struct FlightDetailSheet<Actions: View>: View {
                 header
                 codes
                 facts
-                // Apple's own flight preview (the one Messages and Mail show). There is no
-                // API to open it directly; a detected flight number in a text view is the door.
-                AppleFlightLink(flightNumber: flight.flightNumber)
-
-                if let primary = primaryAction {
-                    Button(action: primary.action) {
-                        Text(primary.label).fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 6)
-                    }
-                    .buttonStyle(.glassProminent)
-                }
                 extraActions()
             }
             .padding(20)
+        }
+        // The main action sits at the very bottom, whatever the sheet's height.
+        .safeAreaInset(edge: .bottom) {
+            if let primary = primaryAction {
+                Button(action: primary.action) {
+                    Text(primary.label).fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 6)
+                }
+                .buttonStyle(.glassProminent)
+                .padding(.horizontal, 20).padding(.vertical, 12)
+            }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -61,11 +61,11 @@ struct FlightDetailSheet<Actions: View>: View {
 
     private var codes: some View {
         HStack {
-            BigCode(code: flight.departure, terminal: flight.departureTerminal, city: flight.departureAirport?.city, trailing: false)
+            BigCode(code: flight.departure, terminal: flight.departureTerminal, city: flight.departureAirport?.cityCountry, trailing: false)
             Spacer()
             Image(systemName: "airplane").foregroundStyle(.secondary)
             Spacer()
-            BigCode(code: flight.arrival, terminal: flight.arrivalTerminal, city: flight.arrivalAirport?.city, trailing: true)
+            BigCode(code: flight.arrival, terminal: flight.arrivalTerminal, city: flight.arrivalAirport?.cityCountry, trailing: true)
         }
     }
 
@@ -168,28 +168,5 @@ private struct TrackLoader: View {
         if status == .loading { return "Fetching ADS-B track" }
         if flownOn == nil { return "Route shown as a great circle" }
         return phase == .inProgress ? "Showing the path flown so far" : "Showing the path actually flown"
-    }
-}
-
-/// "Preview CX888 in Apple Maps ›" — a UITextView with flight-number detection, so the
-/// tap opens the system's flight tracker sheet.
-struct AppleFlightLink: UIViewRepresentable {
-    let flightNumber: String
-
-    func makeUIView(context: Context) -> UITextView {
-        let v = UITextView()
-        v.isEditable = false
-        v.isScrollEnabled = false
-        v.backgroundColor = .clear
-        v.textContainerInset = .zero
-        v.textContainer.lineFragmentPadding = 0
-        v.dataDetectorTypes = [.flightNumber]
-        v.font = .preferredFont(forTextStyle: .subheadline)
-        v.textColor = .secondaryLabel
-        return v
-    }
-
-    func updateUIView(_ v: UITextView, context: Context) {
-        v.text = "Apple flight preview: \(flightNumber)"
     }
 }

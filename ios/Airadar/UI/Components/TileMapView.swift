@@ -31,8 +31,11 @@ struct TileMapView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> MKMapView {
-        let map = MKMapView()
+        let map = SizedMapView()
         map.delegate = context.coordinator
+        // Framing needs a real size; the first update usually comes before layout.
+        map.onLaidOut = { [weak coordinator = context.coordinator] in coordinator?.frameIfPending() }
+        map.isUserInteractionEnabled = interactive
         map.isZoomEnabled = interactive
         map.isScrollEnabled = interactive
         map.isRotateEnabled = false
@@ -60,7 +63,7 @@ struct TileMapView: UIViewRepresentable {
             let coords = greatCirclePath(r.from, r.to)
             let line = LegPolyline(coordinates: coords, count: coords.count)
             line.color = isSelected(r.from, r.to) ? Coordinator.selectedColor : Coordinator.routeColor
-            line.width = min(3 + CGFloat(r.weight), 9)
+            line.width = min(1.5 + CGFloat(r.weight) * 0.5, 5)
             map.addOverlay(line, level: .aboveLabels)
             legs.append(.init(line: line, from: r.from, to: r.to))
         }
@@ -68,7 +71,7 @@ struct TileMapView: UIViewRepresentable {
             let coords = t.points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
             let line = LegPolyline(coordinates: coords, count: coords.count)
             line.color = isSelected(t.from, t.to) ? Coordinator.selectedColor : Coordinator.routeColor
-            line.width = 4
+            line.width = 2.5
             map.addOverlay(line, level: .aboveLabels)
             legs.append(.init(line: line, from: t.from, to: t.to))
         }
@@ -95,8 +98,9 @@ struct TileMapView: UIViewRepresentable {
             context.coordinator.framedFor = key
             var rect = MKMapRect.null
             for o in map.overlays { rect = rect.union(o.boundingMapRect) }
-            let pad = min(map.bounds.width, map.bounds.height) / 7
-            map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: pad, left: pad, bottom: pad, right: pad), animated: false)
+            context.coordinator.pendingRect = rect
+            context.coordinator.map = map
+            context.coordinator.frameIfPending()
         }
     }
 
@@ -140,8 +144,18 @@ struct TileMapView: UIViewRepresentable {
         var parent: TileMapView
         var legs: [Leg] = []
         var framedFor = 0
+        var pendingRect: MKMapRect?
+        weak var map: MKMapView?
 
         init(_ parent: TileMapView) { self.parent = parent }
+
+        /// Frames the legs once the map has a size — with a seventh of it as margin.
+        func frameIfPending() {
+            guard let map, let rect = pendingRect, map.bounds.width > 0, map.bounds.height > 0 else { return }
+            pendingRect = nil
+            let pad = min(map.bounds.width, map.bounds.height) / 7
+            map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: pad, left: pad, bottom: pad, right: pad), animated: false)
+        }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let leg = overlay as? LegPolyline { return ArrowedPolylineRenderer(overlay: leg) }
@@ -210,6 +224,15 @@ struct TileMapView: UIViewRepresentable {
     }
 }
 
+/// An MKMapView that says when it has been laid out, so framing can wait for a real size.
+final class SizedMapView: MKMapView {
+    var onLaidOut: (() -> Void)?
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if bounds.width > 0 { onLaidOut?() }
+    }
+}
+
 final class LegPolyline: MKPolyline {
     var color: UIColor = .systemBlue
     var width: CGFloat = 3
@@ -245,17 +268,19 @@ final class ArrowedPolylineRenderer: MKPolylineRenderer {
         let a = point(for: pts[max(0, mid - 1)]), b = point(for: pts[min(leg.pointCount - 1, mid + 1)])
         let m = point(for: pts[mid])
         let angle: CGFloat = atan2(b.y - a.y, b.x - a.x)
-        let size: CGFloat = 9 / zoomScale
+        let size: CGFloat = 11 / zoomScale
         context.saveGState()
         context.translateBy(x: m.x, y: m.y)
         context.rotate(by: angle)
-        context.setFillColor((leg.color).cgColor)
         context.move(to: CGPoint(x: size, y: 0))
         context.addLine(to: CGPoint(x: -size * 0.9, y: -size * 0.8))
         context.addLine(to: CGPoint(x: -size * 0.4, y: 0))
         context.addLine(to: CGPoint(x: -size * 0.9, y: size * 0.8))
         context.closePath()
-        context.fillPath()
+        context.setFillColor(leg.color.cgColor)
+        context.setStrokeColor(UIColor.white.withAlphaComponent(0.9).cgColor)
+        context.setLineWidth(1.5 / zoomScale)
+        context.drawPath(using: .fillStroke)
         context.restoreGState()
     }
 }

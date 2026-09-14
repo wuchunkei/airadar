@@ -16,6 +16,7 @@ struct Airport: Codable, Hashable, Identifiable, Sendable {
 
     var id: String { iata }
     var zone: TimeZone { TimeZone(identifier: zoneId) ?? .gmt }
+    var cityCountry: String { "\(city), \(countryCode)" }
 }
 
 enum FlightStatus: String, Codable, Sendable, CaseIterable {

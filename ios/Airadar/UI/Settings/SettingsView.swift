@@ -64,15 +64,21 @@ struct SettingsView: View {
                 }
                 Toggle("Friends can find me by email", isOn: findableBinding(user.findableByEmail))
             } else {
-                // Token accepted for this phone: sign in with Google, or swap the token.
-                // Nothing about the plan is shown until the account is signed in.
+                // Token accepted for this phone: sign in with Google, or swap the token —
+                // two standalone buttons, no card around them. Nothing about the plan
+                // is shown until the account is signed in.
                 Button { signIn(checked) } label: {
                     Group { if busy { ProgressView() } else { Text("Continue with Google").fontWeight(.semibold) } }
-                        .frame(maxWidth: .infinity).padding(.vertical, 6)
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
                 }
                 .buttonStyle(.glassProminent).disabled(busy)
-                Button("Replace token") { replaceToken() }.buttonStyle(.glass).frame(maxWidth: .infinity).disabled(busy)
-                if let authError { Text(authError).font(.caption).foregroundStyle(.red) }
+                .listRowBackground(Color.clear).listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                Button { replaceToken() } label: {
+                    Text("Replace token").fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 8)
+                }
+                .buttonStyle(.glass).disabled(busy)
+                .listRowBackground(Color.clear).listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                if let authError { Text(authError).font(.caption).foregroundStyle(.red).listRowBackground(Color.clear) }
             }
         } else {
             // No token yet: the field, and where to get one.

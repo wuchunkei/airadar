@@ -92,7 +92,8 @@ struct TripView: View {
                 .onChange(of: resetSignal) { withAnimation(.snappy) { showHistory = false }; proxy.scrollTo("present", anchor: .top) }
                 .onChange(of: showHistory) { _, on in if on { Task { proxy.scrollTo("present", anchor: .top) } } }
             }
-            .navigationTitle("Trip")
+            .navigationTitle("")
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 // Friends, where My keeps Settings: top right — plan holders only.
                 if canShare {
