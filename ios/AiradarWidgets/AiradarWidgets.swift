@@ -49,10 +49,8 @@ struct FlightLiveActivity: Widget {
                     .padding(.top, 4)
                 }
             } compactLeading: {
-                HStack(spacing: 4) {
-                    AirlineMark(logo: context.attributes.logo, size: 18)
-                    Text(context.attributes.flightNumber).font(.caption.monospaced().weight(.semibold))
-                }
+                // The airline's mark alone; the words are in the expanded view.
+                AirlineMark(logo: context.attributes.logo, size: 20)
             } compactTrailing: {
                 // A live timer reserves room for its widest value; centre the digits in it.
                 Countdown(state: context.state).font(.caption.monospacedDigit())

@@ -20,15 +20,20 @@ enum AirlineLogos {
     @MainActor
     static func thumbnail(for flightNumber: String, onArrival: @escaping @Sendable () -> Void) -> Data? {
         let code = code(for: flightNumber)
-        let file = dir.appendingPathComponent("\(code).jpg")
+        let file = dir.appendingPathComponent("\(code)-mark.jpg")
         if let data = try? Data(contentsOf: file) { return data.isEmpty ? nil : data }
-        guard !inFlight.contains(code), let url = URL(string: "https://pics.avs.io/120/120/\(code).png") else { return nil }
+        guard !inFlight.contains(code) else { return nil }
         inFlight.insert(code)
+        // The square mark (the symbol, no wordmark) first; the wide logo only if there is none.
+        let sources = ["https://images.kiwi.com/airlines/64/\(code).png", "https://pics.avs.io/120/120/\(code).png"].compactMap(URL.init)
         Task.detached(priority: .utility) {
             var out = Data()  // an empty file remembers a miss, so it is not asked for every sync
-            if let (data, resp) = try? await URLSession.shared.data(from: url), (resp as? HTTPURLResponse)?.statusCode == 200,
-               let image = UIImage(data: data), let small = shrink(image) {
-                out = small
+            for url in sources {
+                if let (data, resp) = try? await URLSession.shared.data(from: url), (resp as? HTTPURLResponse)?.statusCode == 200,
+                   let image = UIImage(data: data), let small = shrink(image) {
+                    out = small
+                    break
+                }
             }
             try? out.write(to: file, options: .atomic)
             await MainActor.run { inFlight.remove(code) }

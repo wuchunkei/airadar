@@ -15,6 +15,8 @@ struct TripView: View {
     @EnvironmentObject private var settings: SettingsModel
 
     @State private var selectedId: String?
+    /// Ticks every minute so the "Coming 22H" headings count down.
+    @State private var clock = Date()
     @State private var shareFor: Flight?
     @State private var showFriends = false
     @State private var trackStatus: [String: TrackStatus] = [:]
@@ -38,20 +40,27 @@ struct TripView: View {
                                 Text("No past trips yet.").font(.subheadline).foregroundStyle(.secondary).padding(.top, 6)
                             }
                         } else {
-                            // Now: in the air, or leaving today. Coming: everything after today.
-                            let today = LocalDateTime.from(Date(), in: .current).dayString
-                            let now = airborne + coming.filter { $0.departureDay == today }
-                            let later = coming.filter { $0.departureDay != today }
+                            // Now: in the air or leaving within three hours. Within a day: each under
+                            // "Coming 22H", the whole hours left. Beyond that: "Coming", by date.
+                            let hoursLeft: (Flight) -> Double = { f in
+                                (f.departureInstant ?? .distantFuture).timeIntervalSince(clock) / 3600
+                            }
+                            let now = airborne + coming.filter { hoursLeft($0) <= 3 }
+                            let soon = coming.filter { hoursLeft($0) > 3 && hoursLeft($0) <= 24 }
+                            let later = coming.filter { hoursLeft($0) > 24 }
                             if !now.isEmpty {
                                 SectionTitle("Now")
                                 cards(now, dimmed: false, headings: false)
                             }
-                            if !later.isEmpty {
-                                if !now.isEmpty { Divider().padding(.top, 10).padding(.bottom, 4) }
+                            ForEach(soon) { f in
+                                SectionTitle("Coming \(Int(hoursLeft(f).rounded(.down)))H")
+                                cards([f], dimmed: false, headings: false)
+                            }
+                            if !later.isEmpty || (now.isEmpty && soon.isEmpty) {
+                                if !now.isEmpty || !soon.isEmpty { Divider().padding(.top, 10).padding(.bottom, 4) }
                                 SectionTitle("Coming")
                                 cards(later, dimmed: false, headings: true)
                             }
-                            if now.isEmpty && later.isEmpty { SectionTitle("Coming") }
                         }
                         if scope == .present {
                             if coming.isEmpty && airborne.isEmpty {
@@ -73,6 +82,12 @@ struct TripView: View {
                 .environment(\.defaultMinListRowHeight, 1)
                 .scrollContentBackground(.hidden)
                 .refreshable { await store.refresh() }
+                .task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(60))
+                        clock = Date()
+                    }
+                }
                 .onChange(of: resetSignal) { withAnimation { proxy.scrollTo("top", anchor: .top) } }
             }
             .navigationTitle("")
