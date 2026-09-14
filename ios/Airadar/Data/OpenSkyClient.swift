@@ -98,7 +98,7 @@ actor OpenSkyClient {
             let t = s.trimmingCharacters(in: .whitespaces).uppercased()
             let letters = t.prefix { $0.isLetter }
             let digits = t.dropFirst(letters.count).prefix { $0.isNumber }
-            return letters + digits.drop { $0 == "0" }
+            return String(letters) + String(digits.drop { $0 == "0" })
         }
         let w = norm(wanted)
         return !w.isEmpty && norm(seen) == w
