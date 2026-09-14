@@ -27,6 +27,17 @@ struct Membership: Codable, Hashable, Sendable {
 
     var limits: Limits { Limits.of(tier) }
     static let guest = Membership(tier: .guest, until: nil)
+
+    init(tier: Tier, until: Date?, grace: Bool = false) { self.tier = tier; self.until = until; self.grace = grace }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tier = (try? c.decode(Tier.self, forKey: .tier)) ?? .guest
+        until = try c.decodeIfPresent(Date.self, forKey: .until)
+        grace = try c.decodeIfPresent(Bool.self, forKey: .grace) ?? false
+    }
+
+    private enum CodingKeys: String, CodingKey { case tier, until, grace }
 }
 
 /// A token the traveller entered and the server accepted for this phone — before or without sign-in.

@@ -12,6 +12,20 @@ struct AuthUser: Codable, Hashable, Sendable {
     var color: String?
     var findableByEmail: Bool = false
     var membership: Membership = .guest
+
+    // The sign-in reply carries only the first four; the rest arrive with /me.
+    // Synthesised Decodable would demand every key, defaults or not.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        email = try c.decode(String.self, forKey: .email)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        avatarUrl = try c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        givenName = try c.decodeIfPresent(String.self, forKey: .givenName)
+        color = try c.decodeIfPresent(String.self, forKey: .color)
+        findableByEmail = try c.decodeIfPresent(Bool.self, forKey: .findableByEmail) ?? false
+        membership = try c.decodeIfPresent(Membership.self, forKey: .membership) ?? .guest
+    }
 }
 
 /// The session, in the Keychain: tokens, the profile, and the checked plan token.
