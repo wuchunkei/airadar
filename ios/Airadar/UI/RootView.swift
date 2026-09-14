@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum Tab: Hashable { case trip, search, my }
+enum AppTab: Hashable { case trip, search, my }
 
 /// Trip / Search / My. On iOS 26 the tab bar is Liquid Glass by itself; the
 /// per-screen floating controls use `.glassEffect` to match.
@@ -10,7 +10,7 @@ struct RootView: View {
     @EnvironmentObject private var settings: SettingsModel
     @StateObject private var links = DeepLinks.shared
 
-    @State private var tab: Tab = .trip
+    @State private var tab: AppTab = .trip
     @State private var tripResetSignal = 0
     @State private var linked: BackendClient.LinkedTrip?
     @State private var toast: String?
