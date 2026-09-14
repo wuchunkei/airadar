@@ -13,18 +13,23 @@ struct TripView: View {
     @EnvironmentObject private var settings: SettingsModel
 
     @State private var showHistory = false
-    @State private var visitedPast = false
     @State private var pull: CGFloat = 0
+    @State private var refreshing = false
     @State private var selectedId: String?
     @State private var shareFor: Flight?
     @State private var showFriends = false
-    @State private var presentY: CGFloat = 0
-    @State private var topInset: CGFloat = 0
     @State private var trackStatus: [String: TrackStatus] = [:]
 
-    private let historyThreshold: CGFloat = 128
+    private let refreshThreshold: CGFloat = 44
+    private let historyThreshold: CGFloat = 84
 
     private var past: [Flight] { store.flights.filter { $0.phase == .past } }
+
+    private func refresh() {
+        guard !refreshing else { return }
+        refreshing = true
+        Task { await store.refresh(); refreshing = false }
+    }
     private var airborne: [Flight] { store.flights.filter { $0.phase == .inProgress } }
     private var coming: [Flight] { store.flights.filter { $0.phase == .upcoming } }
 
@@ -34,21 +39,23 @@ struct TripView: View {
                 // A List, because swipe-to-delete is the platform's own row gesture.
                 List {
                     Group {
-                        if showHistory && !past.isEmpty {
+                        // The past is always in the list, above the present; the fence on the
+                        // heading row decides whether it can be reached.
+                        if !past.isEmpty {
                             SectionTitle("Past")
                             cards(past, dimmed: true, headings: true)
                             Divider().padding(.top, 10).padding(.bottom, 4)
                         }
 
                         Color.clear.frame(height: 1).id("present")
-                            // Inside a row, so the finder sits under the List's own scroll view.
-                            .background(NoBottomBounce())
-                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("trip")).minY } action: { y in
-                                presentY = y
-                                // Any moment with the heading well down the screen counts as a visit,
-                                // even mid-flick; waiting for the scroll to rest missed most of them.
-                                if showHistory, y - topInset > 60 { visitedPast = true }
-                            }
+                            .background(PresentFence(
+                                open: showHistory, tail: 520,
+                                onPull: { pull = $0 },
+                                onRelease: { over in
+                                    if over >= refreshThreshold { refresh() }
+                                    if over >= historyThreshold, !past.isEmpty { showHistory = true }
+                                },
+                                onSettled: { showHistory = false }))
 
                         if !airborne.isEmpty {
                             SectionTitle("Now")
@@ -70,10 +77,9 @@ struct TripView: View {
                                 Text("No upcoming trips.").font(.subheadline).foregroundStyle(.secondary).padding(.top, 6).padding(.bottom, 16)
                             }
                         }
-                        // Room below a short present so it can sit at the top while the past is
-                        // open above it; with the past folded away there is nothing to scroll to,
-                        // so a swipe up springs back.
-                        Color.clear.frame(height: showHistory ? 520 : 0)
+                        // Room below a short present so the heading can always sit at the top;
+                        // the fence discounts it when measuring where the content ends.
+                        Color.clear.frame(height: 520)
                     }
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -83,30 +89,19 @@ struct TripView: View {
                 // Rows are as tall as their content — the 44pt minimum would pad every heading.
                 .environment(\.defaultMinListRowHeight, 1)
                 .scrollContentBackground(.hidden)
-                .coordinateSpace(name: "trip")
-                .refreshable { await store.refresh() }
-                // The over-pull: past the refresh distance and released, the past unfolds.
-                .onScrollGeometryChange(for: CGFloat.self) { g in -(g.contentOffset.y + g.contentInsets.top) } action: { _, new in
-                    pull = max(0, new)
-                }
-                .onScrollGeometryChange(for: CGFloat.self) { $0.contentInsets.top } action: { _, new in topInset = new }
-                .onScrollPhaseChange { old, new in
-                    if old == .interacting, new != .interacting, pull >= historyThreshold, !past.isEmpty, !showHistory {
-                        // The past unfolds above; scrolling to the present heading in the same
-                        // transaction keeps the viewport where it was — the past's tail just
-                        // above, the rest reached by scrolling up.
-                        withAnimation(.snappy) { showHistory = true; visitedPast = false; proxy.scrollTo("present", anchor: .top) }
+                // What the pull is about to do, then the refresh in progress — at the top, over the list.
+                .overlay(alignment: .top) {
+                    Group {
+                        if refreshing {
+                            ProgressView()
+                        } else if !showHistory, pull >= refreshThreshold {
+                            Text(pull >= historyThreshold && !past.isEmpty ? "Release for past trips" : "Release to refresh")
+                                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        }
                     }
-                    // Closed again once the present heading is back at the top after a visit to
-                    // the past. The heading's position is compared with the viewport's top edge,
-                    // which sits below the status bar by the content inset.
-                    // Folding the past away and pinning the heading to the top in one transaction:
-                    // the content above shrinks by exactly what the offset drops, so nothing moves.
-                    if showHistory, new == .idle, visitedPast, presentY - topInset <= 80 {
-                        withAnimation(.snappy) { showHistory = false; proxy.scrollTo("present", anchor: .top) }
-                    }
+                    .padding(.top, 6)
                 }
-                .onChange(of: resetSignal) { withAnimation(.snappy) { showHistory = false }; proxy.scrollTo("present", anchor: .top) }
+                .onChange(of: resetSignal) { showHistory = false; proxy.scrollTo("present", anchor: .top) }
             }
             .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)

@@ -1,9 +1,10 @@
 import SwiftUI
 import MapKit
 
-/// One flight's leg. `rank` counts earlier flights between the same two airports
-/// (either way round): each repeat bows a little further out, so none overlap.
-/// `isReturn` marks the direction opposite to the pair's first flight.
+/// One flight's leg. `rank` counts earlier flights in the same direction between
+/// the same two airports: each repeat bows a little further out, so none overlap.
+/// `isReturn` marks the direction opposite to the pair's first flight; it bows to
+/// the other side of the line between the two, mirroring the outbound arcs.
 struct MapRoute: Hashable { let from: Airport; let to: Airport; let rank: Int; let isReturn: Bool }
 struct MapTrack: Hashable { let from: Airport; let to: Airport; let points: [TrackPoint] }
 
@@ -15,11 +16,12 @@ extension Array where Element == Flight {
         var out: [MapRoute] = []
         for f in self.sorted(by: { ($0.departureInstant ?? .distantPast) < ($1.departureInstant ?? .distantPast) }) {
             guard let a = f.departureAirport, let b = f.arrivalAirport else { continue }
-            let key = [a.iata, b.iata].sorted().joined(separator: "-")
-            let rank = seen[key] ?? 0
-            seen[key] = rank + 1
-            if firstFrom[key] == nil { firstFrom[key] = a.iata }
-            out.append(MapRoute(from: a, to: b, rank: rank, isReturn: firstFrom[key] != a.iata))
+            let pair = [a.iata, b.iata].sorted().joined(separator: "-")
+            let way = "\(a.iata)>\(b.iata)"
+            let rank = seen[way] ?? 0
+            seen[way] = rank + 1
+            if firstFrom[pair] == nil { firstFrom[pair] = a.iata }
+            out.append(MapRoute(from: a, to: b, rank: rank, isReturn: firstFrom[pair] != a.iata))
         }
         return out
     }
@@ -119,14 +121,12 @@ struct TileMapView: UIViewRepresentable {
     }
 
     /// The bowed line between two airports: a quadratic curve whose control point
-    /// sits off the chord's midpoint — on the same side whichever way the flight goes,
-    /// and a fixed step further out for every repeat of the pair, so the arcs sit
-    /// evenly beside each other.
+    /// sits off the chord's midpoint, to the left of the direction of travel — so
+    /// the way out and the way back mirror each other about the line between the
+    /// two — and a fixed step further out for every repeat in that direction.
     static func arcPath(_ a: Airport, _ b: Airport, rank: Int = 0) -> [CLLocationCoordinate2D] {
         let p0 = MKMapPoint(a.coordinate), p2 = MKMapPoint(b.coordinate)
-        // The side is decided by the pair, not the direction.
-        let flip: Double = a.iata < b.iata ? 1 : -1
-        let dx = (p2.x - p0.x) * flip, dy = (p2.y - p0.y) * flip
+        let dx = p2.x - p0.x, dy = p2.y - p0.y
         let length = (dx * dx + dy * dy).squareRoot()
         if length == 0 { return [a.coordinate, b.coordinate] }
         let bulge = min(0.14 + 0.09 * Double(rank), 0.7)
