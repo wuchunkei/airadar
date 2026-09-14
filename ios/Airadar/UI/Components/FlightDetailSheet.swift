@@ -21,7 +21,7 @@ struct FlightDetailSheet<Actions: View>: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                TileMapView(routes: routes, tracks: tracks, interactive: false)
+                TileMapView(routes: routes, tracks: tracks, interactive: false, cityLabels: true)
                     .frame(height: 180)
                     .clipShape(.rect(cornerRadius: 16))
 
@@ -117,7 +117,7 @@ struct FlightDetailSheet<Actions: View>: View {
 
     private var routes: [MapRoute] {
         guard flight.track == nil, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
-        return [MapRoute(from: a, to: b, rank: 0)]
+        return [MapRoute(from: a, to: b, rank: 0, isReturn: false)]
     }
 
     private var tracks: [MapTrack] {

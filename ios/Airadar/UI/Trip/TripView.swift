@@ -43,7 +43,12 @@ struct TripView: View {
                         Color.clear.frame(height: 1).id("present")
                             // Inside a row, so the finder sits under the List's own scroll view.
                             .background(NoBottomBounce())
-                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("trip")).minY } action: { presentY = $0 }
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("trip")).minY } action: { y in
+                                presentY = y
+                                // Any moment with the heading well down the screen counts as a visit,
+                                // even mid-flick; waiting for the scroll to rest missed most of them.
+                                if showHistory, y - topInset > 60 { visitedPast = true }
+                            }
 
                         if !airborne.isEmpty {
                             SectionTitle("Now")
@@ -92,12 +97,8 @@ struct TripView: View {
                     // Closed again once the present heading is back at the top after a visit to
                     // the past. The heading's position is compared with the viewport's top edge,
                     // which sits below the status bar by the content inset.
-                    if showHistory, new == .idle {
-                        let fromTop = presentY - topInset
-                        if fromTop > 60 { visitedPast = true }
-                        else if visitedPast, fromTop <= 24 {
-                            withAnimation(.snappy) { showHistory = false }
-                        }
+                    if showHistory, new == .idle, visitedPast, presentY - topInset <= 24 {
+                        withAnimation(.snappy) { showHistory = false }
                     }
                 }
                 .onChange(of: resetSignal) { withAnimation(.snappy) { showHistory = false }; proxy.scrollTo("present", anchor: .top) }

@@ -3,20 +3,23 @@ import MapKit
 
 /// One flight's leg. `rank` counts earlier flights between the same two airports
 /// (either way round): each repeat bows a little further out, so none overlap.
-struct MapRoute: Hashable { let from: Airport; let to: Airport; let rank: Int }
+/// `isReturn` marks the direction opposite to the pair's first flight.
+struct MapRoute: Hashable { let from: Airport; let to: Airport; let rank: Int; let isReturn: Bool }
 struct MapTrack: Hashable { let from: Airport; let to: Airport; let points: [TrackPoint] }
 
 extension Array where Element == Flight {
     /// A leg per flight, oldest first, ranked among its repeats.
     func toMapRoutes() -> [MapRoute] {
         var seen: [String: Int] = [:]
+        var firstFrom: [String: String] = [:]
         var out: [MapRoute] = []
         for f in self.sorted(by: { ($0.departureInstant ?? .distantPast) < ($1.departureInstant ?? .distantPast) }) {
             guard let a = f.departureAirport, let b = f.arrivalAirport else { continue }
             let key = [a.iata, b.iata].sorted().joined(separator: "-")
             let rank = seen[key] ?? 0
             seen[key] = rank + 1
-            out.append(MapRoute(from: a, to: b, rank: rank))
+            if firstFrom[key] == nil { firstFrom[key] = a.iata }
+            out.append(MapRoute(from: a, to: b, rank: rank, isReturn: firstFrom[key] != a.iata))
         }
         return out
     }
@@ -28,6 +31,8 @@ struct TileMapView: UIViewRepresentable {
     var routes: [MapRoute]
     var tracks: [MapTrack] = []
     var interactive = true
+    /// City names beside the airport dots — for the small preview, where the map's own labels are too sparse.
+    var cityLabels = false
     var selected: [(Airport, Airport)] = []
     var emptyFocus: Region? = nil
     var onLegTap: (([(Airport, Airport)]) -> Void)? = nil
@@ -67,8 +72,8 @@ struct TileMapView: UIViewRepresentable {
         for r in routes {
             let coords = Self.arcPath(r.from, r.to, rank: r.rank)
             let line = LegPolyline(coordinates: coords, count: coords.count)
-            line.color = isSelected(r.from, r.to) ? Coordinator.selectedColor : Coordinator.routeColor
-            line.width = 2
+            line.color = isSelected(r.from, r.to) ? Coordinator.selectedColor : (r.isReturn ? Coordinator.returnColor : Coordinator.routeColor)
+            line.width = 1.3
             map.addOverlay(line, level: .aboveLabels)
             legs.append(.init(line: line, from: r.from, to: r.to))
         }
@@ -76,7 +81,7 @@ struct TileMapView: UIViewRepresentable {
             let coords = t.points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
             let line = LegPolyline(coordinates: coords, count: coords.count)
             line.color = isSelected(t.from, t.to) ? Coordinator.selectedColor : Coordinator.routeColor
-            line.width = 2.5
+            line.width = 1.6
             map.addOverlay(line, level: .aboveLabels)
             legs.append(.init(line: line, from: t.from, to: t.to))
         }
@@ -86,7 +91,7 @@ struct TileMapView: UIViewRepresentable {
         for r in routes { airports[r.from.iata] = r.from; airports[r.to.iata] = r.to }
         for t in tracks { airports[t.from.iata] = t.from; airports[t.to.iata] = t.to }
         for a in airports.values {
-            let pin = AirportAnnotation(airport: a)
+            let pin = AirportAnnotation(airport: a, label: cityLabels ? a.city : nil)
             map.addAnnotation(pin)
         }
 
@@ -114,16 +119,19 @@ struct TileMapView: UIViewRepresentable {
     }
 
     /// The bowed line between two airports: a quadratic curve whose control point
-    /// sits off the chord's midpoint, to the left of the direction of travel — so the
-    /// return leg bows the other way — and further out for every repeat of the pair.
+    /// sits off the chord's midpoint — on the same side whichever way the flight goes,
+    /// and a fixed step further out for every repeat of the pair, so the arcs sit
+    /// evenly beside each other.
     static func arcPath(_ a: Airport, _ b: Airport, rank: Int = 0) -> [CLLocationCoordinate2D] {
         let p0 = MKMapPoint(a.coordinate), p2 = MKMapPoint(b.coordinate)
-        let dx = p2.x - p0.x, dy = p2.y - p0.y
+        // The side is decided by the pair, not the direction.
+        let flip: Double = a.iata < b.iata ? 1 : -1
+        let dx = (p2.x - p0.x) * flip, dy = (p2.y - p0.y) * flip
         let length = (dx * dx + dy * dy).squareRoot()
         if length == 0 { return [a.coordinate, b.coordinate] }
-        let bulge = min(0.18 + 0.09 * Double(rank), 0.6)
-        let cx = (p0.x + p2.x) / 2 - dy / length * length * bulge
-        let cy = (p0.y + p2.y) / 2 + dx / length * length * bulge
+        let bulge = min(0.14 + 0.09 * Double(rank), 0.7)
+        let cx = (p0.x + p2.x) / 2 - dy * bulge
+        let cy = (p0.y + p2.y) / 2 + dx * bulge
         let steps = 48
         var out: [CLLocationCoordinate2D] = []
         out.reserveCapacity(steps + 1)
@@ -166,6 +174,7 @@ struct TileMapView: UIViewRepresentable {
 
     final class Coordinator: NSObject, MKMapViewDelegate {
         static let routeColor = UIColor(red: 0.04, green: 0.44, blue: 0.83, alpha: 1)
+        static let returnColor = UIColor(red: 0.00, green: 0.60, blue: 0.53, alpha: 1)
         static let selectedColor = UIColor(red: 0.91, green: 0.35, blue: 0.05, alpha: 1)
 
         struct Leg { let line: LegPolyline; let from: Airport; let to: Airport }
@@ -197,6 +206,19 @@ struct TileMapView: UIViewRepresentable {
             view.annotation = annotation
             view.image = Self.dot
             view.canShowCallout = false
+            // The city's name, set just above the dot.
+            view.subviews.forEach { $0.removeFromSuperview() }
+            if let text = (annotation as? AirportAnnotation)?.label {
+                let label = UILabel()
+                label.text = text
+                label.font = .systemFont(ofSize: 11, weight: .semibold)
+                label.textColor = .label
+                label.layer.shadowColor = UIColor.systemBackground.cgColor
+                label.layer.shadowOpacity = 1; label.layer.shadowRadius = 2; label.layer.shadowOffset = .zero
+                label.sizeToFit()
+                label.center = CGPoint(x: view.bounds.midX, y: -8)
+                view.addSubview(label)
+            }
             return view
         }
 
@@ -269,8 +291,9 @@ final class LegPolyline: MKPolyline {
 
 final class AirportAnnotation: NSObject, MKAnnotation {
     let airport: Airport
+    let label: String?
     var coordinate: CLLocationCoordinate2D { airport.coordinate }
-    init(airport: Airport) { self.airport = airport }
+    init(airport: Airport, label: String? = nil) { self.airport = airport; self.label = label }
 }
 
 extension Airport {

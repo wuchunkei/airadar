@@ -130,12 +130,14 @@ enum TripImporter {
 
 /// Flights already sitting in the phone's calendars — airline apps and mail drop them there.
 enum CalendarImporter {
-    static func scan() async throws -> [Candidate] {
+    static func scan(calendarIds: [String]) async throws -> [Candidate] {
         let store = EKEventStore()
         guard try await store.requestFullAccessToEvents() else { return [] }
+        let calendars = store.calendars(for: .event).filter { calendarIds.contains($0.calendarIdentifier) }
+        guard !calendars.isEmpty else { return [] }
         let now = Date()
         let predicate = store.predicateForEvents(withStart: now.addingTimeInterval(-365 * 86400),
-                                                end: now.addingTimeInterval(365 * 86400), calendars: nil)
+                                                end: now.addingTimeInterval(365 * 86400), calendars: calendars)
         var found: [Candidate] = []
         for e in store.events(matching: predicate) {
             let text = [e.title, e.notes, e.location].compactMap { $0 }.joined(separator: "\n")

@@ -52,11 +52,14 @@ final class SettingsModel: ObservableObject {
     @Published var themeMode: ThemeMode { didSet { defaults.set(themeMode.rawValue, forKey: "themeMode") } }
     @Published var forceSystemZone: Bool { didSet { defaults.set(forceSystemZone, forKey: "forceSystemZone") } }
     @Published var calendarSync: Bool { didSet { defaults.set(calendarSync, forKey: "calendarSync") } }
+    /// Calendar identifiers to read; empty means none chosen yet.
+    @Published var calendarIds: [String] { didSet { defaults.set(calendarIds, forKey: "calendarIds") } }
 
     private init() {
         themeMode = ThemeMode(rawValue: defaults.string(forKey: "themeMode") ?? "") ?? .system
         forceSystemZone = defaults.bool(forKey: "forceSystemZone")
         calendarSync = defaults.bool(forKey: "calendarSync")
+        calendarIds = defaults.stringArray(forKey: "calendarIds") ?? []
     }
 }
 

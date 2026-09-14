@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var tokenError: String?
     @State private var authError: String?
     @State private var calendarStatus: String?
+    @State private var pickingCalendars = false
     @State private var showPlans = false
     @State private var nameSheet: NameSheet?
     @Environment(\.openURL) private var openURL
@@ -23,6 +24,9 @@ struct SettingsView: View {
                 Section("Import") {
                     NavigationLink("Read trips from email") { EmailImportView() }
                     Toggle("Read trips from calendar", isOn: calendarBinding)
+                    if settings.calendarSync {
+                        Button("Choose calendars…") { pickingCalendars = true }
+                    }
                     if let calendarStatus { Text(calendarStatus).font(.caption).foregroundStyle(.tint) }
                 }
             }
@@ -48,6 +52,11 @@ struct SettingsView: View {
                                    : "Used only to recognise your flights and let friends recognise you.",
                                given: n.given, middle: n.middle, family: n.family,
                                onSave: { saveName($0) }, onSkip: { nameSheet = nil })
+        }
+        .sheet(isPresented: $pickingCalendars) {
+            CalendarPicker(preselected: settings.calendarIds,
+                           onDone: { ids in pickingCalendars = false; settings.calendarIds = ids; readCalendars() },
+                           onCancel: { pickingCalendars = false; if settings.calendarIds.isEmpty { settings.calendarSync = false } })
         }
         .sheet(isPresented: $showPlans) { MembershipView(current: auth.user?.membership.tier ?? .guest, reason: nil) { showPlans = false } }
     }
@@ -202,13 +211,17 @@ struct SettingsView: View {
         Binding(get: { settings.calendarSync }, set: { setCalendar($0) })
     }
 
-    /// Turning the switch on reads the calendars straight away.
+    /// Turning the switch on asks which calendars, then reads them straight away.
     private func setCalendar(_ on: Bool) {
         settings.calendarSync = on
         guard on else { calendarStatus = nil; return }
+        pickingCalendars = true
+    }
+
+    private func readCalendars() {
         calendarStatus = "Reading calendars"
         Task {
-            let found = (try? await CalendarImporter.scan()) ?? []
+            let found = (try? await CalendarImporter.scan(calendarIds: settings.calendarIds)) ?? []
             let added = await TripImporter.run(found)
             calendarStatus = found.isEmpty ? "No flights found in your calendars."
                 : added == 0 ? "Every calendar flight is already in Trips."
