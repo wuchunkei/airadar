@@ -41,6 +41,8 @@ struct TripView: View {
                         }
 
                         Color.clear.frame(height: 1).id("present")
+                            // Inside a row, so the finder sits under the List's own scroll view.
+                            .background(NoBottomBounce())
                             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("trip")).minY } action: { presentY = $0 }
 
                         if !airborne.isEmpty {
@@ -76,7 +78,6 @@ struct TripView: View {
                 // Rows are as tall as their content — the 44pt minimum would pad every heading.
                 .environment(\.defaultMinListRowHeight, 1)
                 .scrollContentBackground(.hidden)
-                .background(NoBottomBounce())
                 .coordinateSpace(name: "trip")
                 .refreshable { await store.refresh() }
                 // The over-pull: past the refresh distance and released, the past unfolds.
