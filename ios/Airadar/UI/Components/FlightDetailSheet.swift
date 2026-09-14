@@ -14,35 +14,16 @@ struct FlightDetailSheet<Actions: View>: View {
     var secondaryAction: (label: String, action: () -> Void)? = nil
     @ViewBuilder var extraActions: () -> Actions
 
-    /// Measured content height: the sheet opens just tall enough, not full screen.
-    @State private var contentHeight: CGFloat = 0
     @State private var fullMap = false
     @State private var trackRefreshed: Date?
-    @State private var footerHeight: CGFloat = 0
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                TileMapView(routes: routes, tracks: tracks, interactive: false, cityLabels: true)
-                    .frame(height: 180)
-                    .clipShape(.rect(cornerRadius: 16))
-                    .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption.weight(.bold))
-                            .padding(6).background(.thinMaterial, in: .circle).padding(8)
-                    }
-                    .contentShape(.rect)
-                    .onTapGesture { fullMap = true }
-                    // Presented from inside the content: a presentation modifier on the sheet's
-                    // root would swallow the detents declared beneath it.
-                    .fullScreenCover(isPresented: $fullMap) { fullMapView }
-
-                header
-                codes
-                facts
-                extraActions()
-            }
-            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 8)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+        // One page, always: the sheet is full height and whatever room the facts leave
+        // goes to the map, so nothing is ever blank beneath the button. Only content
+        // taller than the sheet itself falls back to scrolling.
+        ViewThatFits(in: .vertical) {
+            content(mapHeight: nil)
+            ScrollView { content(mapHeight: 180) }
         }
         // The main action sits at the very bottom, whatever the sheet's height.
         .safeAreaInset(edge: .bottom) {
@@ -62,16 +43,38 @@ struct FlightDetailSheet<Actions: View>: View {
                     }
                 }
                 .padding(.horizontal, 20).padding(.vertical, 12)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             }
         }
         // In the air: the path flown so far is fetched quietly, so the plane sits where it really is.
         .task(id: flight.id) {
             if flight.phase == .inProgress, flight.trackFlownOn == nil, flight.callsign != nil { onLoadTrack?() }
         }
-        // Outermost, so nothing between them and the sheet can swallow them.
-        .presentationDetents(detents)
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+    }
+
+    /// The page. With no fixed map height the map takes whatever is left; with one it is
+    /// a thumbnail and the page scrolls.
+    private func content(mapHeight: CGFloat?) -> some View {
+            VStack(alignment: .leading, spacing: 18) {
+                TileMapView(routes: routes, tracks: tracks, interactive: false, cityLabels: true)
+                    .frame(minHeight: 180, idealHeight: 180, maxHeight: mapHeight ?? .infinity)
+                    .clipShape(.rect(cornerRadius: 16))
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption.weight(.bold))
+                            .padding(6).background(.thinMaterial, in: .circle).padding(8)
+                    }
+                    .contentShape(.rect)
+                    .onTapGesture { fullMap = true }
+                    // Presented from inside the content, clear of the sheet's own presentation modifiers.
+                    .fullScreenCover(isPresented: $fullMap) { fullMapView }
+
+                header
+                codes
+                facts
+                extraActions()
+            }
+            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 8)
     }
 
     /// The whole map. While the flight is in the air the track is asked for again every
@@ -118,21 +121,6 @@ struct FlightDetailSheet<Actions: View>: View {
         }
     }
 
-    private var screenHeight: CGFloat {
-        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        return scene?.screen.bounds.height ?? 844
-    }
-
-    /// Just tall enough for the content; only content that does not fit on one
-    /// screen can be pulled up to full height.
-    /// Exactly as tall as the content, so the whole flight is on one page; content taller
-    /// than a sheet can be gets the tallest sheet there is and scrolls for the rest.
-    /// (The plain form, without a selection binding: the one that has worked on the device.)
-    private var detents: Set<PresentationDetent> {
-        let fitted = contentHeight + footerHeight
-        guard fitted > 0 else { return [.large] }
-        return fitted < screenHeight * 0.92 ? [.height(fitted)] : [.large]
-    }
 
     private var header: some View {
         HStack(alignment: .top) {
