@@ -78,7 +78,7 @@ struct FlightLiveActivity: Widget {
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             let s = context.state, a = context.attributes
-            DynamicIsland {
+            return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     if s.stage == .landed {
                         Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading)
