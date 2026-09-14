@@ -189,7 +189,27 @@ def _status(status: str, delayed: int) -> FlightStatus:
         "diverted": FlightStatus.DIVERTED,
         "landed": FlightStatus.LANDED,
         "active": FlightStatus.IN_FLIGHT,
-    }.get(status, FlightStatus.DELAYED if delayed > 0 else FlightStatus.SCHEDULED)
+        "en-route": FlightStatus.IN_FLIGHT,
+        "boarding": FlightStatus.BOARDING,
+        "departed": FlightStatus.DEPARTED,
+    }.get((status or "").lower(), FlightStatus.DELAYED if delayed > 0 else FlightStatus.SCHEDULED)
+
+
+def _delay_minutes(row: dict, std: datetime) -> int:
+    """AirLabs spreads the delay over several fields, and drops some once the flight is
+    off: the plain `delayed`, the departure one, or the gap between the scheduled and
+    the estimated/actual departure — whichever it still tells."""
+    for key in ("dep_delayed", "delayed"):
+        try:
+            v = int(row.get(key) or 0)
+        except (TypeError, ValueError):
+            v = 0
+        if v > 0:
+            return v
+    for key in ("dep_actual", "dep_estimated"):
+        if (moved := _time(row, key)) is not None:
+            return max(0, int((moved - std).total_seconds() // 60))
+    return 0
 
 
 def _parse(row: dict, number: str, day: date) -> Flight:
@@ -200,7 +220,7 @@ def _parse(row: dict, number: str, day: date) -> Flight:
     std, sta = _time(row, "dep_time"), _time(row, "arr_time")
     if not std or not sta:
         raise AirLabsError(f"AirLabs record for {number} has no scheduled times.")
-    delayed = max(int(row.get("delayed") or 0), 0)
+    delayed = _delay_minutes(row, std)
     return Flight(
         id=flight_id(number, day),
         flightNumber=number,
