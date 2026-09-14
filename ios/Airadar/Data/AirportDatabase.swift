@@ -57,7 +57,7 @@ final class AirportDatabase: @unchecked Sendable {
     func airlineIcao(_ iata: String) -> String? { airlineIcaoByIata[iata.uppercased()] }
 
     /// Fetches an unknown airport once; a failure is not fatal, the code just cannot be placed.
-    func ensure(_ iata: String, fetch: () async throws -> Airport) async {
+    func ensure(_ iata: String, fetch: @Sendable () async throws -> Airport) async {
         if airport(iata) != nil { return }
         if let a = try? await fetch() { remember(a) }
     }
