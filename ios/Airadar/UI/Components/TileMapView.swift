@@ -314,7 +314,16 @@ final class ArrowedPolylineRenderer: MKPolylineRenderer {
         lineCap = .round
     }
 
+    /// Thinner the further out the map is: full weight around city level, a third
+    /// of it when a continent is on screen, so a network does not clot.
+    private func weight(at zoomScale: MKZoomScale) -> CGFloat {
+        let level = log2(Double(zoomScale)) + 20  // ~20 at street level, ~3 for a continent
+        return CGFloat(min(1.0, max(0.35, 0.35 + (level - 3) * 0.1)))
+    }
+
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
+        let w = weight(at: zoomScale)
+        lineWidth = ((polyline as? LegPolyline)?.width ?? 3) * w
         super.draw(mapRect, zoomScale: zoomScale, in: context)
         guard let leg = polyline as? LegPolyline, leg.pointCount >= 2 else { return }
         let pts = leg.points()
@@ -322,7 +331,7 @@ final class ArrowedPolylineRenderer: MKPolylineRenderer {
         let a = point(for: pts[max(0, mid - 1)]), b = point(for: pts[min(leg.pointCount - 1, mid + 1)])
         let m = point(for: pts[mid])
         let angle: CGFloat = atan2(b.y - a.y, b.x - a.x)
-        let size: CGFloat = 11 / zoomScale
+        let size: CGFloat = 9 * w / zoomScale
         context.saveGState()
         context.translateBy(x: m.x, y: m.y)
         context.rotate(by: angle)
@@ -333,7 +342,7 @@ final class ArrowedPolylineRenderer: MKPolylineRenderer {
         context.closePath()
         context.setFillColor(leg.color.cgColor)
         context.setStrokeColor(UIColor.white.withAlphaComponent(0.9).cgColor)
-        context.setLineWidth(1.5 / zoomScale)
+        context.setLineWidth(1.2 * w / zoomScale)
         context.drawPath(using: .fillStroke)
         context.restoreGState()
     }
