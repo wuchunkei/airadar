@@ -57,10 +57,18 @@ struct SettingsView: View {
                     Spacer()
                     Button("Sign out") { Task { await BackendClient.signOut(); store.onSignedOut() } }
                 }
-                PlanLine(membership: user.membership)
+                // The plan line, with the token swap on its right — plain text, like Sign out.
                 HStack {
-                    Button("Replace token") { replaceToken() }.buttonStyle(.glass)
-                    if user.membership.tier != .premium { Button("Upgrade") { openURL(Plans.payURL) }.buttonStyle(.glass) }
+                    PlanLine(membership: user.membership)
+                    Spacer()
+                    Button("Replace token") { replaceToken() }
+                }
+                if user.membership.tier != .premium {
+                    HStack {
+                        Text("Upgrade to Premium")
+                        Spacer()
+                        Button("Upgrade") { openURL(Plans.payURL) }
+                    }
                 }
                 Toggle("Friends can find me by email", isOn: findableBinding(user.findableByEmail))
             } else {
