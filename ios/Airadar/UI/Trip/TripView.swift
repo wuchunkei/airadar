@@ -63,8 +63,10 @@ struct TripView: View {
                                 Text("No upcoming trips.").font(.subheadline).foregroundStyle(.secondary).padding(.top, 6).padding(.bottom, 16)
                             }
                         }
-                        // Room below a short present so it can always sit at the top.
-                        Color.clear.frame(height: 520)
+                        // Room below a short present so it can sit at the top while the past is
+                        // open above it; with the past folded away there is nothing to scroll to,
+                        // so a swipe up springs back.
+                        if showHistory { Color.clear.frame(height: 520) }
                     }
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
