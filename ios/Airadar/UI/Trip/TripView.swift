@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// The timeline: Past (hidden until an over-pull), Now, Coming. Pull to refresh;
-/// pull further and let go to reveal the past; scroll the present back to the
-/// top and the past folds away again. Tapping the Trip tab again resets.
+/// The trip list, one of two: the present (Now and Coming) under the Trip tab,
+/// the past under its own. Pull to refresh; tapping the tab again scrolls to the top.
 struct TripView: View {
+    enum Scope { case present, past }
+
+    var scope: Scope = .present
     let resetSignal: Int
     let canShare: Bool
     let onDeleted: (Flight) -> Void
@@ -12,24 +14,12 @@ struct TripView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var settings: SettingsModel
 
-    @State private var showHistory = false
-    @State private var pull: CGFloat = 0
-    @State private var refreshing = false
     @State private var selectedId: String?
     @State private var shareFor: Flight?
     @State private var showFriends = false
     @State private var trackStatus: [String: TrackStatus] = [:]
 
-    private let refreshThreshold: CGFloat = 44
-    private let historyThreshold: CGFloat = 84
-
     private var past: [Flight] { store.flights.filter { $0.phase == .past } }
-
-    private func refresh() {
-        guard !refreshing else { return }
-        refreshing = true
-        Task { await store.refresh(); refreshing = false }
-    }
     private var airborne: [Flight] { store.flights.filter { $0.phase == .inProgress } }
     private var coming: [Flight] { store.flights.filter { $0.phase == .upcoming } }
 
@@ -39,25 +29,15 @@ struct TripView: View {
                 // A List, because swipe-to-delete is the platform's own row gesture.
                 List {
                     Group {
-                        // The past is always in the list, above the present; the fence on the
-                        // heading row decides whether it can be reached.
-                        if !past.isEmpty {
+                        Color.clear.frame(height: 1).id("top")
+
+                        if scope == .past {
                             SectionTitle("Past")
                             cards(past, dimmed: true, headings: true)
-                            Divider().padding(.top, 10).padding(.bottom, 4)
-                        }
-
-                        Color.clear.frame(height: 1).id("present")
-                            .background(PresentFence(
-                                open: showHistory, tail: 520,
-                                onPull: { pull = $0 },
-                                onRelease: { over in
-                                    if over >= refreshThreshold { refresh() }
-                                    if over >= historyThreshold, !past.isEmpty { showHistory = true }
-                                },
-                                onSettled: { showHistory = false }))
-
-                        if !airborne.isEmpty {
+                            if past.isEmpty {
+                                Text("No past trips yet.").font(.subheadline).foregroundStyle(.secondary).padding(.top, 6)
+                            }
+                        } else if !airborne.isEmpty {
                             SectionTitle("Now")
                             cards(airborne, dimmed: false, headings: false)
                             Divider().padding(.top, 10).padding(.bottom, 4)
@@ -67,19 +47,17 @@ struct TripView: View {
                             let today = LocalDateTime.from(Date(), in: .current).dayString
                             SectionTitle(coming.contains { $0.departureDay == today } ? "Now" : "Coming")
                         }
-                        cards(coming, dimmed: false, headings: true)
-
-                        if coming.isEmpty && airborne.isEmpty {
-                            if past.isEmpty {
-                                // Nothing at all yet: one line, mid-screen, that opens Search.
-                                EmptyInvite()
-                            } else {
-                                Text("No upcoming trips.").font(.subheadline).foregroundStyle(.secondary).padding(.top, 6).padding(.bottom, 16)
+                        if scope == .present {
+                            cards(coming, dimmed: false, headings: true)
+                            if coming.isEmpty && airborne.isEmpty {
+                                if past.isEmpty {
+                                    // Nothing at all yet: one line, mid-screen, that opens Search.
+                                    EmptyInvite()
+                                } else {
+                                    Text("No upcoming trips.").font(.subheadline).foregroundStyle(.secondary).padding(.top, 6).padding(.bottom, 16)
+                                }
                             }
                         }
-                        // Room below a short present so the heading can always sit at the top;
-                        // the fence discounts it when measuring where the content ends.
-                        Color.clear.frame(height: 520)
                     }
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -89,19 +67,8 @@ struct TripView: View {
                 // Rows are as tall as their content — the 44pt minimum would pad every heading.
                 .environment(\.defaultMinListRowHeight, 1)
                 .scrollContentBackground(.hidden)
-                // What the pull is about to do, then the refresh in progress — at the top, over the list.
-                .overlay(alignment: .top) {
-                    Group {
-                        if refreshing {
-                            ProgressView()
-                        } else if !showHistory, pull >= refreshThreshold {
-                            Text(pull >= historyThreshold && !past.isEmpty ? "Release for past trips" : "Release to refresh")
-                                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.top, 6)
-                }
-                .onChange(of: resetSignal) { showHistory = false; proxy.scrollTo("present", anchor: .top) }
+                .refreshable { await store.refresh() }
+                .onChange(of: resetSignal) { withAnimation { proxy.scrollTo("top", anchor: .top) } }
             }
             .navigationTitle("")
             .toolbarTitleDisplayMode(.inline)
