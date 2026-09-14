@@ -185,11 +185,11 @@ struct PlanLine: View {
         }
     }
     private var suffix: String {
-        if membership.grace { return " · grace period" }
+        if membership.grace { return " · Grace period" }
         guard let until = membership.until else { return "" }
-        return " · until " + until.formatted(date: .numeric, time: .omitted)
+        return " · Until " + until.formatted(date: .numeric, time: .omitted)
     }
     var body: some View {
-        Text(name + suffix).fontWeight(.medium).foregroundStyle(color)
+        Text(name + suffix).font(.subheadline.weight(.medium)).foregroundStyle(color)
     }
 }

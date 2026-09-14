@@ -198,6 +198,9 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         try c.encode(isManual, forKey: .isManual)
         try c.encodeIfPresent(track?.map { [$0.lat, $0.lon] }, forKey: .track)
         try c.encodeIfPresent(trackFlownOn, forKey: .trackFlownOn)
+        try c.encodeIfPresent(deletedAt, forKey: .deletedAt)
+        try c.encodeIfPresent(sharedBy, forKey: .sharedBy)
+        if !shares.isEmpty { try c.encode(shares, forKey: .shares) }
     }
 
     var departureAirport: Airport? { AirportDatabase.shared.airport(departure) }

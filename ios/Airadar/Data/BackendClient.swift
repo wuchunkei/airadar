@@ -158,6 +158,7 @@ enum BackendClient {
     }
 
     static func putTrip(_ flight: Flight) async throws {
+        // The server takes the trip's own facts only; bindings and bin state are its business.
         var wire = flight
         wire.sharedBy = nil; wire.shares = []; wire.deletedAt = nil; wire.typicalDurationMinutes = nil
         _ = try await authed("PUT", "trips/\(flight.id)", body: try encoder.encode(wire))

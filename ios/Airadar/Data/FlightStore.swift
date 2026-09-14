@@ -21,7 +21,27 @@ final class FlightStore: ObservableObject {
 
     private var synced: Bool { AuthStore.shared.isSignedIn }
 
-    private init() {}
+    // The last published list, on disk, so a relaunch shows the trips at once and
+    // the server sync only refines them.
+    private static let cacheURL: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("trips.json")
+    }()
+
+    private init() {
+        if let data = try? Data(contentsOf: Self.cacheURL),
+           let cached = try? BackendClient.decoder.decode([Flight].self, from: data) {
+            publish(cached)
+        }
+    }
+
+    private func persist() {
+        let snapshot = all
+        Task.detached(priority: .utility) {
+            if let data = try? BackendClient.encoder.encode(snapshot) { try? data.write(to: Self.cacheURL, options: .atomic) }
+        }
+    }
 
     /// Pull-to-refresh: the account's trips when signed in, a re-publish otherwise.
     func refresh() async {
@@ -57,6 +77,7 @@ final class FlightStore: ObservableObject {
     func onSignedOut() {
         all = []
         publish(all)
+        try? FileManager.default.removeItem(at: Self.cacheURL)
     }
 
     private func push(_ block: @escaping @Sendable () async throws -> Void) {
@@ -161,6 +182,7 @@ final class FlightStore: ObservableObject {
             .map { var f = $0; f.typicalDurationMinutes = typicalDuration(f, pool: live); return f }
         flights = all.filter { $0.deletedAt == nil }.sorted { ($0.departureInstant ?? .distantFuture) < ($1.departureInstant ?? .distantFuture) }
         deleted = all.filter { $0.deletedAt != nil }.sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
+        persist()
     }
 
     /// Average block time over the last week of the same number, else the scheduled duration.
