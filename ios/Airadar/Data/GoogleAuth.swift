@@ -28,7 +28,7 @@ enum GoogleAuth {
         )
     }
 
-    struct SignIn { let idToken: String; let fullName: String? }
+    struct SignIn { let idToken: String; let fullName: String?; let givenName: String?; let familyName: String? }
 
     /// Shows the picker and returns the ID token, with the account's name for the name prompt.
     @MainActor
@@ -41,7 +41,8 @@ enum GoogleAuth {
             guard let token = result.user.idToken?.tokenString else {
                 throw BackendClient.BackendError(message: "Google returned no ID token.", code: 0)
             }
-            return SignIn(idToken: token, fullName: result.user.profile?.name)
+            let p = result.user.profile
+            return SignIn(idToken: token, fullName: p?.name, givenName: p?.givenName, familyName: p?.familyName)
         } catch let e as GIDSignInError where e.code == .canceled {
             throw Cancelled()
         }

@@ -44,11 +44,9 @@ enum FlightEmailParser {
         return Array(out.prefix(6))
     }
 
-    static func candidates(_ text: String, fallbackDates: [String] = []) -> [Candidate] {
+    /// Flight numbers in the text, gates and seats weeded out.
+    static func codes(in text: String) -> [String] {
         let upper = text.uppercased()
-        var dates = extractDates(text)
-        if dates.isEmpty { dates = fallbackDates }
-        if dates.isEmpty { return [] }
         let ns = upper as NSString
         var codes: [String] = []
         for m in flightNumber.matches(in: upper, range: NSRange(location: 0, length: ns.length)) {
@@ -58,6 +56,14 @@ enum FlightEmailParser {
             if code.filter(\.isNumber).count < 2 && code.count < 4 { continue }
             if !codes.contains(code) { codes.append(code) }
         }
+        return codes
+    }
+
+    static func candidates(_ text: String, fallbackDates: [String] = []) -> [Candidate] {
+        var dates = extractDates(text)
+        if dates.isEmpty { dates = fallbackDates }
+        if dates.isEmpty { return [] }
+        let codes = codes(in: text)
         let names = passengers(in: text)
         var out: [Candidate] = []
         for c in codes { for d in dates {
@@ -131,7 +137,13 @@ enum CalendarImporter {
             if text.isEmpty { continue }
             let zone = e.timeZone ?? .current
             let day = LocalDateTime.from(e.startDate, in: zone).dayString
-            for c in FlightEmailParser.candidates(text, fallbackDates: [day]) where !found.contains(c) { found.append(c) }
+            // A flight event is on the day it starts; only a multi-day event (a whole trip
+            // with the flights in its notes) has to trust the dates written in the text.
+            let spansDays = e.endDate.timeIntervalSince(e.startDate) > 36 * 3600
+            let cands = spansDays
+                ? FlightEmailParser.candidates(text, fallbackDates: [day])
+                : FlightEmailParser.codes(in: text).map { Candidate(flightNumber: $0, date: day, passengers: FlightEmailParser.passengers(in: text)) }
+            for c in cands where !found.contains(c) { found.append(c) }
         }
         return found
     }

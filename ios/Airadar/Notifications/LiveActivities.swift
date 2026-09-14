@@ -25,17 +25,21 @@ enum LiveActivities {
             if let a = running.first(where: { $0.attributes.tripId == f.id }) {
                 Task { await a.update(content) }
             } else {
-                _ = try? Activity.request(attributes: attributes(f), content: content)
+                // Attributes are fixed for the activity's life, so the logo has to be there at the start.
+                let logo = AirlineLogos.thumbnail(for: f.flightNumber) {
+                    Task { @MainActor in sync(FlightStore.shared.flights) }
+                }
+                _ = try? Activity.request(attributes: attributes(f, logo: logo), content: content)
             }
         }
     }
 
-    private static func attributes(_ f: Flight) -> FlightActivityAttributes {
+    private static func attributes(_ f: Flight, logo: Data?) -> FlightActivityAttributes {
         FlightActivityAttributes(
             tripId: f.id, flightNumber: f.flightNumber, airlineName: f.airlineName,
             departure: f.departure, arrival: f.arrival,
             departureCity: f.departureAirport?.city ?? f.departure, arrivalCity: f.arrivalAirport?.city ?? f.arrival,
-            departureTerminal: f.departureTerminal, arrivalTerminal: f.arrivalTerminal)
+            departureTerminal: f.departureTerminal, arrivalTerminal: f.arrivalTerminal, logo: logo)
     }
 
     private static func contentState(_ f: Flight) -> FlightActivityAttributes.ContentState {

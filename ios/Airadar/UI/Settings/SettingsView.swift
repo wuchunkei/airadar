@@ -12,9 +12,7 @@ struct SettingsView: View {
     @State private var authError: String?
     @State private var calendarStatus: String?
     @State private var showPlans = false
-    @State private var namePrompt: String?        // the Google name, while the prompt is up
-    @State private var nameDraft = ""
-    @State private var editingName = false
+    @State private var nameSheet: NameSheet?
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -43,18 +41,14 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
-        .alert("Is this your name?", isPresented: Binding(get: { namePrompt != nil }, set: { if !$0 { namePrompt = nil } })) {
-            TextField("Name as printed on tickets", text: $nameDraft)
-            Button("Yes, that's me") { saveName(nameDraft) }
-            Button("Skip", role: .cancel) { namePrompt = nil }
-        } message: {
-            Text("The name on your Google account is “\(namePrompt ?? "")”. Airadar uses it only to recognise which imported flights are yours and to let friends recognise you — never to analyse your trips. Skip it if you will not use those features.")
+        .sheet(item: $nameSheet) { n in
+            PassengerNameSheet(title: n.fromGoogle ? "Is this your name?" : "Name on tickets",
+                               intro: n.fromGoogle
+                                   ? "Taken from your Google account. Airadar uses it only to recognise which imported flights are yours and to let friends recognise you — never to analyse your trips. Skip it if you will not use those features."
+                                   : "Used only to recognise your flights and let friends recognise you.",
+                               given: n.given, middle: n.middle, family: n.family,
+                               onSave: { saveName($0) }, onSkip: { nameSheet = nil })
         }
-        .alert("Name on tickets", isPresented: $editingName) {
-            TextField("Name as printed on tickets", text: $nameDraft)
-            Button("Save") { saveName(nameDraft) }
-            Button("Cancel", role: .cancel) {}
-        } message: { Text("Used only to recognise your flights and let friends recognise you.") }
         .sheet(isPresented: $showPlans) { MembershipView(current: auth.user?.membership.tier ?? .guest, reason: nil) { showPlans = false } }
     }
 
@@ -89,7 +83,10 @@ struct SettingsView: View {
                 HStack {
                     Text("Name on tickets")
                     Spacer()
-                    Button(user.passengerName ?? "Not set") { nameDraft = user.passengerName ?? user.name ?? ""; editingName = true }
+                    Button(user.passengerName ?? "Not set") {
+                        let p = PassengerNameSheet.parts(of: user.passengerName ?? user.name ?? "")
+                        nameSheet = NameSheet(fromGoogle: false, given: p.given, middle: p.middle, family: p.family)
+                    }
                         .foregroundStyle(user.passengerName == nil ? .secondary : .primary)
                 }
             } else {
@@ -163,8 +160,15 @@ struct SettingsView: View {
                 let askedKey = "namePromptShown:" + (me?.email ?? "")
                 if me?.passengerName == nil, !UserDefaults.standard.bool(forKey: askedKey) {
                     UserDefaults.standard.set(true, forKey: askedKey)
-                    nameDraft = google.fullName ?? me?.name ?? ""
-                    namePrompt = nameDraft
+                    // Google gives first and last; whatever else the full name holds is the middle.
+                    let p = PassengerNameSheet.parts(of: google.fullName ?? me?.name ?? "")
+                    let given = google.givenName ?? p.given, family = google.familyName ?? p.family
+                    var middle = p.middle
+                    if let full = google.fullName {
+                        let rest = full.replacingOccurrences(of: given, with: "").replacingOccurrences(of: family, with: "")
+                        middle = rest.trimmingCharacters(in: .whitespaces)
+                    }
+                    nameSheet = NameSheet(fromGoogle: true, given: given, middle: middle, family: family)
                 }
             } catch is GoogleAuth.Cancelled {
                 // Nothing to say: the traveller closed the picker.
@@ -172,8 +176,14 @@ struct SettingsView: View {
         }
     }
 
+    private struct NameSheet: Identifiable {
+        let id = UUID()
+        let fromGoogle: Bool
+        let given: String, middle: String, family: String
+    }
+
     private func saveName(_ name: String) {
-        namePrompt = nil
+        nameSheet = nil
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         Task { try? await BackendClient.updateProfile(passengerName: trimmed) }

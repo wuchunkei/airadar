@@ -10,6 +10,8 @@ struct FlightDetailSheet<Actions: View>: View {
     var onLoadTrack: (() -> Void)? = nil
     let onDismiss: () -> Void
     var primaryAction: (label: String, action: () -> Void)? = nil
+    /// Under the primary one, quieter — "Incorrect" beneath "Correct".
+    var secondaryAction: (label: String, action: () -> Void)? = nil
     @ViewBuilder var extraActions: () -> Actions
 
     /// Measured content height: the sheet opens just tall enough, not full screen.
@@ -38,11 +40,21 @@ struct FlightDetailSheet<Actions: View>: View {
         }
         // The main action sits at the very bottom, whatever the sheet's height.
         .safeAreaInset(edge: .bottom) {
-            if let primary = primaryAction {
-                Button(action: primary.action) {
-                    Text(primary.label).fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 6)
+            if primaryAction != nil || secondaryAction != nil {
+                VStack(spacing: 10) {
+                    if let primary = primaryAction {
+                        Button(action: primary.action) {
+                            Text(primary.label).fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 6)
+                        }
+                        .buttonStyle(.glassProminent)
+                    }
+                    if let secondary = secondaryAction {
+                        Button(action: secondary.action) {
+                            Text(secondary.label).fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 6)
+                        }
+                        .buttonStyle(.glass).tint(.red)
+                    }
                 }
-                .buttonStyle(.glassProminent)
                 .padding(.horizontal, 20).padding(.vertical, 12)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             }
@@ -123,9 +135,10 @@ struct FlightDetailSheet<Actions: View>: View {
 
 extension FlightDetailSheet where Actions == EmptyView {
     init(flight: Flight, forceSystemZone: Bool = false, trackStatus: TrackStatus? = nil, onLoadTrack: (() -> Void)? = nil,
-         onDismiss: @escaping () -> Void, primaryAction: (label: String, action: () -> Void)? = nil) {
+         onDismiss: @escaping () -> Void, primaryAction: (label: String, action: () -> Void)? = nil,
+         secondaryAction: (label: String, action: () -> Void)? = nil) {
         self.init(flight: flight, forceSystemZone: forceSystemZone, trackStatus: trackStatus, onLoadTrack: onLoadTrack,
-                  onDismiss: onDismiss, primaryAction: primaryAction, extraActions: { EmptyView() })
+                  onDismiss: onDismiss, primaryAction: primaryAction, secondaryAction: secondaryAction, extraActions: { EmptyView() })
     }
 }
 

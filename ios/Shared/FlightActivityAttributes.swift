@@ -30,4 +30,6 @@ struct FlightActivityAttributes: ActivityAttributes {
     let arrivalCity: String
     let departureTerminal: String?
     let arrivalTerminal: String?
+    /// A tiny JPEG of the airline's mark, when one could be had.
+    let logo: Data?
 }

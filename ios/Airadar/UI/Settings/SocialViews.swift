@@ -205,36 +205,39 @@ struct PendingFlightSheet: View {
         _date = State(initialValue: flight.departureTime.date(in: flight.departureAirport?.zone ?? .current))
     }
 
+    @EnvironmentObject private var settings: SettingsModel
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Is this right?").font(.title2.bold())
-            let shown = found ?? flight
-            Text("\(shown.flightNumber) · \(shown.departure) → \(shown.arrival) · \(shown.departureDay)")
-            if editing {
-                TextField("Flight number", text: $number).textInputAutocapitalization(.characters).padding(12)
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(.red, lineWidth: 1.5))
-                DatePicker("Date", selection: $date, displayedComponents: .date).datePickerStyle(.compact)
-                HStack {
-                    Button("Discard") { onDismiss() }.buttonStyle(.glass).tint(.red).frame(maxWidth: .infinity)
-                    Button(searching ? "Searching…" : "Search") { search() }.buttonStyle(.glassProminent).tint(.blue).frame(maxWidth: .infinity).disabled(searching)
-                }
-                if let found {
-                    HStack {
-                        Button("Feedback") { openURL(URL(string: "https://t.me/wuchunkei")!) }.buttonStyle(.glass).tint(.yellow).frame(maxWidth: .infinity)
-                        Button("Save") { onReplace(flight, found) }.buttonStyle(.glassProminent).tint(.green).frame(maxWidth: .infinity)
+        // The flight in full, as any other card opens, with the verdict stacked underneath.
+        let shown = found ?? flight
+        FlightDetailSheet(
+            flight: shown, forceSystemZone: settings.forceSystemZone, onDismiss: onDismiss,
+            primaryAction: primary, secondaryAction: secondary,
+            extraActions: {
+                if editing {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Not this one? Change the number or date and search again.").font(.subheadline).foregroundStyle(.secondary)
+                        TextField("Flight number", text: $number).textInputAutocapitalization(.characters).autocorrectionDisabled()
+                            .font(.body.monospaced()).padding(12)
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(.red, lineWidth: 1.5))
+                        DatePicker("Date", selection: $date, displayedComponents: .date).datePickerStyle(.compact)
+                        if let error { Text(error).font(.caption).foregroundStyle(.red) }
+                        if found != nil {
+                            Button("Still wrong? Send feedback") { openURL(URL(string: "https://t.me/wuchunkei")!) }.font(.caption)
+                        }
                     }
                 }
-                if let error { Text(error).font(.caption).foregroundStyle(.red) }
-            } else {
-                HStack {
-                    Button("Incorrect") { editing = true }.buttonStyle(.glass).tint(.red).frame(maxWidth: .infinity)
-                    Button("Correct") { onConfirm(flight) }.buttonStyle(.glassProminent).tint(.green).frame(maxWidth: .infinity)
-                }
-            }
-            Spacer()
-        }
-        .padding(20)
-        .presentationDetents([.medium])
+            })
+    }
+
+    private var primary: (label: String, action: () -> Void) {
+        if !editing { return ("Correct", { onConfirm(flight) }) }
+        if let found { return ("Save this flight", { onReplace(flight, found) }) }
+        return (searching ? "Searching…" : "Search", { search() })
+    }
+
+    private var secondary: (label: String, action: () -> Void) {
+        editing ? ("Discard trip", { onDismiss() }) : ("Incorrect", { editing = true })
     }
 
     private func search() {

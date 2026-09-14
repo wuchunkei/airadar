@@ -23,6 +23,9 @@ struct NoBottomBounce: UIViewRepresentable {
                     let inset = scroll.adjustedContentInset
                     let top = -inset.top
                     let end = max(top, scroll.contentSize.height + inset.bottom - scroll.bounds.height)
+                    // Only while the finger (or its momentum) drives the scroll; a List
+                    // animating rows in and out must be left to place itself.
+                    guard scroll.isDragging || scroll.isDecelerating else { return }
                     if scroll.contentOffset.y > end {
                         scroll.contentOffset.y = end
                     }

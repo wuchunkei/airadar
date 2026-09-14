@@ -19,7 +19,7 @@ final class AirportDatabase: @unchecked Sendable {
         if let data = try? Data(contentsOf: Self.cacheURL),
            let saved = try? JSONDecoder().decode([Airport].self, from: data) {
             // A "UTC" zone means the server could not place it at the time; ask again.
-            for a in saved where a.zoneId != "UTC" { learned[a.iata.uppercased()] = a }
+            for a in saved where !Self.suspect(a) { learned[a.iata.uppercased()] = a }
         }
     }
 
@@ -73,8 +73,13 @@ final class AirportDatabase: @unchecked Sendable {
 
     /// Fetches an unknown airport once; a failure is not fatal, the code just cannot be placed.
     func ensure(_ iata: String, fetch: @Sendable () async throws -> Airport) async {
-        if let known = airport(iata), known.zoneId != "UTC" { return }
+        if let known = airport(iata), !Self.suspect(known) { return }
         if let a = try? await fetch() { remember(a) }
+    }
+
+    /// Learnt before the server could place it or name its city; worth asking again.
+    private static func suspect(_ a: Airport) -> Bool {
+        a.zoneId == "UTC" || a.city.localizedCaseInsensitiveContains("airport")
     }
 
     // The lock is taken in a synchronous helper: NSLock may not be used directly from async code.

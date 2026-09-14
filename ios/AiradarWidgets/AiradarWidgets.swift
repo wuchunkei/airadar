@@ -20,17 +20,20 @@ struct FlightLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Endpoint(code: context.attributes.departure, clock: context.state.departureClock,
-                             detail: gateLine(context.attributes.departureTerminal, context.state.departureGate), alignment: .leading)
+                    Endpoint(code: context.attributes.departure, terminal: context.attributes.departureTerminal,
+                             clock: context.state.departureClock, detail: gateLine(context.state.departureGate), alignment: .leading)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Endpoint(code: context.attributes.arrival, clock: context.state.arrivalClock,
-                             detail: arrivalLine(context), alignment: .trailing)
+                    Endpoint(code: context.attributes.arrival, terminal: context.attributes.arrivalTerminal,
+                             clock: context.state.arrivalClock, detail: arrivalLine(context), alignment: .trailing)
                 }
                 DynamicIslandExpandedRegion(.center) {
-                    VStack(spacing: 2) {
-                        Text(context.attributes.flightNumber).font(.headline.monospaced())
-                        Text(context.attributes.airlineName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    HStack(spacing: 6) {
+                        AirlineMark(logo: context.attributes.logo, size: 22)
+                        VStack(spacing: 1) {
+                            Text(context.attributes.flightNumber).font(.headline.monospaced())
+                            Text(context.attributes.airlineName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        }
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
@@ -47,28 +50,25 @@ struct FlightLiveActivity: Widget {
                 }
             } compactLeading: {
                 HStack(spacing: 4) {
-                    Image(systemName: "airplane").foregroundStyle(.blue)
+                    AirlineMark(logo: context.attributes.logo, size: 18)
                     Text(context.attributes.flightNumber).font(.caption.monospaced().weight(.semibold))
                 }
             } compactTrailing: {
-                Countdown(state: context.state).font(.caption.monospacedDigit()).frame(maxWidth: 64)
+                // A live timer reserves room for its widest value; centre the digits in it.
+                Countdown(state: context.state).font(.caption.monospacedDigit())
+                    .multilineTextAlignment(.center).frame(width: 52, alignment: .center)
             } minimal: {
-                Image(systemName: "airplane").foregroundStyle(.blue)
+                AirlineMark(logo: context.attributes.logo, size: 18)
             }
             .keylineTint(.blue)
         }
     }
 
-    private func gateLine(_ terminal: String?, _ gate: String?) -> String? {
-        var parts: [String] = []
-        if let terminal { parts.append("T\(terminal)") }
-        if let gate { parts.append("Gate \(gate)") }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
+    private func gateLine(_ gate: String?) -> String? { gate.map { "Gate \($0)" } }
 
     private func arrivalLine(_ context: ActivityViewContext<FlightActivityAttributes>) -> String? {
         if let belt = context.state.baggageClaim { return "Belt \(belt)" }
-        return gateLine(context.attributes.arrivalTerminal, context.state.arrivalGate)
+        return gateLine(context.state.arrivalGate)
     }
 }
 
@@ -78,20 +78,23 @@ private struct LockScreenView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Image(systemName: "airplane")
+                AirlineMark(logo: context.attributes.logo, size: 22)
                 Text(context.attributes.flightNumber).font(.headline.monospaced())
                 Text(context.attributes.airlineName).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 StatusText(state: context.state).font(.caption.weight(.semibold))
             }
+            // The countdown sits on the true centre line, whatever the two ends measure.
             HStack(alignment: .top) {
-                Endpoint(code: context.attributes.departure, clock: context.state.departureClock,
-                         detail: context.attributes.departureCity, alignment: .leading)
-                Spacer()
-                Countdown(state: context.state).font(.caption.monospacedDigit()).foregroundStyle(.secondary).padding(.top, 6)
-                Spacer()
-                Endpoint(code: context.attributes.arrival, clock: context.state.arrivalClock,
-                         detail: context.attributes.arrivalCity, alignment: .trailing)
+                Endpoint(code: context.attributes.departure, terminal: context.attributes.departureTerminal,
+                         clock: context.state.departureClock, detail: context.attributes.departureCity, alignment: .leading)
+                Spacer(minLength: 60)
+                Endpoint(code: context.attributes.arrival, terminal: context.attributes.arrivalTerminal,
+                         clock: context.state.arrivalClock, detail: context.attributes.arrivalCity, alignment: .trailing)
+            }
+            .overlay(alignment: .top) {
+                Countdown(state: context.state).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center).padding(.top, 8)
             }
             ProgressLine(state: context.state)
         }
@@ -100,15 +103,32 @@ private struct LockScreenView: View {
     }
 }
 
+/// The airline's mark, or a plane when none was found.
+private struct AirlineMark: View {
+    let logo: Data?
+    let size: CGFloat
+    var body: some View {
+        if let logo, let ui = UIImage(data: logo) {
+            Image(uiImage: ui).resizable().scaledToFit().frame(width: size, height: size).clipShape(.rect(cornerRadius: size * 0.22))
+        } else {
+            Image(systemName: "airplane").font(.system(size: size * 0.8)).foregroundStyle(.blue).frame(width: size, height: size)
+        }
+    }
+}
+
 private struct Endpoint: View {
     let code: String
+    let terminal: String?
     let clock: String
     let detail: String?
     let alignment: HorizontalAlignment
 
     var body: some View {
         VStack(alignment: alignment, spacing: 1) {
-            Text(code).font(.title3.bold())
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(code).font(.title3.bold())
+                if let terminal { Text("T\(terminal)").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary) }
+            }
             Text(clock).font(.subheadline.monospacedDigit())
             if let detail { Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
         }
