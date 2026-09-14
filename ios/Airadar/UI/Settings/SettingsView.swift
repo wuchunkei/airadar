@@ -67,18 +67,22 @@ struct SettingsView: View {
                 // Token accepted for this phone: sign in with Google, or swap the token —
                 // two standalone buttons, no card around them. Nothing about the plan
                 // is shown until the account is signed in.
-                Button { signIn(checked) } label: {
-                    Group { if busy { ProgressView() } else { Text("Continue with Google").fontWeight(.semibold) } }
-                        .frame(maxWidth: .infinity).padding(.vertical, 8)
+                // One row, transparent, so the grouped list draws no card behind the pair.
+                VStack(spacing: 10) {
+                    Button { signIn(checked) } label: {
+                        Group { if busy { ProgressView() } else { Text("Continue with Google").fontWeight(.semibold) } }
+                            .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    }
+                    .buttonStyle(.glassProminent).disabled(busy)
+                    Button { replaceToken() } label: {
+                        Text("Replace token").fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 8)
+                    }
+                    .buttonStyle(.glass).disabled(busy)
+                    if let authError { Text(authError).font(.caption).foregroundStyle(.red) }
                 }
-                .buttonStyle(.glassProminent).disabled(busy)
-                .listRowBackground(Color.clear).listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                Button { replaceToken() } label: {
-                    Text("Replace token").fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 8)
-                }
-                .buttonStyle(.glass).disabled(busy)
-                .listRowBackground(Color.clear).listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                if let authError { Text(authError).font(.caption).foregroundStyle(.red).listRowBackground(Color.clear) }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
             }
         } else {
             // No token yet: the field, and where to get one.
