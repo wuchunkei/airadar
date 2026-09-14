@@ -73,26 +73,14 @@ enum LiveActivities {
             countdown: countdown(f, delay: delay))
     }
 
-    /// "1h04m" above an hour, "4m50s" inside it; to departure before, to landing in the air.
+    /// "1h4m" above an hour, "4m" inside it — no seconds; to departure before, to landing in the air.
     static func countdown(_ f: Flight, delay: TimeInterval) -> String {
         let now = Date()
         guard let dep = f.departureInstant, let arr = f.arrivalInstant else { return "" }
         let target = now < dep + delay ? dep + delay : arr + delay
-        let left = max(0, Int(target.timeIntervalSince(now)))
-        if left >= 3600 { return "\(left / 3600)h\((left % 3600) / 60)m" }
-        return "\(left / 60)m\(left % 60)s"
-    }
-
-    /// Something to count down within the hour: the activity is then rewritten every half minute.
-    static func inLastHour(_ flights: [Flight]) -> Bool {
-        let now = Date()
-        return flights.contains { f in
-            guard let dep = f.departureInstant, let arr = f.arrivalInstant else { return false }
-            let delay = TimeInterval(f.delayMinutes * 60)
-            let target = now < dep + delay ? dep + delay : arr + delay
-            let left = target.timeIntervalSince(now)
-            return left > 0 && left < 3600
-        }
+        let minutes = max(0, Int(target.timeIntervalSince(now) / 60))
+        if minutes >= 60 { return "\(minutes / 60)h\(minutes % 60)m" }
+        return "\(minutes)m"
     }
 
     private static func kind(_ s: FlightStatus) -> FlightActivityAttributes.StatusKind {

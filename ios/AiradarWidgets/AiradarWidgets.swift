@@ -240,8 +240,8 @@ private struct StatusText: View {
     }
 }
 
-/// The countdown as words — "1h04m" above an hour, "4m50s" inside it — written by
-/// the app at each update (every minute, every half minute in the last hour).
+/// The countdown as words — "1h4m" above an hour, "4m" inside it — written by the
+/// app at each update, once a minute.
 private struct CountdownDigits: View {
     let state: FlightActivityAttributes.ContentState
     var body: some View {
