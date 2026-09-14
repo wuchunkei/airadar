@@ -59,8 +59,12 @@ final class AirportDatabase: @unchecked Sendable {
     /// Fetches an unknown airport once; a failure is not fatal, the code just cannot be placed.
     func ensure(_ iata: String, fetch: () async throws -> Airport) async {
         if airport(iata) != nil { return }
-        if let a = try? await fetch() {
-            lock.lock(); learned[a.iata.uppercased()] = a; lock.unlock()
-        }
+        if let a = try? await fetch() { remember(a) }
+    }
+
+    // The lock is taken in a synchronous helper: NSLock may not be used directly from async code.
+    private func remember(_ a: Airport) {
+        lock.lock(); defer { lock.unlock() }
+        learned[a.iata.uppercased()] = a
     }
 }

@@ -51,6 +51,7 @@ struct LimitReached: Error, Identifiable, Sendable {
 }
 
 /// The client-side gate; signed in, the server enforces the same rules and this just saves a 402.
+@MainActor
 enum Entitlements {
     static var membership: Membership {
         AuthStore.shared.isSignedIn ? (AuthStore.shared.user?.membership ?? .guest) : .guest
