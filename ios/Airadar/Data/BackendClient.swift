@@ -15,9 +15,10 @@ enum BackendClient {
 
     static let decoder: JSONDecoder = {
         let d = JSONDecoder()
-        let plain = ISO8601DateFormatter()
+        // ISO8601DateFormatter is documented thread-safe; the closure only reads them.
+        nonisolated(unsafe) let plain = ISO8601DateFormatter()
         plain.formatOptions = [.withInternetDateTime]
-        let fractional = ISO8601DateFormatter()
+        nonisolated(unsafe) let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         d.dateDecodingStrategy = .custom { decoder in
             let raw = try decoder.singleValueContainer().decode(String.self)

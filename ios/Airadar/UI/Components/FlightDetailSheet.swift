@@ -56,7 +56,8 @@ struct FlightDetailSheet<Actions: View>: View {
     private var detents: Set<PresentationDetent> {
         let fitted = contentHeight + footerHeight
         guard fitted > 0 else { return [.large] }
-        let screen = UIScreen.main.bounds.height
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let screen = scene?.screen.bounds.height ?? 844
         return fitted < screen * 0.88 ? [.height(fitted)] : [.height(screen * 0.88), .large]
     }
 

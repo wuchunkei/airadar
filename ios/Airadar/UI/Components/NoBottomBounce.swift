@@ -17,12 +17,15 @@ struct NoBottomBounce: UIViewRepresentable {
             var v: UIView? = superview
             while let s = v, !(s is UIScrollView) { v = s.superview }
             guard let scroll = v as? UIScrollView else { return }
+            // KVO fires on the thread that scrolls, which for UIKit is always main.
             observation = scroll.observe(\.contentOffset, options: [.new]) { scroll, _ in
-                let inset = scroll.adjustedContentInset
-                let top = -inset.top
-                let end = max(top, scroll.contentSize.height + inset.bottom - scroll.bounds.height)
-                if scroll.contentOffset.y > end {
-                    scroll.contentOffset.y = end
+                MainActor.assumeIsolated {
+                    let inset = scroll.adjustedContentInset
+                    let top = -inset.top
+                    let end = max(top, scroll.contentSize.height + inset.bottom - scroll.bounds.height)
+                    if scroll.contentOffset.y > end {
+                        scroll.contentOffset.y = end
+                    }
                 }
             }
         }
