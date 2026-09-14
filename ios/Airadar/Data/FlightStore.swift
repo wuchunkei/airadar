@@ -23,7 +23,7 @@ final class FlightStore: ObservableObject {
 
     // The last published list, on disk, so a relaunch shows the trips at once and
     // the server sync only refines them.
-    private static let cacheURL: URL = {
+    nonisolated private static let cacheURL: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("trips.json")
@@ -38,8 +38,9 @@ final class FlightStore: ObservableObject {
 
     private func persist() {
         let snapshot = all
+        let url = Self.cacheURL
         Task.detached(priority: .utility) {
-            if let data = try? BackendClient.encoder.encode(snapshot) { try? data.write(to: Self.cacheURL, options: .atomic) }
+            if let data = try? BackendClient.encoder.encode(snapshot) { try? data.write(to: url, options: .atomic) }
         }
     }
 
