@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// The Airadar backend (backend/ in this repo): flight status, accounts, trips,
 /// friends, sharing, plans. Same routes the Android app uses.
