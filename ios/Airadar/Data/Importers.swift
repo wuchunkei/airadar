@@ -21,7 +21,7 @@ enum FlightEmailParser {
     private static let months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
     private static let decoys: Set<String> = ["PNR", "ID", "NO", "REF", "TEL", "FAX", "VAT", "PO", "PIN"]
     // Airline style SURNAME/GIVEN, and "Passenger: Mr Chun Kei Wu" in a few languages.
-    private static let slashName = try! NSRegularExpression(pattern: #"\b([A-Z]{2,})/([A-Z]{2,}(?:\s+[A-Z]{2,}){0,3})\b"#)
+    private static let slashName = try! NSRegularExpression(pattern: #"\b([A-Z]{2,})/([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2})\b"#)
     private static let labelledName = try! NSRegularExpression(
         pattern: #"(?i:passenger|traveller|traveler|guest|name|乘客|旅客|姓名)\s*[:：]?\s*(?i:MR|MS|MRS|MISS|DR)?\.?\s*([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){1,3})"#)
 
