@@ -23,7 +23,15 @@ enum LiveActivities {
         for f in wanted {
             let content = ActivityContent(state: contentState(f), staleDate: now.addingTimeInterval(30 * 60))
             if let a = running.first(where: { $0.attributes.tripId == f.id }) {
-                Task { await a.update(content) }
+                // Attributes cannot change; one started before its mark arrived is replaced.
+                if a.attributes.logo == nil, let logo = AirlineLogos.thumbnail(for: f.flightNumber, onArrival: {}) {
+                    Task {
+                        await a.end(nil, dismissalPolicy: .immediate)
+                        _ = try? Activity.request(attributes: attributes(f, logo: logo), content: content)
+                    }
+                } else {
+                    Task { await a.update(content) }
+                }
             } else {
                 // Attributes are fixed for the activity's life, so the logo has to be there at the start.
                 let logo = AirlineLogos.thumbnail(for: f.flightNumber) {

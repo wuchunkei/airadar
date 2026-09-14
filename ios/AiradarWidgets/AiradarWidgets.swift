@@ -135,9 +135,9 @@ private struct LockScreenView: View {
 
     var body: some View {
         let s = context.state, a = context.attributes
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                AirlineMark(logo: a.logo, size: 22)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                AirlineMark(logo: a.logo, size: 26)
                 Text(a.flightNumber).font(.headline.monospaced())
                 Text(a.airlineName).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
@@ -145,25 +145,25 @@ private struct LockScreenView: View {
             }
             if s.stage == .landed {
                 HStack(alignment: .top) {
-                    Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading)
+                    Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading, large: true)
                     Spacer()
                     Facts(state: s, attributes: a)
                 }
             } else {
-                HStack(alignment: .top, spacing: 8) {
-                    Endpoint(code: a.departure, terminal: a.departureTerminal, place: a.departureCity, clock: s.departureClock, alignment: .leading)
+                HStack(alignment: .top, spacing: 12) {
+                    Endpoint(code: a.departure, terminal: a.departureTerminal, place: a.departureCity, clock: s.departureClock, alignment: .leading, large: true)
                     // The middle: countdown above, the route line below.
-                    VStack(spacing: 6) {
-                        Countdown(state: s).font(.caption)
-                        RouteLine(state: s).frame(height: 16)
+                    VStack(spacing: 10) {
+                        Countdown(state: s).font(.subheadline)
+                        RouteLine(state: s).frame(height: 20)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 4)
-                    Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .trailing)
+                    .padding(.top, 6)
+                    Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .trailing, large: true)
                 }
             }
         }
-        .padding(14)
+        .padding(.horizontal, 16).padding(.vertical, 16)
         .foregroundStyle(.white)
     }
 }
@@ -178,15 +178,17 @@ private struct Endpoint: View {
     let place: String
     let clock: String
     let alignment: HorizontalAlignment
+    /// The lock screen has room for bigger type than the island.
+    var large = false
 
     var body: some View {
-        VStack(alignment: alignment, spacing: 1) {
+        VStack(alignment: alignment, spacing: large ? 3 : 1) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(code).font(.title3.bold())
-                if let terminal { Text("T\(terminal)").font(.title3.bold()).foregroundStyle(.secondary) }
+                Text(code).font(large ? .title2.bold() : .title3.bold())
+                if let terminal { Text("T\(terminal)").font(large ? .title2.bold() : .title3.bold()).foregroundStyle(.secondary) }
             }
-            Text(place).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-            Text(clock).font(.subheadline.monospacedDigit().weight(.semibold))
+            Text(place).font(large ? .caption : .caption2).foregroundStyle(.secondary).lineLimit(1)
+            Text(clock).font((large ? Font.body : Font.subheadline).monospacedDigit().weight(.semibold))
         }
     }
 }
@@ -238,16 +240,18 @@ private struct StatusText: View {
     }
 }
 
-/// The live digits alone: h:mm while more than an hour remains, m:ss inside the last hour.
+/// The live digits alone: 1:14:05 while more than an hour remains, 14:05 inside
+/// the last hour — the system's own ticking timer, which keeps counting while the
+/// app sleeps and always fits.
 private struct CountdownDigits: View {
     let state: FlightActivityAttributes.ContentState
     var body: some View {
         let now = Date()
         switch state.stage {
         case .before:
-            Text(.currentDate, format: .timer(countingDownIn: now..<state.departureDate, showsHours: true, maxFieldCount: 2))
+            Text(timerInterval: now...state.departureDate, countsDown: true, showsHours: state.hoursToGo >= 1)
         case .airborne:
-            Text(.currentDate, format: .timer(countingDownIn: now..<state.arrivalDate, showsHours: true, maxFieldCount: 2))
+            Text(timerInterval: now...state.arrivalDate, countsDown: true, showsHours: state.arrivalDate.timeIntervalSinceNow >= 3600)
         case .landed:
             Text("Landed")
         }

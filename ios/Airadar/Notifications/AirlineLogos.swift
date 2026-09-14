@@ -10,7 +10,7 @@ enum AirlineLogos {
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base
     }()
-    private static let maxBytes = 2000
+    private static let maxBytes = 2600
     @MainActor private static var inFlight: Set<String> = []
 
     /// The airline code from the flight number: "3U3960" → "3U".
@@ -27,31 +27,32 @@ enum AirlineLogos {
         // The square mark (the symbol, no wordmark) first; the wide logo only if there is none.
         let sources = ["https://images.kiwi.com/airlines/64/\(code).png", "https://pics.avs.io/120/120/\(code).png"].compactMap(URL.init)
         Task.detached(priority: .utility) {
-            var out = Data()  // an empty file remembers a miss, so it is not asked for every sync
+            var out: Data?
+            var missing = true  // every source said 404: an empty file remembers that; a network failure is retried
             for url in sources {
-                if let (data, resp) = try? await URLSession.shared.data(from: url), (resp as? HTTPURLResponse)?.statusCode == 200,
-                   let image = UIImage(data: data), let small = shrink(image) {
-                    out = small
-                    break
-                }
+                guard let (data, resp) = try? await URLSession.shared.data(from: url), let http = resp as? HTTPURLResponse else { missing = false; continue }
+                if http.statusCode == 200, let image = UIImage(data: data), let small = shrink(image) { out = small; break }
+                if http.statusCode != 404 { missing = false }
             }
-            try? out.write(to: file, options: .atomic)
+            if let out { try? out.write(to: file, options: .atomic) }
+            else if missing { try? Data().write(to: file, options: .atomic) }
             await MainActor.run { inFlight.remove(code) }
-            if !out.isEmpty { onArrival() }
+            if out != nil { onArrival() }
         }
         return nil
     }
 
-    /// 40×40 on white, JPEG, quality lowered until it fits the budget.
+    /// 56 px square on white, JPEG, quality (then size) lowered until it fits the budget.
     private static func shrink(_ image: UIImage) -> Data? {
-        let side: CGFloat = 40
-        let format = UIGraphicsImageRendererFormat(); format.scale = 2
-        let drawn = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { ctx in
-            UIColor.white.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: side, height: side))
-            image.draw(in: CGRect(x: 4, y: 4, width: side - 8, height: side - 8))
-        }
-        for q in [0.7, 0.5, 0.35, 0.2] {
-            if let d = drawn.jpegData(compressionQuality: q), d.count <= maxBytes { return d }
+        for side in [56.0, 44.0, 32.0] {
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            let drawn = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { ctx in
+                UIColor.white.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: side, height: side))
+                image.draw(in: CGRect(x: 3, y: 3, width: side - 6, height: side - 6))
+            }
+            for q in [0.75, 0.55, 0.4, 0.25] {
+                if let d = drawn.jpegData(compressionQuality: q), d.count <= maxBytes { return d }
+            }
         }
         return nil
     }
