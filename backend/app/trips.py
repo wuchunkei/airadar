@@ -40,6 +40,8 @@ class TripIn(BaseModel):
     callsign: str | None = None
     pnr: str | None = None
     isPending: bool = False
+    # Entered by hand because no source knew the flight; shown with a warning block.
+    isManual: bool = False
     track: list[list[float]] | None = None
     trackFlownOn: date | None = None
 
