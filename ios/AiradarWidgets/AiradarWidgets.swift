@@ -245,9 +245,9 @@ private struct CountdownDigits: View {
         let now = Date()
         switch state.stage {
         case .before:
-            Text(.currentDate, format: .timer(countingDownIn: now...state.departureDate, showsHours: true, maxFieldCount: 2))
+            Text(.currentDate, format: .timer(countingDownIn: now..<state.departureDate, showsHours: true, maxFieldCount: 2))
         case .airborne:
-            Text(.currentDate, format: .timer(countingDownIn: now...state.arrivalDate, showsHours: true, maxFieldCount: 2))
+            Text(.currentDate, format: .timer(countingDownIn: now..<state.arrivalDate, showsHours: true, maxFieldCount: 2))
         case .landed:
             Text("Landed")
         }
