@@ -17,8 +17,6 @@ struct FlightDetailSheet<Actions: View>: View {
     /// Measured content height: the sheet opens just tall enough, not full screen.
     @State private var contentHeight: CGFloat = 0
     @State private var fullMap = false
-    @State private var detent: PresentationDetent = .medium
-    @State private var fittedHeight: CGFloat = 0
     @State private var trackRefreshed: Date?
     @State private var footerHeight: CGFloat = 0
 
@@ -67,23 +65,12 @@ struct FlightDetailSheet<Actions: View>: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             }
         }
-        // Measured: settle on the fitted height rather than leaving the sheet at whatever it
-        // opened at. Small re-measurements (a label wrapping) are ignored so it does not twitch;
-        // the selection is asserted again a beat later, after the detent set has taken it in.
-        .onChange(of: contentHeight + footerHeight, initial: true) { _, total in
-            guard total > 0, abs(total - fittedHeight) > 4 else { return }
-            fittedHeight = total
-            if let fitted = fittedDetent(total) {
-                detent = fitted
-                Task { @MainActor in detent = fitted }
-            }
-        }
         // In the air: the path flown so far is fetched quietly, so the plane sits where it really is.
         .task(id: flight.id) {
             if flight.phase == .inProgress, flight.trackFlownOn == nil, flight.callsign != nil { onLoadTrack?() }
         }
         // Outermost, so nothing between them and the sheet can swallow them.
-        .presentationDetents(detents, selection: $detent)
+        .presentationDetents(detents)
         .presentationDragIndicator(.visible)
     }
 
@@ -140,14 +127,11 @@ struct FlightDetailSheet<Actions: View>: View {
     /// screen can be pulled up to full height.
     /// Exactly as tall as the content, so the whole flight is on one page; content taller
     /// than a sheet can be gets the tallest sheet there is and scrolls for the rest.
+    /// (The plain form, without a selection binding: the one that has worked on the device.)
     private var detents: Set<PresentationDetent> {
-        guard fittedHeight > 0 else { return [.medium] }
-        return fittedHeight < screenHeight * 0.92 ? [.height(fittedHeight)] : [.large]
-    }
-
-    private func fittedDetent(_ total: CGFloat) -> PresentationDetent? {
-        guard total > 0 else { return nil }
-        return total < screenHeight * 0.92 ? .height(total) : .large
+        let fitted = contentHeight + footerHeight
+        guard fitted > 0 else { return [.large] }
+        return fitted < screenHeight * 0.92 ? [.height(fitted)] : [.large]
     }
 
     private var header: some View {
