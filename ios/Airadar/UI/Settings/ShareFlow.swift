@@ -93,9 +93,9 @@ struct ShareFlow: View {
     private func openSystemShare() async {
         preparing = true
         defer { preparing = false }
-        async let link = try? BackendClient.shareTrip(flight.id).url
-        let image = await ShareImage.render(flight, forceSystemZone: settings.forceSystemZone)
-        let url = (await link).flatMap { URL(string: $0) }
+        // The link first: the picture carries it as a QR code.
+        let url = (try? await BackendClient.shareTrip(flight.id).url).flatMap { URL(string: $0) }
+        let image = await ShareImage.render(flight, link: url, forceSystemZone: settings.forceSystemZone)
         // The itinerary text (link inside, ready to be an email) and the picture.
         var items: [Any] = [ShareText(flight: flight, link: url, forceSystemZone: settings.forceSystemZone, icon: image)]
         if let image, let file = ShareImage.file(image, for: flight) { items.append(file) }

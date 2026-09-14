@@ -1,14 +1,16 @@
 import SwiftUI
 import MapKit
 import LinkPresentation
+import CoreImage.CIFilterBuiltins
 
 /// The picture handed to the iOS share sheet: the route on a map, the flight
 /// underneath — what a traveller sends to someone who has no Airadar.
 @MainActor
 enum ShareImage {
-    static func render(_ flight: Flight, forceSystemZone: Bool) async -> UIImage? {
+    static func render(_ flight: Flight, link: URL?, forceSystemZone: Bool) async -> UIImage? {
         let map = await mapSnapshot(flight)
-        let renderer = ImageRenderer(content: ShareCardView(flight: flight, map: map, forceSystemZone: forceSystemZone))
+        let qr = link.flatMap { qrCode($0.absoluteString) }
+        let renderer = ImageRenderer(content: ShareCardView(flight: flight, map: map, qr: qr, forceSystemZone: forceSystemZone))
         renderer.scale = 3
         renderer.proposedSize = .init(width: 390, height: nil)
         return renderer.uiImage
@@ -20,6 +22,17 @@ enum ShareImage {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(flight.flightNumber) \(flight.departureDay).png")
         try? data.write(to: url, options: .atomic)
         return url
+    }
+
+    /// The share link as a QR code, crisp at any size (no smoothing).
+    private static func qrCode(_ text: String) -> UIImage? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(text.utf8)
+        filter.correctionLevel = "M"
+        guard let out = filter.outputImage else { return nil }
+        let scaled = out.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
+        guard let cg = CIContext().createCGImage(scaled, from: scaled.extent) else { return nil }
+        return UIImage(cgImage: cg)
     }
 
     /// Apple Maps with the great-circle route and both airports drawn on.
@@ -65,6 +78,7 @@ enum ShareImage {
 private struct ShareCardView: View {
     let flight: Flight
     let map: UIImage?
+    let qr: UIImage?
     let forceSystemZone: Bool
 
     var body: some View {
@@ -91,11 +105,28 @@ private struct ShareCardView: View {
                     Spacer()
                     endpoint(code: flight.arrival, city: flight.arrivalAirport?.cityCountry, time: arr, alignment: .trailing)
                 }
-                HStack {
-                    Image(systemName: "airplane.circle.fill")
-                    Text("Airadar").fontWeight(.semibold)
+                Divider()
+                // The code opens this trip in Airadar (and asks to accept it); the
+                // words beside it say what the app is to someone who has never seen it.
+                HStack(alignment: .center, spacing: 16) {
+                    if let qr {
+                        Image(uiImage: qr).interpolation(.none).resizable()
+                            .frame(width: 96, height: 96)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "airplane.circle.fill")
+                            Text("Airadar").fontWeight(.bold)
+                        }
+                        .font(.subheadline).foregroundStyle(.black)
+                        Text("Your flights on one live map — imported from your mail, shared with friends, tracked to the gate.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if qr != nil {
+                            Text("Scan to open this trip in Airadar and add it to your radar.")
+                                .font(.caption.weight(.semibold)).foregroundStyle(.black)
+                        }
+                    }
                 }
-                .font(.caption).foregroundStyle(.secondary)
             }
             .padding(20)
         }
