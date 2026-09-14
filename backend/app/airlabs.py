@@ -55,6 +55,20 @@ async def flight(client: httpx.AsyncClient, number: str, day: date) -> Flight:
     return _parse(await _with_airline_name(client, row, number), number, day)
 
 
+async def lookup(client: httpx.AsyncClient, number: str, day: date) -> Flight:
+    """Live status if AirLabs has this very day's flight; the timetable otherwise.
+    A live record for a different day is never passed off as the asked-for one."""
+    if abs((day - date.today()).days) <= 1:
+        try:
+            live = await flight(client, number, day)
+            if live.departureTime.date() == day:
+                return live
+        except AirLabsError as e:
+            if e.quota_exhausted:
+                raise
+    return await schedule(client, number, day)
+
+
 async def schedule(client: httpx.AsyncClient, number: str, day: date) -> Flight:
     """Timetable row for a future date (no live status)."""
     body = await _get(client, "schedules", flight_iata=number.upper())

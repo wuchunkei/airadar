@@ -72,17 +72,7 @@ async def flight(number: str, day: date):
 
 
 async def _airlabs_flight(number: str, day: date) -> Flight:
-    # Live status if AirLabs has this very day's flight; the timetable otherwise.
-    # A live record for a different day is never passed off as the asked-for one.
-    if abs((day - date.today()).days) <= 1:
-        try:
-            live = await airlabs.flight(_http(), number, day)
-            if live.departureTime.date() == day:
-                return live
-        except airlabs.AirLabsError as e:
-            if e.quota_exhausted:
-                raise
-    return await airlabs.schedule(_http(), number, day)
+    return await airlabs.lookup(_http(), number, day)
 
 
 _airports: dict[str, Airport] = {}  # airports do not move; looked up once per process

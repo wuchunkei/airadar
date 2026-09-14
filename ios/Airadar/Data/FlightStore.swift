@@ -21,6 +21,15 @@ final class FlightStore: ObservableObject {
 
     private var synced: Bool { AuthStore.shared.isSignedIn }
 
+    /// A flight within a day and a half of now: worth polling for status.
+    var hasFlightNearNow: Bool {
+        let now = Date()
+        return flights.contains { f in
+            guard let dep = f.departureInstant else { return false }
+            return abs(dep.timeIntervalSince(now)) < 36 * 3600
+        }
+    }
+
     // The last published list, on disk, so a relaunch shows the trips at once and
     // the server sync only refines them.
     nonisolated private static let cacheURL: URL = {

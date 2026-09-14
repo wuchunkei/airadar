@@ -7,8 +7,23 @@ import CoreImage.CIFilterBuiltins
 /// underneath — what a traveller sends to someone who has no Airadar.
 @MainActor
 enum ShareImage {
+    /// Snapshots and finished pictures, by trip: the second share of a trip is instant.
+    private static var maps: [String: UIImage] = [:]
+    private static var pictures: [String: UIImage] = [:]
+
     static func render(_ flight: Flight, link: URL?, forceSystemZone: Bool) async -> UIImage? {
+        let key = "\(flight.id)|\(link?.absoluteString ?? "")|\(flight.status.rawValue)|\(flight.delayMinutes)|\(forceSystemZone)"
+        if let done = pictures[key] { return done }
         let map = await mapSnapshot(flight)
+        let picture = await draw(flight, link: link, map: map, forceSystemZone: forceSystemZone)
+        if let picture { pictures[key] = picture }
+        return picture
+    }
+
+    /// The map alone, for warming up while the link is still being made.
+    static func warm(_ flight: Flight) async { _ = await mapSnapshot(flight) }
+
+    private static func draw(_ flight: Flight, link: URL?, map: UIImage?, forceSystemZone: Bool) async -> UIImage? {
         let qr = link.flatMap { qrCode($0.absoluteString) }
         let renderer = ImageRenderer(content: ShareCardView(flight: flight, map: map, qr: qr, forceSystemZone: forceSystemZone))
         renderer.scale = 3
@@ -38,6 +53,14 @@ enum ShareImage {
     /// Apple Maps with the route bowed as on the app's own map, both airports drawn on.
     private static func mapSnapshot(_ flight: Flight) async -> UIImage? {
         guard let from = flight.departureAirport, let to = flight.arrivalAirport else { return nil }
+        let key = "\(from.iata)-\(to.iata)"
+        if let cached = maps[key] { return cached }
+        let image = await snapshot(from, to)
+        if let image { maps[key] = image }
+        return image
+    }
+
+    private static func snapshot(_ from: Airport, _ to: Airport) async -> UIImage? {
         let path = TileMapView.arcPath(from, to)
         let line = MKPolyline(coordinates: path, count: path.count)
         var rect = line.boundingMapRect

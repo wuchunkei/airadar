@@ -7,6 +7,8 @@ struct AiradarApp: App {
     @StateObject private var auth = AuthStore.shared
     @StateObject private var settings = SettingsModel.shared
 
+    @Environment(\.scenePhase) private var scenePhase
+
     init() {
         GoogleAuth.configure()
     }
@@ -30,6 +32,17 @@ struct AiradarApp: App {
                     if auth.isSignedIn {
                         _ = try? await BackendClient.me()
                         try? await store.syncFromServer()
+                    }
+                }
+                // Back to the foreground: the day's flights may have moved.
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active, auth.isSignedIn { Task { try? await store.syncFromServer() } }
+                }
+                // While a flight is near, the server is asked again every two minutes.
+                .task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(120))
+                        if auth.isSignedIn, store.hasFlightNearNow { try? await store.syncFromServer() }
                     }
                 }
         }

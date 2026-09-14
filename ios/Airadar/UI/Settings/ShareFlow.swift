@@ -17,11 +17,25 @@ struct ShareFlow: View {
     @State private var note: String?
     @State private var showPicker = false
 
+    /// The last friends list seen, so the picker opens without a round trip.
+    @MainActor private static var knownFriends: [Friend]?
+
     var body: some View {
         Color.clear
             .task {
+                preparing = true
+                if let known = Self.knownFriends {
+                    friends = known
+                    preparing = false
+                    if known.isEmpty { await openSystemShare() } else { showPicker = true }
+                    // Refreshed behind the picker for next time.
+                    if let fresh = try? await BackendClient.friends() { Self.knownFriends = fresh.filter { $0.status == .accepted } }
+                    return
+                }
                 let list = ((try? await BackendClient.friends()) ?? []).filter { $0.status == .accepted }
+                Self.knownFriends = list
                 friends = list
+                preparing = false
                 if list.isEmpty { await openSystemShare() } else { showPicker = true }
             }
             .sheet(isPresented: $showPicker, onDismiss: onDone) { picker.presentationDetents([.height(260)]) }
@@ -98,10 +112,12 @@ struct ShareFlow: View {
     private func openSystemShare() async {
         preparing = true
         defer { preparing = false }
-        // The link first: the picture carries it as a QR code.
+        // The map is drawn while the link is being made; the picture needs both (the QR code).
+        async let warm: Void = ShareImage.warm(flight)
         var url: URL?
         do { url = try await BackendClient.shareTrip(flight.id).url.flatMap { URL(string: $0) } }
         catch { linkError = error.localizedDescription }
+        await warm
         let image = await ShareImage.render(flight, link: url, forceSystemZone: settings.forceSystemZone)
         // The itinerary text (link inside, ready to be an email) and the picture.
         var items: [Any] = [ShareText(flight: flight, link: url, forceSystemZone: settings.forceSystemZone, icon: image)]

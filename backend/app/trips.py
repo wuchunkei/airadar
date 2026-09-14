@@ -8,12 +8,12 @@ the set of documents that have it, and Mongo's TTL index empties it after
 TRASH_RETENTION_DAYS.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from . import names
+from . import airlabs, names
 from .auth import current_user
 from .billing import membership
 from .schema import FlightStatus
@@ -77,10 +77,47 @@ def _store(trip: TripIn) -> dict:
     return doc
 
 
+# What a live look-up may change on a stored trip; the rest is the traveller's.
+LIVE_FIELDS = ("status", "delayMinutes", "departureTime", "arrivalTime", "departureTerminal", "arrivalTerminal",
+               "departureGate", "arrivalGate", "baggageClaim", "aircraft", "callsign")
+LIVE_WINDOW = timedelta(hours=36)   # around departure: from the day before to a while after landing
+LIVE_EVERY = timedelta(minutes=5)   # per trip, so a list that is pulled often stays within quota
+
+
+async def _refresh_live(state, doc: dict) -> dict:
+    """Flights of the day get their status, gates and delay from AirLabs, at most every few minutes."""
+    db = state.db
+    dep = doc.get("departureTime")
+    if not isinstance(dep, datetime) or doc.get("isManual"):
+        return doc
+    dep = dep.replace(tzinfo=None)
+    now = _now().replace(tzinfo=None)
+    if not (dep - LIVE_WINDOW <= now <= dep + LIVE_WINDOW):
+        return doc
+    checked = doc.get("liveCheckedAt")
+    if isinstance(checked, datetime) and now - checked.replace(tzinfo=None) < LIVE_EVERY:
+        return doc
+    try:
+        live = await airlabs.lookup(state.http, doc["flightNumber"], dep.date())
+    except Exception:
+        # A miss is not news; try again after the same interval.
+        await db.trips.update_one({"_id": doc["_id"]}, {"$set": {"liveCheckedAt": now}})
+        return doc
+    fresh = live.model_dump()
+    changes = {k: fresh[k] for k in LIVE_FIELDS if fresh.get(k) is not None and fresh[k] != doc.get(k)}
+    if isinstance(changes.get("status"), FlightStatus):
+        changes["status"] = changes["status"].value
+    changes["liveCheckedAt"] = now
+    await db.trips.update_one({"_id": doc["_id"]}, {"$set": changes})
+    return {**doc, **changes}
+
+
 @router.get("", response_model=list[Trip])
 async def list_trips(request: Request, user: dict = Depends(current_user)):
-    cursor = request.app.state.db.trips.find({"userId": user["_id"], "deletedAt": None})
-    return [_out(d) async for d in cursor]
+    state = request.app.state
+    cursor = state.db.trips.find({"userId": user["_id"], "deletedAt": None})
+    docs = [d async for d in cursor]
+    return [_out(await _refresh_live(state, d)) for d in docs]
 
 
 @router.get("/deleted", response_model=list[Trip])
