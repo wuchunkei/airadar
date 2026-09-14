@@ -17,7 +17,8 @@ struct FlightDetailSheet<Actions: View>: View {
     /// Measured content height: the sheet opens just tall enough, not full screen.
     @State private var contentHeight: CGFloat = 0
     @State private var fullMap = false
-    @State private var detent: PresentationDetent = .large
+    @State private var detent: PresentationDetent = .medium
+    @State private var fittedHeight: CGFloat = 0
     @State private var trackRefreshed: Date?
     @State private var footerHeight: CGFloat = 0
 
@@ -65,9 +66,16 @@ struct FlightDetailSheet<Actions: View>: View {
         }
         .presentationDetents(detents, selection: $detent)
         .presentationDragIndicator(.visible)
-        // Measured: settle on the fitted height rather than leaving the sheet at whatever it opened at.
+        // Measured: settle on the fitted height rather than leaving the sheet at whatever it
+        // opened at. Small re-measurements (a label wrapping) are ignored so it does not twitch;
+        // the selection is asserted again a beat later, after the detent set has taken it in.
         .onChange(of: contentHeight + footerHeight, initial: true) { _, total in
-            if let fitted = fittedDetent(total) { detent = fitted }
+            guard total > 0, abs(total - fittedHeight) > 4 else { return }
+            fittedHeight = total
+            if let fitted = fittedDetent(total) {
+                detent = fitted
+                Task { @MainActor in detent = fitted }
+            }
         }
         // In the air: the path flown so far is fetched quietly, so the plane sits where it really is.
         .task(id: flight.id) {
@@ -126,9 +134,9 @@ struct FlightDetailSheet<Actions: View>: View {
     /// Just tall enough for the content; only content that does not fit on one
     /// screen can be pulled up to full height.
     private var detents: Set<PresentationDetent> {
-        let fitted = contentHeight + footerHeight
-        guard fitted > 0 else { return [.large] }
-        return fitted < screenHeight * 0.88 ? [.height(fitted)] : [.height(screenHeight * 0.88), .large]
+        // Until measured, medium: the worst case is half a screen, never a full one.
+        guard fittedHeight > 0 else { return [.medium] }
+        return fittedHeight < screenHeight * 0.88 ? [.height(fittedHeight)] : [.height(screenHeight * 0.88), .large]
     }
 
     private func fittedDetent(_ total: CGFloat) -> PresentationDetent? {
