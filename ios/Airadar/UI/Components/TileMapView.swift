@@ -17,9 +17,8 @@ extension Array where Element == Flight {
     }
 }
 
-/// OpenStreetMap standard tiles on an MKMapView — the same map as Android — with
-/// great-circle routes, flown tracks, a midpoint arrow on each, and a tap that picks
-/// the single nearest leg.
+/// Apple Maps (the platform's own) with great-circle routes, flown tracks, a
+/// midpoint arrow on each, and a tap that picks the single nearest leg.
 struct TileMapView: UIViewRepresentable {
     var routes: [MapRoute]
     var tracks: [MapTrack] = []
@@ -40,11 +39,7 @@ struct TileMapView: UIViewRepresentable {
         map.isPitchEnabled = false
         map.showsCompass = false
         map.pointOfInterestFilter = .excludingAll
-        // OSM's standard style, whatever the app theme; Apple's own map stays hidden beneath.
-        let osm = MKTileOverlay(urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
-        osm.canReplaceMapContent = true
-        osm.maximumZ = 18
-        map.addOverlay(osm, level: .aboveLabels)
+        map.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
         // Nothing past the poles, and never so far out that the world is shorter than the screen.
         map.setCameraZoomRange(MKMapView.CameraZoomRange(minCenterCoordinateDistance: 500, maxCenterCoordinateDistance: 40_000_000), animated: false)
         if interactive {
@@ -56,8 +51,8 @@ struct TileMapView: UIViewRepresentable {
 
     func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.parent = self
-        // Redraw the legs; keep the OSM overlay.
-        map.removeOverlays(map.overlays.filter { !($0 is MKTileOverlay) })
+        // Redraw the legs.
+        map.removeOverlays(map.overlays)
         map.removeAnnotations(map.annotations)
         var legs: [Coordinator.Leg] = []
 
@@ -99,7 +94,7 @@ struct TileMapView: UIViewRepresentable {
         } else if context.coordinator.framedFor != key {
             context.coordinator.framedFor = key
             var rect = MKMapRect.null
-            for o in map.overlays where !(o is MKTileOverlay) { rect = rect.union(o.boundingMapRect) }
+            for o in map.overlays { rect = rect.union(o.boundingMapRect) }
             let pad = min(map.bounds.width, map.bounds.height) / 7
             map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: pad, left: pad, bottom: pad, right: pad), animated: false)
         }
@@ -149,7 +144,6 @@ struct TileMapView: UIViewRepresentable {
         init(_ parent: TileMapView) { self.parent = parent }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let tile = overlay as? MKTileOverlay { return MKTileOverlayRenderer(tileOverlay: tile) }
             if let leg = overlay as? LegPolyline { return ArrowedPolylineRenderer(polyline: leg) }
             return MKOverlayRenderer(overlay: overlay)
         }

@@ -27,6 +27,9 @@ struct FlightDetailSheet<Actions: View>: View {
                 header
                 codes
                 facts
+                // Apple's own flight preview (the one Messages and Mail show). There is no
+                // API to open it directly; a detected flight number in a text view is the door.
+                AppleFlightLink(flightNumber: flight.flightNumber)
 
                 if let primary = primaryAction {
                     Button(action: primary.action) {
@@ -165,5 +168,28 @@ private struct TrackLoader: View {
         if status == .loading { return "Fetching ADS-B track" }
         if flownOn == nil { return "Route shown as a great circle" }
         return phase == .inProgress ? "Showing the path flown so far" : "Showing the path actually flown"
+    }
+}
+
+/// "Preview CX888 in Apple Maps ›" — a UITextView with flight-number detection, so the
+/// tap opens the system's flight tracker sheet.
+struct AppleFlightLink: UIViewRepresentable {
+    let flightNumber: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let v = UITextView()
+        v.isEditable = false
+        v.isScrollEnabled = false
+        v.backgroundColor = .clear
+        v.textContainerInset = .zero
+        v.textContainer.lineFragmentPadding = 0
+        v.dataDetectorTypes = [.flightNumber]
+        v.font = .preferredFont(forTextStyle: .subheadline)
+        v.textColor = .secondaryLabel
+        return v
+    }
+
+    func updateUIView(_ v: UITextView, context: Context) {
+        v.text = "Apple flight preview: \(flightNumber)"
     }
 }

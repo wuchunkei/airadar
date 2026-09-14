@@ -115,7 +115,8 @@ enum BackendClient {
             u.givenName = m.givenName; u.color = m.color; u.findableByEmail = m.findableByEmail; u.membership = m.membership
             u.name = m.name ?? u.name; u.avatarUrl = m.avatarUrl
         }
-        return AuthStore.shared.user!
+        guard let user = AuthStore.shared.user else { throw BackendError(message: "Sign in required.", code: 401) }
+        return user
     }
 
     @MainActor
