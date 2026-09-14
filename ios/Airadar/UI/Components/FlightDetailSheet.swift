@@ -24,39 +24,9 @@ struct FlightDetailSheet<Actions: View>: View {
                     TrackLoader(phase: flight.phase, flownOn: flight.trackFlownOn, status: trackStatus, onLoad: onLoadTrack)
                 }
 
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading) {
-                        Text(flight.airlineName.isEmpty ? "Airline" : flight.airlineName).font(.headline)
-                        Text(flight.flightNumber).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing) {
-                        Text("Status").font(.caption).foregroundStyle(.secondary)
-                        Text(flight.status.label).fontWeight(.semibold).foregroundStyle(flight.status.color)
-                    }
-                }
-
-                HStack {
-                    BigCode(code: flight.departure, terminal: flight.departureTerminal, city: flight.departureAirport?.city, trailing: false)
-                    Spacer()
-                    Image(systemName: "airplane").foregroundStyle(.secondary)
-                    Spacer()
-                    BigCode(code: flight.arrival, terminal: flight.arrivalTerminal, city: flight.arrivalAirport?.city, trailing: true)
-                }
-
-                VStack(spacing: 10) {
-                    let dep = flight.shownTime(arrival: false, forceSystemZone: forceSystemZone)
-                    let arr = flight.shownTime(arrival: true, forceSystemZone: forceSystemZone)
-                    DetailRow(label: "Departing", value: "\(dep.clock) \(dep.zone)", secondary: longDay(flight.departureDay), superseded: dep.original)
-                    DetailRow(label: "Arriving", value: "\(arr.clock) \(arr.zone)", secondary: longDay(flight.arrivalTime.dayString), superseded: arr.original)
-                    DetailRow(label: "Duration", value: formatDuration(flight.durationMinutes))
-                    DetailRow(label: "Distance", value: formatDistance(flight.distanceKm))
-                    if let a = flight.aircraft { DetailRow(label: "Aircraft", value: a) }
-                    // Belt numbers appear close to landing; the row is always there.
-                    DetailRow(label: "Baggage claim", value: flight.baggageClaim ?? "–")
-                    if let p = flight.pnr { DetailRow(label: "Booking reference", value: p) }
-                    if let s = flight.sharedBy { DetailRow(label: "Shared by", value: s.person.givenName, secondary: s.status.label) }
-                }
+                header
+                codes
+                facts
 
                 if let primary = primaryAction {
                     Button(action: primary.action) {
@@ -70,6 +40,48 @@ struct FlightDetailSheet<Actions: View>: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+    }
+
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading) {
+                Text(flight.airlineName.isEmpty ? "Airline" : flight.airlineName).font(.headline)
+                Text(flight.flightNumber).foregroundStyle(.secondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing) {
+                Text("Status").font(.caption).foregroundStyle(.secondary)
+                Text(flight.status.label).fontWeight(.semibold).foregroundStyle(flight.status.color)
+            }
+        }
+    }
+
+    private var codes: some View {
+        HStack {
+            BigCode(code: flight.departure, terminal: flight.departureTerminal, city: flight.departureAirport?.city, trailing: false)
+            Spacer()
+            Image(systemName: "airplane").foregroundStyle(.secondary)
+            Spacer()
+            BigCode(code: flight.arrival, terminal: flight.arrivalTerminal, city: flight.arrivalAirport?.city, trailing: true)
+        }
+    }
+
+    private var facts: some View {
+        let dep = flight.shownTime(arrival: false, forceSystemZone: forceSystemZone)
+        let arr = flight.shownTime(arrival: true, forceSystemZone: forceSystemZone)
+        let depValue = dep.clock + " " + dep.zone
+        let arrValue = arr.clock + " " + arr.zone
+        return VStack(spacing: 10) {
+            DetailRow(label: "Departing", value: depValue, secondary: longDay(flight.departureDay), superseded: dep.original)
+            DetailRow(label: "Arriving", value: arrValue, secondary: longDay(flight.arrivalTime.dayString), superseded: arr.original)
+            DetailRow(label: "Duration", value: formatDuration(flight.durationMinutes))
+            DetailRow(label: "Distance", value: formatDistance(flight.distanceKm))
+            if let a = flight.aircraft { DetailRow(label: "Aircraft", value: a) }
+            // Belt numbers appear close to landing; the row is always there.
+            DetailRow(label: "Baggage claim", value: flight.baggageClaim ?? "–")
+            if let p = flight.pnr { DetailRow(label: "Booking reference", value: p) }
+            if let s = flight.sharedBy { DetailRow(label: "Shared by", value: s.person.givenName, secondary: s.status.label) }
+        }
     }
 
     private var routes: [MapRoute] {

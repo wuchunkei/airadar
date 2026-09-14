@@ -103,9 +103,9 @@ struct TripView: View {
             }
             .navigationDestination(isPresented: $showFriends) { FriendsView() }
         }
-        .sheet(item: Binding(get: { selectedId.flatMap { id in store.flights.first { $0.id == id } } },
-                             set: { if $0 == nil { selectedId = nil } })) { flight in
-            detailSheet(flight)
+        .sheet(item: $selectedId) { id in
+            // Looked up by id so the sheet sees the refreshed Flight once a track is stored on it.
+            if let flight = store.flights.first(where: { $0.id == id }) { detailSheet(flight) }
         }
         .sheet(item: $shareFor) { ShareSheetView(flight: $0) }
     }

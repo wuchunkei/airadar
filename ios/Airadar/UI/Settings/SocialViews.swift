@@ -12,12 +12,11 @@ struct FriendsView: View {
             Section {
                 HStack {
                     TextField("Find by email", text: $email).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("Find") { Task { do { found = try await BackendClient.lookup(email: email); message = nil } catch { found = nil; message = error.localizedDescription } } }
-                        .buttonStyle(.glass).disabled(!email.contains("@"))
+                    Button("Find") { find() }.buttonStyle(.glass).disabled(!email.contains("@"))
                 }
                 if let p = found {
                     PersonRow(person: p) {
-                        Button("Add friend") { Task { _ = try? await BackendClient.requestFriend(p.id); found = nil; email = ""; await reload() } }.buttonStyle(.glassProminent)
+                        Button("Add friend") { add(p) }.buttonStyle(.glassProminent)
                     }
                 }
                 if let message { Text(message).font(.caption).foregroundStyle(.red) }
@@ -27,8 +26,8 @@ struct FriendsView: View {
                 Section("Requests") {
                     ForEach(incoming) { f in
                         PersonRow(person: f.person) {
-                            Button("Decline") { Task { try? await BackendClient.removeFriend(f.friendshipId); await reload() } }
-                            Button("Accept") { Task { try? await BackendClient.acceptFriend(f.friendshipId); await reload() } }.buttonStyle(.glassProminent)
+                            Button("Decline") { remove(f) }
+                            Button("Accept") { accept(f) }.buttonStyle(.glassProminent)
                         }
                     }
                 }
@@ -37,14 +36,14 @@ struct FriendsView: View {
                 let accepted = friends.filter { $0.status == .accepted }
                 if accepted.isEmpty { Text("No friends yet. Find someone by email, or accept a request from a shared trip.").font(.caption).foregroundStyle(.secondary) }
                 ForEach(accepted) { f in
-                    PersonRow(person: f.person) { Button("Remove") { Task { try? await BackendClient.removeFriend(f.friendshipId); await reload() } } }
+                    PersonRow(person: f.person) { Button("Remove") { remove(f) } }
                 }
             }
             let outgoing = friends.filter { $0.status == .outgoing }
             if !outgoing.isEmpty {
                 Section("Sent") {
                     ForEach(outgoing) { f in
-                        PersonRow(person: f.person) { Button("Cancel") { Task { try? await BackendClient.removeFriend(f.friendshipId); await reload() } } }
+                        PersonRow(person: f.person) { Button("Cancel") { remove(f) } }
                     }
                 }
             }
@@ -54,6 +53,16 @@ struct FriendsView: View {
     }
 
     private func reload() async { friends = (try? await BackendClient.friends()) ?? [] }
+
+    private func find() {
+        Task {
+            do { found = try await BackendClient.lookup(email: email); message = nil }
+            catch { found = nil; message = error.localizedDescription }
+        }
+    }
+    private func add(_ p: Person) { Task { _ = try? await BackendClient.requestFriend(p.id); found = nil; email = ""; await reload() } }
+    private func accept(_ f: Friend) { Task { try? await BackendClient.acceptFriend(f.friendshipId); await reload() } }
+    private func remove(_ f: Friend) { Task { try? await BackendClient.removeFriend(f.friendshipId); await reload() } }
 }
 
 struct PersonRow<Trailing: View>: View {
@@ -111,10 +120,10 @@ struct ShareSheetView: View {
                             if let status { Text(status.label).font(.caption.weight(.semibold)).foregroundStyle(status.blockColor) }
                         }
                         .contentShape(Rectangle())
-                        .onTapGesture { if status == nil { if picked { chosen.remove(f.person.id) } else { chosen.insert(f.person.id) } } }
+                        .onTapGesture { if status == nil { toggle(f.person.id) } }
                     }
-                    Button { Task { for f in friends where chosen.contains(f.person.id) { try? await store.share(flight, with: f.person) }; dismiss() } } label: {
-                        Text(chosen.count <= 1 ? "Send to friend" : "Send to \(chosen.count) friends").fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 6)
+                    Button { send(friends) } label: {
+                        Text(sendLabel).fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 6)
                     }
                     .buttonStyle(.glassProminent).disabled(chosen.isEmpty)
                 }
@@ -128,10 +137,21 @@ struct ShareSheetView: View {
         .sheet(item: $shareURL) { url in ActivityView(items: ["\(flight.flightNumber) \(flight.departure) → \(flight.arrival) on \(flight.departureDay)", url]) }
     }
 
+    private var sendLabel: String { chosen.count <= 1 ? "Send to friend" : "Send to \(chosen.count) friends" }
+
+    private func send(_ friends: [Friend]) {
+        Task {
+            for f in friends where chosen.contains(f.person.id) { try? await store.share(flight, with: f.person) }
+            dismiss()
+        }
+    }
+
     private func mintLink() async -> URL? {
         guard let s = try? await BackendClient.shareTrip(flight.id).url, let u = URL(string: s) else { note = "Could not create a link."; return nil }
         return u
     }
+
+    private func toggle(_ id: String) { if chosen.contains(id) { chosen.remove(id) } else { chosen.insert(id) } }
 
     private func copyLink() {
         Task { if let u = await mintLink() { UIPasteboard.general.string = u.absoluteString; note = "Link copied." } }
@@ -192,12 +212,17 @@ struct MembershipView: View {
     let onDismiss: () -> Void
     @Environment(\.openURL) private var openURL
 
-    private let rows: [(String, String, String, String)] = [
-        ("Trips ahead", "3 in all", "10", "Unlimited"), ("Past trips", "1", "5", "Unlimited"),
-        ("Add ahead", "7 days", "30 days", "Any date"), ("Cloud sync", "—", "✓", "✓"),
-        ("Friends & sharing", "—", "✓", "✓"), ("Recycle bin", "—", "✓", "✓"),
-        ("Flown tracks", "—", "—", "✓"), ("Gmail & calendar import", "—", "—", "✓"),
-        ("Price", "Free", Plans.superiorPrice, Plans.premiumPrice),
+    private struct PlanRow: Identifiable { let feature: String, guest: String, superior: String, premium: String; var id: String { feature } }
+    private let rows: [PlanRow] = [
+        PlanRow(feature: "Trips ahead", guest: "3 in all", superior: "10", premium: "Unlimited"),
+        PlanRow(feature: "Past trips", guest: "1", superior: "5", premium: "Unlimited"),
+        PlanRow(feature: "Add ahead", guest: "7 days", superior: "30 days", premium: "Any date"),
+        PlanRow(feature: "Cloud sync", guest: "—", superior: "✓", premium: "✓"),
+        PlanRow(feature: "Friends & sharing", guest: "—", superior: "✓", premium: "✓"),
+        PlanRow(feature: "Recycle bin", guest: "—", superior: "✓", premium: "✓"),
+        PlanRow(feature: "Flown tracks", guest: "—", superior: "—", premium: "✓"),
+        PlanRow(feature: "Gmail & calendar import", guest: "—", superior: "—", premium: "✓"),
+        PlanRow(feature: "Price", guest: "Free", superior: Plans.superiorPrice, premium: Plans.premiumPrice),
     ]
 
     var body: some View {
@@ -208,10 +233,12 @@ struct MembershipView: View {
                     Grid(horizontalSpacing: 6, verticalSpacing: 8) {
                         GridRow { Text(""); cell("Guest", .guest, header: true); cell("Superior", .superior, header: true); cell("Premium", .premium, header: true) }
                         Divider()
-                        ForEach(rows, id: \.0) { r in
+                        ForEach(rows) { r in
                             GridRow {
-                                Text(r.0).font(.caption.weight(.semibold)).gridColumnAlignment(.leading)
-                                cell(r.1, .guest); cell(r.2, .superior); cell(r.3, .premium)
+                                Text(r.feature).font(.caption.weight(.semibold)).gridColumnAlignment(.leading)
+                                cell(r.guest, .guest)
+                                cell(r.superior, .superior)
+                                cell(r.premium, .premium)
                             }
                         }
                     }

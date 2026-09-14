@@ -61,9 +61,11 @@ struct MyView: View {
                 if history.isEmpty { homeRegion = await HomeRegion.find() }
             }
         }
-        .sheet(item: Binding(get: { openId.flatMap { id in store.flights.first { $0.id == id } } }, set: { if $0 == nil { openId = nil } })) { f in
-            FlightDetailSheet(flight: f, forceSystemZone: settings.forceSystemZone, trackStatus: trackStatus[f.id],
-                              onLoadTrack: { load(f) }, onDismiss: { openId = nil })
+        .sheet(item: $openId) { id in
+            if let f = store.flights.first(where: { $0.id == id }) {
+                FlightDetailSheet(flight: f, forceSystemZone: settings.forceSystemZone, trackStatus: trackStatus[f.id],
+                                  onLoadTrack: { load(f) }, onDismiss: { openId = nil })
+            }
         }
     }
 
@@ -109,11 +111,15 @@ private struct LegCard: View {
 
 private struct StatsPanel: View {
     let stats: TravelStats
+    private var metric: Bool { systemPrefersMetric() }
+    private var distanceText: String {
+        if metric { return stats.totalDistanceKm.formatted() }
+        let miles: Double = Double(stats.totalDistanceKm) * 0.621371
+        return Int(miles).formatted()
+    }
     var body: some View {
-        let metric = systemPrefersMetric()
-        let distance: Int = metric ? stats.totalDistanceKm : Int(Double(stats.totalDistanceKm) * 0.621371)
         HStack {
-            StatCell(value: distance.formatted(), unit: metric ? "km" : "mi", label: "Distance")
+            StatCell(value: distanceText, unit: metric ? "km" : "mi", label: "Distance")
             StatCell(value: "\(stats.flightCount)", unit: "", label: "Flights")
             StatCell(value: "\(stats.countryCount)", unit: "", label: "Countries")
             StatCell(value: "\(stats.cityCount)", unit: "", label: "Cities")

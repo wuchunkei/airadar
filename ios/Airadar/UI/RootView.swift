@@ -17,6 +17,21 @@ struct RootView: View {
 
     private var canShare: Bool { auth.isSignedIn && (auth.user?.membership.limits.sharing ?? false) }
 
+    private func addLinked(_ link: BackendClient.LinkedTrip) {
+        Task {
+            var added = false
+            if auth.isSignedIn, let token = links.shareToken {
+                added = (try? await BackendClient.copyLinkedTrip(token)) != nil
+                try? await store.syncFromServer()
+            } else {
+                added = store.add(link.flight)
+            }
+            if added { FlightReminders.schedule(link.flight); tab = .trip }
+            linked = nil
+            links.shareToken = nil
+        }
+    }
+
     var body: some View {
         TabView(selection: Binding(get: { tab }, set: { new in
             if new == .trip && tab == .trip { tripResetSignal += 1 }
@@ -56,23 +71,9 @@ struct RootView: View {
             linked = try? await BackendClient.linkedTrip(token)
             if linked == nil { toast = "That trip link has expired."; links.shareToken = nil }
         }
-        .sheet(item: Binding(get: { linked.map { LinkedBox(link: $0) } }, set: { if $0 == nil { linked = nil; links.shareToken = nil } })) { box in
-            LinkedTripSheet(link: box.link) {
-                Task {
-                    let token = links.shareToken
-                    let added: Bool
-                    if auth.isSignedIn, let token {
-                        added = (try? await BackendClient.copyLinkedTrip(token)) != nil
-                        try? await store.syncFromServer()
-                    } else {
-                        added = store.add(box.link.flight)
-                    }
-                    if added { FlightReminders.schedule(box.link.flight); tab = .trip }
-                    linked = nil
-                    links.shareToken = nil
-                }
-            }
-            .presentationDetents([.medium])
+        .sheet(item: $linked, onDismiss: { links.shareToken = nil }) { link in
+            LinkedTripSheet(link: link) { addLinked(link) }
+                .presentationDetents([.medium])
         }
         .overlay(alignment: .bottom) {
             if let toast {
@@ -89,7 +90,7 @@ struct RootView: View {
     }
 }
 
-private struct LinkedBox: Identifiable { let link: BackendClient.LinkedTrip; var id: String { link.flight.id } }
+extension BackendClient.LinkedTrip: Identifiable { var id: String { flight.id } }
 
 /// The card a shared link opens: the flight, who shared it, one button to take it.
 struct LinkedTripSheet: View {
@@ -131,3 +132,5 @@ struct LinkedTripSheet: View {
         .padding(24)
     }
 }
+
+extension String: @retroactive Identifiable { public var id: String { self } }

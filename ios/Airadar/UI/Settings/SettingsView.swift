@@ -21,7 +21,7 @@ struct SettingsView: View {
             if auth.isSignedIn {
                 Section("Import") {
                     NavigationLink("Read trips from email") { EmailImportView() }
-                    Toggle("Read trips from calendar", isOn: Binding(get: { settings.calendarSync }, set: { setCalendar($0) }))
+                    Toggle("Read trips from calendar", isOn: calendarBinding)
                     if let calendarStatus { Text(calendarStatus).font(.caption).foregroundStyle(.tint) }
                 }
             }
@@ -62,9 +62,7 @@ struct SettingsView: View {
                     Button("Replace token") { replaceToken() }.buttonStyle(.glass)
                     if user.membership.tier != .premium { Button("Upgrade") { openURL(Plans.payURL) }.buttonStyle(.glass) }
                 }
-                Toggle("Friends can find me by email", isOn: Binding(get: { user.findableByEmail }, set: { on in
-                    Task { try? await BackendClient.updateProfile(findableByEmail: on) }
-                }))
+                Toggle("Friends can find me by email", isOn: findableBinding(user.findableByEmail))
             } else {
                 // Token accepted for this phone: sign in with Google, or swap the token.
                 // Nothing about the plan is shown until the account is signed in.
@@ -91,6 +89,10 @@ struct SettingsView: View {
             }
             if let tokenError { Text(tokenError).font(.caption).foregroundStyle(.red) }
         }
+    }
+
+    private func findableBinding(_ current: Bool) -> Binding<Bool> {
+        Binding(get: { current }, set: { on in Task { try? await BackendClient.updateProfile(findableByEmail: on) } })
     }
 
     private func checkToken() {
@@ -130,6 +132,10 @@ struct SettingsView: View {
             auth.saveCheckedToken(nil)
             tokenError = nil
         }
+    }
+
+    private var calendarBinding: Binding<Bool> {
+        Binding(get: { settings.calendarSync }, set: { setCalendar($0) })
     }
 
     /// Turning the switch on reads the calendars straight away.
