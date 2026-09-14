@@ -111,8 +111,9 @@ private struct StatsPanel: View {
     let stats: TravelStats
     var body: some View {
         let metric = systemPrefersMetric()
+        let distance: Int = metric ? stats.totalDistanceKm : Int(Double(stats.totalDistanceKm) * 0.621371)
         HStack {
-            StatCell(value: (metric ? stats.totalDistanceKm : Int(Double(stats.totalDistanceKm) * 0.621371)).formatted(), unit: metric ? "km" : "mi", label: "Distance")
+            StatCell(value: distance.formatted(), unit: metric ? "km" : "mi", label: "Distance")
             StatCell(value: "\(stats.flightCount)", unit: "", label: "Flights")
             StatCell(value: "\(stats.countryCount)", unit: "", label: "Countries")
             StatCell(value: "\(stats.cityCount)", unit: "", label: "Cities")

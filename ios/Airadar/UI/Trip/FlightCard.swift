@@ -113,7 +113,7 @@ struct ShareBlocks: View {
     @Binding var expanded: Bool
 
     var body: some View {
-        let outgoing = flight.shares.sorted { ($0.status.rank, $0.person.givenName.lowercased()) < ($1.status.rank, $1.person.givenName.lowercased()) }
+        let outgoing = flight.shares.sortedForDisplay()
         HStack(spacing: 6) {
             if let s = flight.sharedBy {
                 NameBlock(name: s.person.givenName, color: s.status == .together ? s.person.tint : ink, dashed: s.status == .pending)
@@ -143,7 +143,7 @@ struct ShareList: View {
     var body: some View {
         VStack(spacing: 8) {
             Divider().overlay(ink.opacity(0.12))
-            ForEach(flight.shares.sorted { ($0.status.rank, $0.person.givenName.lowercased()) < ($1.status.rank, $1.person.givenName.lowercased()) }) { s in
+            ForEach(flight.shares.sortedForDisplay()) { s in
                 HStack {
                     Text(s.person.givenName).font(.subheadline.weight(.medium)).foregroundStyle(s.person.tint)
                     Spacer()
@@ -163,5 +163,15 @@ struct NameBlock: View {
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background { if !dashed { RoundedRectangle(cornerRadius: 6).fill(color.opacity(0.16)) } }
             .overlay { if dashed { RoundedRectangle(cornerRadius: 6).strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [6, 4])).foregroundStyle(color) } }
+    }
+}
+
+extension Array where Element == TripShare {
+    /// Order for a card's share blocks: the state that matters most first, then by name.
+    func sortedForDisplay() -> [TripShare] {
+        sorted { a, b in
+            if a.status.rank != b.status.rank { return a.status.rank < b.status.rank }
+            return a.person.givenName.lowercased() < b.person.givenName.lowercased()
+        }
     }
 }

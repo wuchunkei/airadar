@@ -150,12 +150,22 @@ struct SettingsView: View {
 /// "Premium · until 2026-10-12", "Superior · grace period", or "No plan".
 struct PlanLine: View {
     let membership: Membership
-    var body: some View {
-        let name = switch membership.tier { case .premium: "Premium"; case .superior: "Superior"; case .guest: "No plan" }
-        let color: Color = switch membership.tier {
-        case .premium: Color(red: 1, green: 0.82, blue: 0.29); case .superior: Color(red: 0.12, green: 0.70, blue: 0.48); case .guest: .secondary
+    private var name: String {
+        switch membership.tier { case .premium: "Premium"; case .superior: "Superior"; case .guest: "No plan" }
+    }
+    private var color: Color {
+        switch membership.tier {
+        case .premium: Color(red: 1, green: 0.82, blue: 0.29)
+        case .superior: Color(red: 0.12, green: 0.70, blue: 0.48)
+        case .guest: .secondary
         }
-        Text(name + (membership.grace ? " · grace period" : membership.until.map { " · until \($0.formatted(date: .numeric, time: .omitted))" } ?? ""))
-            .fontWeight(.medium).foregroundStyle(color)
+    }
+    private var suffix: String {
+        if membership.grace { return " · grace period" }
+        guard let until = membership.until else { return "" }
+        return " · until " + until.formatted(date: .numeric, time: .omitted)
+    }
+    var body: some View {
+        Text(name + suffix).fontWeight(.medium).foregroundStyle(color)
     }
 }

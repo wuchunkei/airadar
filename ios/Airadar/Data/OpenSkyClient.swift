@@ -82,7 +82,11 @@ actor OpenSkyClient {
 
     private func findAirborne(_ bearer: String, _ callsign: String, _ origin: Airport, _ destination: Airport) async throws -> String? {
         let pad = 4.0
-        let url = "\(Self.api)/states/all?lamin=\(min(origin.latitude, destination.latitude) - pad)&lomin=\(min(origin.longitude, destination.longitude) - pad)&lamax=\(max(origin.latitude, destination.latitude) + pad)&lomax=\(max(origin.longitude, destination.longitude) + pad)"
+        let lamin = min(origin.latitude, destination.latitude) - pad
+        let lamax = max(origin.latitude, destination.latitude) + pad
+        let lomin = min(origin.longitude, destination.longitude) - pad
+        let lomax = max(origin.longitude, destination.longitude) + pad
+        let url = "\(Self.api)/states/all?lamin=\(lamin)&lomin=\(lomin)&lamax=\(lamax)&lomax=\(lomax)"
         guard let body = try await getJSON(url, bearer),
               let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
               let states = obj["states"] as? [[Any]] else { return nil }

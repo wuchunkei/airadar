@@ -18,15 +18,19 @@ extension Flight {
         let shifted = (includeDelay && delayMinutes > 0)
             ? LocalDateTime.from(local.date(in: zone).addingTimeInterval(TimeInterval(delayMinutes * 60)), in: zone)
             : local
+        let delayed = includeDelay && delayMinutes > 0
         if forceSystemZone {
             let instant = shifted.date(in: zone)
             let mine = LocalDateTime.from(instant, in: .current)
             let dayShift = daysBetween(shifted.dayString, mine.dayString)
             let tag = TimeZone.current.abbreviation() ?? "local"
-            let suffix = dayShift == 0 ? "" : (dayShift > 0 ? "(+\(dayShift))" : "(\(dayShift))")
-            return ShownTime(clock: mine.clock, zone: tag + suffix, original: delayMinutes > 0 && includeDelay ? LocalDateTime.from(local.date(in: zone), in: .current).clock : nil)
+            var suffix = ""
+            if dayShift > 0 { suffix = "(+\(dayShift))" } else if dayShift < 0 { suffix = "(\(dayShift))" }
+            let original: String? = delayed ? LocalDateTime.from(local.date(in: zone), in: .current).clock : nil
+            return ShownTime(clock: mine.clock, zone: tag + suffix, original: original)
         }
-        return ShownTime(clock: shifted.clock, zone: gmtTag(zone), original: delayMinutes > 0 && includeDelay ? local.clock : nil)
+        let original: String? = delayed ? local.clock : nil
+        return ShownTime(clock: shifted.clock, zone: gmtTag(zone), original: original)
     }
 
     private func gmtTag(_ zone: TimeZone) -> String {

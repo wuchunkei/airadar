@@ -164,7 +164,9 @@ struct RecycleBinView: View {
                     FlightCard(flight: f, forceSystemZone: settings.forceSystemZone) { selected = f }
                     if let d = f.deletedAt {
                         let left = max(0, FlightStore.retentionDays - Int(Date().timeIntervalSince(d) / 86400))
-                        Text("Deleted \(d.formatted(date: .numeric, time: .omitted)) · gone for good in \(left) day\(left == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                        let when = d.formatted(date: .numeric, time: .omitted)
+                        let days = left == 1 ? "1 day" : "\(left) days"
+                        Text("Deleted \(when) · gone for good in \(days)").font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 .listRowSeparator(.hidden).listRowBackground(Color.clear)
