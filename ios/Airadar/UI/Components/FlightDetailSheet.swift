@@ -138,15 +138,16 @@ struct FlightDetailSheet<Actions: View>: View {
 
     /// Just tall enough for the content; only content that does not fit on one
     /// screen can be pulled up to full height.
+    /// Exactly as tall as the content, so the whole flight is on one page; content taller
+    /// than a sheet can be gets the tallest sheet there is and scrolls for the rest.
     private var detents: Set<PresentationDetent> {
-        // Until measured, medium: the worst case is half a screen, never a full one.
         guard fittedHeight > 0 else { return [.medium] }
-        return fittedHeight < screenHeight * 0.88 ? [.height(fittedHeight)] : [.height(screenHeight * 0.88), .large]
+        return fittedHeight < screenHeight * 0.92 ? [.height(fittedHeight)] : [.large]
     }
 
     private func fittedDetent(_ total: CGFloat) -> PresentationDetent? {
         guard total > 0 else { return nil }
-        return total < screenHeight * 0.88 ? .height(total) : .height(screenHeight * 0.88)
+        return total < screenHeight * 0.92 ? .height(total) : .large
     }
 
     private var header: some View {
