@@ -60,7 +60,7 @@ struct TileMapView: UIViewRepresentable {
         var legs: [Coordinator.Leg] = []
 
         for r in routes {
-            let coords = greatCirclePath(r.from, r.to)
+            let coords = Self.greatCirclePath(r.from, r.to)
             let line = LegPolyline(coordinates: coords, count: coords.count)
             line.color = isSelected(r.from, r.to) ? Coordinator.selectedColor : Coordinator.routeColor
             line.width = min(1.5 + CGFloat(r.weight) * 0.5, 5)
@@ -108,7 +108,8 @@ struct TileMapView: UIViewRepresentable {
         selected.contains { $0.0.iata == a.iata && $0.1.iata == b.iata }
     }
 
-    private func greatCirclePath(_ a: Airport, _ b: Airport) -> [CLLocationCoordinate2D] {
+    /// The route as drawn on the map, and on a shared picture of it.
+    static func greatCirclePath(_ a: Airport, _ b: Airport) -> [CLLocationCoordinate2D] {
         let steps = 64
         let rad: Double = Double.pi / 180
         let lat1: Double = a.latitude * rad, lon1: Double = a.longitude * rad

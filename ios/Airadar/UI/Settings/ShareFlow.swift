@@ -7,10 +7,12 @@ struct ShareFlow: View {
     let flight: Flight
     let onDone: () -> Void
     @EnvironmentObject private var store: FlightStore
+    @EnvironmentObject private var settings: SettingsModel
 
     @State private var friends: [Friend]?
     @State private var chosen: Set<String> = []
-    @State private var shareURL: URL?
+    @State private var shareItems: ShareItems?
+    @State private var preparing = false
     @State private var note: String?
     @State private var showPicker = false
 
@@ -22,12 +24,17 @@ struct ShareFlow: View {
                 if list.isEmpty { await openSystemShare() } else { showPicker = true }
             }
             .sheet(isPresented: $showPicker, onDismiss: onDone) { picker.presentationDetents([.height(260)]) }
-            .sheet(item: $shareURL, onDismiss: { if friends?.isEmpty ?? true { onDone() } }) { url in
-                ActivityView(items: [summary, url])
+            .sheet(item: $shareItems, onDismiss: { if friends?.isEmpty ?? true { onDone() } }) { items in
+                ActivityView(items: items.items)
             }
+            .overlay { if preparing { ProgressView().padding(24).glassEffect(.regular, in: .rect(cornerRadius: 16)) } }
     }
 
-    private var summary: String { "\(flight.flightNumber) \(flight.departure) → \(flight.arrival) on \(flight.departureDay)" }
+    /// What the system sheet gets: a picture of the trip first, the link beside it.
+    private struct ShareItems: Identifiable {
+        let id = UUID()
+        let items: [Any]
+    }
 
     private var picker: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -84,12 +91,19 @@ struct ShareFlow: View {
 
     @MainActor
     private func openSystemShare() async {
-        guard let s = try? await BackendClient.shareTrip(flight.id).url, let url = URL(string: s) else {
-            note = "Could not create a link."
+        preparing = true
+        defer { preparing = false }
+        async let link = try? BackendClient.shareTrip(flight.id).url
+        let image = await ShareImage.render(flight, forceSystemZone: settings.forceSystemZone)
+        var items: [Any] = []
+        if let image, let file = ShareImage.file(image, for: flight) { items.append(file) }
+        if let s = await link, let url = URL(string: s) { items.append(url) }
+        guard !items.isEmpty else {
+            note = "Could not prepare the share."
             if friends?.isEmpty ?? true { onDone() }
             return
         }
         showPicker = false
-        shareURL = url
+        shareItems = ShareItems(items: items)
     }
 }
