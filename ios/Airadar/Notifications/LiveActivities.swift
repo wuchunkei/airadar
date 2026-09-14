@@ -38,8 +38,18 @@ enum LiveActivities {
         FlightActivityAttributes(
             tripId: f.id, flightNumber: f.flightNumber, airlineName: f.airlineName,
             departure: f.departure, arrival: f.arrival,
-            departureCity: f.departureAirport?.city ?? f.departure, arrivalCity: f.arrivalAirport?.city ?? f.arrival,
-            departureTerminal: f.departureTerminal, arrivalTerminal: f.arrivalTerminal, logo: logo)
+            departureCity: f.departureAirport?.cityCountry ?? f.departure, arrivalCity: f.arrivalAirport?.cityCountry ?? f.arrival,
+            departureTerminal: f.departureTerminal, arrivalTerminal: f.arrivalTerminal,
+            distanceKm: distanceKm(f), logo: logo)
+    }
+
+    /// Great-circle distance between the two airports, whole kilometres.
+    private static func distanceKm(_ f: Flight) -> Int {
+        guard let a = f.departureAirport, let b = f.arrivalAirport else { return 0 }
+        let rad = Double.pi / 180
+        let dLat = (b.latitude - a.latitude) * rad, dLon = (b.longitude - a.longitude) * rad
+        let h = sin(dLat / 2) * sin(dLat / 2) + cos(a.latitude * rad) * cos(b.latitude * rad) * sin(dLon / 2) * sin(dLon / 2)
+        return Int((2 * 6371 * asin(sqrt(h))).rounded())
     }
 
     private static func contentState(_ f: Flight) -> FlightActivityAttributes.ContentState {
@@ -51,7 +61,7 @@ enum LiveActivities {
             departureDate: (f.departureInstant ?? Date()) + delay, arrivalDate: (f.arrivalInstant ?? Date()) + delay,
             departureClock: dep.clock, arrivalClock: arr.clock,
             departureGate: f.departureGate, arrivalGate: f.arrivalGate, baggageClaim: f.baggageClaim,
-            delayMinutes: f.delayMinutes)
+            delayMinutes: f.delayMinutes, landed: f.status == .landed || f.status == .completed)
     }
 
     private static func kind(_ s: FlightStatus) -> FlightActivityAttributes.StatusKind {

@@ -10,13 +10,15 @@ struct FlightActivityAttributes: ActivityAttributes {
         /// Instants, delay included, so the island can count down and draw progress.
         var departureDate: Date
         var arrivalDate: Date
-        /// Local clocks at each airport, as printed on the card.
+        /// Local clocks at each airport, as printed on the card (delay included).
         var departureClock: String
         var arrivalClock: String
         var departureGate: String?
         var arrivalGate: String?
         var baggageClaim: String?
         var delayMinutes: Int
+        /// Set once the airline reports the flight down; the arrival clock is then the landing time.
+        var landed: Bool = false
     }
 
     enum StatusKind: String, Codable, Hashable { case scheduled, live, good, warn, bad }
@@ -30,6 +32,8 @@ struct FlightActivityAttributes: ActivityAttributes {
     let arrivalCity: String
     let departureTerminal: String?
     let arrivalTerminal: String?
+    /// Great-circle distance between the two airports.
+    let distanceKm: Int
     /// A tiny JPEG of the airline's mark, when one could be had.
     let logo: Data?
 }

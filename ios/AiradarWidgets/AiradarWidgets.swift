@@ -9,8 +9,67 @@ struct AiradarWidgets: WidgetBundle {
     }
 }
 
-/// The flight on the lock screen and in the Dynamic Island: where it is between
-/// the two airports, when it leaves or lands, gate and belt as they are known.
+// MARK: - Where the flight is
+
+/// Read off the clock at render time, so the same content draws the right stage.
+private enum Stage { case before, airborne, landed }
+
+private extension FlightActivityAttributes.ContentState {
+    var stage: Stage {
+        let now = Date()
+        if landed || now >= arrivalDate { return .landed }
+        return now < departureDate ? .before : .airborne
+    }
+
+    /// Hours to departure (negative once gone).
+    var hoursToGo: Double { departureDate.timeIntervalSinceNow / 3600 }
+
+    /// The countdown's colour: grey a day out, white within 12 h, then yellow, orange, red by the hour; green in the air.
+    var urgency: Urgency {
+        switch stage {
+        case .airborne: return .airborne
+        case .landed: return .done
+        case .before:
+            let h = hoursToGo
+            if h >= 12 { return .far }
+            if h >= 3 { return .near }
+            if h >= 2 { return .hours2 }
+            if h >= 1 { return .hour1 }
+            return .last
+        }
+    }
+
+    var fractionFlown: Double {
+        let total = arrivalDate.timeIntervalSince(departureDate)
+        guard total > 0 else { return 0 }
+        return min(1, max(0, Date().timeIntervalSince(departureDate) / total))
+    }
+
+    var durationText: String {
+        let minutes = Int(arrivalDate.timeIntervalSince(departureDate) / 60)
+        return "\(minutes / 60)h \(minutes % 60)m"
+    }
+}
+
+private enum Urgency {
+    case far, near, hours2, hour1, last, airborne, done
+
+    var color: Color {
+        switch self {
+        case .far: .secondary
+        case .near: .white
+        case .hours2: .yellow
+        case .hour1: .orange
+        case .last: .red
+        case .airborne, .done: .green
+        }
+    }
+    /// The last three hours are boxed as well as coloured.
+    var boxed: Bool { self == .hours2 || self == .hour1 || self == .last }
+}
+
+// MARK: - The widget
+
 struct FlightLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: FlightActivityAttributes.self) { context in
@@ -18,86 +77,134 @@ struct FlightLiveActivity: Widget {
                 .activityBackgroundTint(Color.black.opacity(0.6))
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
+            let s = context.state, a = context.attributes
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Endpoint(code: context.attributes.departure, terminal: context.attributes.departureTerminal,
-                             clock: context.state.departureClock, detail: gateLine(context.state.departureGate), alignment: .leading)
+                    if s.stage == .landed {
+                        Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading)
+                    } else {
+                        Endpoint(code: a.departure, terminal: a.departureTerminal, place: a.departureCity, clock: s.departureClock, alignment: .leading)
+                    }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Endpoint(code: context.attributes.arrival, terminal: context.attributes.arrivalTerminal,
-                             clock: context.state.arrivalClock, detail: arrivalLine(context), alignment: .trailing)
+                    if s.stage == .landed {
+                        Facts(state: s, attributes: a)
+                    } else {
+                        Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .trailing)
+                    }
                 }
                 DynamicIslandExpandedRegion(.center) {
                     HStack(spacing: 6) {
-                        AirlineMark(logo: context.attributes.logo, size: 22)
-                        VStack(spacing: 1) {
-                            Text(context.attributes.flightNumber).font(.headline.monospaced())
-                            Text(context.attributes.airlineName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                        }
+                        AirlineMark(logo: a.logo, size: 20)
+                        Text(a.flightNumber).font(.subheadline.monospaced().weight(.semibold))
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 6) {
-                        ProgressLine(state: context.state)
-                        HStack {
-                            StatusText(state: context.state)
-                            Spacer()
-                            Countdown(state: context.state)
-                        }
-                        .font(.caption)
+                    VStack(spacing: 4) {
+                        Countdown(state: s).font(.caption)
+                        RouteLine(state: s).frame(height: 16)
                     }
-                    .padding(.top, 4)
+                    .padding(.top, 2)
                 }
             } compactLeading: {
-                // The airline's mark alone; the words are in the expanded view.
-                AirlineMark(logo: context.attributes.logo, size: 20)
+                if s.stage == .landed {
+                    Text(a.arrival).font(.caption.weight(.bold))
+                } else {
+                    AirlineMark(logo: a.logo, size: 20)
+                }
             } compactTrailing: {
-                // A live timer reserves room for its widest value; centre the digits in it.
-                Countdown(state: context.state).font(.caption.monospacedDigit())
-                    .multilineTextAlignment(.center).frame(width: 52, alignment: .center)
+                if s.stage == .landed {
+                    Text(s.baggageClaim.map { "Belt \($0)" } ?? "Landed").font(.caption.weight(.semibold)).foregroundStyle(.green)
+                } else {
+                    CountdownDigits(state: s).font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(s.urgency.color)
+                        .multilineTextAlignment(.center).frame(width: 52, alignment: .center)
+                }
             } minimal: {
-                AirlineMark(logo: context.attributes.logo, size: 18)
+                AirlineMark(logo: a.logo, size: 18)
             }
-            .keylineTint(.blue)
+            .keylineTint(s.urgency.color)
         }
     }
-
-    private func gateLine(_ gate: String?) -> String? { gate.map { "Gate \($0)" } }
-
-    private func arrivalLine(_ context: ActivityViewContext<FlightActivityAttributes>) -> String? {
-        if let belt = context.state.baggageClaim { return "Belt \(belt)" }
-        return gateLine(context.state.arrivalGate)
-    }
 }
+
+// MARK: - Lock screen
 
 private struct LockScreenView: View {
     let context: ActivityViewContext<FlightActivityAttributes>
 
     var body: some View {
+        let s = context.state, a = context.attributes
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                AirlineMark(logo: context.attributes.logo, size: 22)
-                Text(context.attributes.flightNumber).font(.headline.monospaced())
-                Text(context.attributes.airlineName).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                AirlineMark(logo: a.logo, size: 22)
+                Text(a.flightNumber).font(.headline.monospaced())
+                Text(a.airlineName).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                StatusText(state: context.state).font(.caption.weight(.semibold))
+                StatusText(state: s).font(.caption.weight(.semibold))
             }
-            // The countdown sits on the true centre line, whatever the two ends measure.
-            HStack(alignment: .top) {
-                Endpoint(code: context.attributes.departure, terminal: context.attributes.departureTerminal,
-                         clock: context.state.departureClock, detail: context.attributes.departureCity, alignment: .leading)
-                Spacer(minLength: 60)
-                Endpoint(code: context.attributes.arrival, terminal: context.attributes.arrivalTerminal,
-                         clock: context.state.arrivalClock, detail: context.attributes.arrivalCity, alignment: .trailing)
+            if s.stage == .landed {
+                HStack(alignment: .top) {
+                    Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading)
+                    Spacer()
+                    Facts(state: s, attributes: a)
+                }
+            } else {
+                HStack(alignment: .top, spacing: 8) {
+                    Endpoint(code: a.departure, terminal: a.departureTerminal, place: a.departureCity, clock: s.departureClock, alignment: .leading)
+                    // The middle: countdown above, the route line below.
+                    VStack(spacing: 6) {
+                        Countdown(state: s).font(.caption)
+                        RouteLine(state: s).frame(height: 16)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+                    Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .trailing)
+                }
             }
-            .overlay(alignment: .top) {
-                Countdown(state: context.state).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center).padding(.top, 8)
-            }
-            ProgressLine(state: context.state)
         }
         .padding(14)
         .foregroundStyle(.white)
+    }
+}
+
+// MARK: - Pieces
+
+/// Code and terminal on one line (same size, the terminal quieter), the city and
+/// country beneath, the local time beneath that.
+private struct Endpoint: View {
+    let code: String
+    let terminal: String?
+    let place: String
+    let clock: String
+    let alignment: HorizontalAlignment
+
+    var body: some View {
+        VStack(alignment: alignment, spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(code).font(.title3.bold())
+                if let terminal { Text("T\(terminal)").font(.title3.bold()).foregroundStyle(.secondary) }
+            }
+            Text(place).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            Text(clock).font(.subheadline.monospacedDigit().weight(.semibold))
+        }
+    }
+}
+
+/// After landing: how long it took, how far it went, which belt.
+private struct Facts: View {
+    let state: FlightActivityAttributes.ContentState
+    let attributes: FlightActivityAttributes
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            fact("Duration", state.durationText)
+            fact("Distance", "\(attributes.distanceKm) km")
+            fact("Baggage", state.baggageClaim.map { "Belt \($0)" } ?? "—")
+        }
+        .font(.caption)
+    }
+    private func fact(_ name: String, _ value: String) -> some View {
+        HStack(spacing: 6) { Text(name).foregroundStyle(.secondary); Text(value).fontWeight(.semibold) }
     }
 }
 
@@ -110,25 +217,6 @@ private struct AirlineMark: View {
             Image(uiImage: ui).resizable().scaledToFit().frame(width: size, height: size).clipShape(.rect(cornerRadius: size * 0.22))
         } else {
             Image(systemName: "airplane").font(.system(size: size * 0.8)).foregroundStyle(.blue).frame(width: size, height: size)
-        }
-    }
-}
-
-private struct Endpoint: View {
-    let code: String
-    let terminal: String?
-    let clock: String
-    let detail: String?
-    let alignment: HorizontalAlignment
-
-    var body: some View {
-        VStack(alignment: alignment, spacing: 1) {
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(code).font(.title3.bold())
-                if let terminal { Text("T\(terminal)").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary) }
-            }
-            Text(clock).font(.subheadline.monospacedDigit())
-            if let detail { Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
         }
     }
 }
@@ -150,34 +238,63 @@ private struct StatusText: View {
     }
 }
 
-/// Before departure: time until it leaves. In the air: time until it lands. After: "Landed".
-private struct Countdown: View {
+/// The live digits alone: h:mm while more than an hour remains, m:ss inside the last hour.
+private struct CountdownDigits: View {
     let state: FlightActivityAttributes.ContentState
     var body: some View {
         let now = Date()
-        if now < state.departureDate {
-            Text(timerInterval: now...state.departureDate, countsDown: true, showsHours: true)
-        } else if now < state.arrivalDate {
-            Text(timerInterval: now...state.arrivalDate, countsDown: true, showsHours: true)
-        } else {
+        switch state.stage {
+        case .before:
+            Text(.currentDate, format: .timer(countingDownIn: now...state.departureDate, showsHours: true, maxFieldCount: 2))
+        case .airborne:
+            Text(.currentDate, format: .timer(countingDownIn: now...state.arrivalDate, showsHours: true, maxFieldCount: 2))
+        case .landed:
             Text("Landed")
         }
     }
 }
 
-/// The plane's way along the route, live while airborne.
-private struct ProgressLine: View {
+/// The digits with their word, coloured by how close it is, boxed in the last three hours.
+private struct Countdown: View {
     let state: FlightActivityAttributes.ContentState
     var body: some View {
-        let now = Date()
-        if now < state.departureDate {
-            ProgressView(value: 0).tint(.secondary)
-        } else if now < state.arrivalDate {
-            ProgressView(timerInterval: state.departureDate...state.arrivalDate, countsDown: false,
-                         label: { EmptyView() }, currentValueLabel: { EmptyView() })
-                .tint(.blue)
-        } else {
-            ProgressView(value: 1).tint(.green)
+        let u = state.urgency
+        HStack(spacing: 4) {
+            CountdownDigits(state: state).monospacedDigit()
+            Text(state.stage == .airborne ? "Landing" : "Boarding")
+        }
+        .fontWeight(.semibold)
+        .foregroundStyle(u.color)
+        .padding(.horizontal, u.boxed ? 8 : 0).padding(.vertical, u.boxed ? 2 : 0)
+        .overlay { if u.boxed { Capsule().strokeBorder(u.color, lineWidth: 1) } }
+    }
+}
+
+/// Before departure: a solid arrow from left to right. In the air: a dashed line
+/// with a node at the far end, the part flown drawn green, the plane at the
+/// point reached (estimated from the timetable when nothing fresher has come in).
+private struct RouteLine: View {
+    let state: FlightActivityAttributes.ContentState
+
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width, midY = g.size.height / 2
+            switch state.stage {
+            case .before:
+                Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: w - 6, y: midY)) }
+                    .stroke(.white.opacity(0.9), lineWidth: 1.5)
+                Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(.white.opacity(0.9))
+                    .position(x: w - 4, y: midY)
+            case .airborne, .landed:
+                let f = state.stage == .landed ? 1 : state.fractionFlown
+                Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: w - 8, y: midY)) }
+                    .stroke(.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: (w - 8) * f, y: midY)) }
+                    .stroke(.green, lineWidth: 2)
+                Circle().fill(.white.opacity(0.9)).frame(width: 6, height: 6).position(x: w - 4, y: midY)
+                Image(systemName: "airplane").font(.system(size: 11)).foregroundStyle(.green)
+                    .position(x: max(6, (w - 8) * f), y: midY)
+            }
         }
     }
 }
