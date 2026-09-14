@@ -79,8 +79,8 @@ enum LiveActivities {
         guard let dep = f.departureInstant, let arr = f.arrivalInstant else { return "" }
         let target = now < dep + delay ? dep + delay : arr + delay
         let left = max(0, Int(target.timeIntervalSince(now)))
-        if left >= 3600 { return String(format: "%dh%02dm", left / 3600, (left % 3600) / 60) }
-        return String(format: "%dm%02ds", left / 60, left % 60)
+        if left >= 3600 { return "\(left / 3600)h\((left % 3600) / 60)m" }
+        return "\(left / 60)m\(left % 60)s"
     }
 
     /// Something to count down within the hour: the activity is then rewritten every half minute.

@@ -110,7 +110,13 @@ struct TileMapView: UIViewRepresentable {
             line.arrow = !t.live
             map.addOverlay(line, level: .aboveLabels)
             if t.live, coords.count >= 2 {
-                map.addAnnotation(PlaneAnnotation(coordinate: coords[coords.count - 1], heading: Self.bearing(coords[coords.count - 2], coords[coords.count - 1])))
+                let last = coords[coords.count - 1]
+                map.addAnnotation(PlaneAnnotation(coordinate: last, heading: Self.bearing(coords[coords.count - 2], last)))
+                // The way still to go, dashed, so the map frames the whole flight and not just the bit flown.
+                let rest = Self.arcPath(from: last, to: t.to.coordinate)
+                let ahead = LegPolyline(coordinates: rest, count: rest.count)
+                ahead.color = UIColor.secondaryLabel.withAlphaComponent(0.6); ahead.width = 1.0; ahead.dashed = true; ahead.arrow = false
+                map.addOverlay(ahead, level: .aboveLabels)
             }
             legs.append(.init(line: line, from: t.from, to: t.to))
         }
@@ -153,10 +159,14 @@ struct TileMapView: UIViewRepresentable {
     /// opposite sides of the line between the two airports, and every repeat in
     /// one direction steps a fixed amount further out on its own side.
     static func arcPath(_ a: Airport, _ b: Airport, rank: Int = 0) -> [CLLocationCoordinate2D] {
-        let p0 = MKMapPoint(a.coordinate), p2 = MKMapPoint(b.coordinate)
+        arcPath(from: a.coordinate, to: b.coordinate, rank: rank)
+    }
+
+    static func arcPath(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D, rank: Int = 0) -> [CLLocationCoordinate2D] {
+        let p0 = MKMapPoint(from), p2 = MKMapPoint(to)
         let dx = p2.x - p0.x, dy = p2.y - p0.y
         let length = (dx * dx + dy * dy).squareRoot()
-        if length == 0 { return [a.coordinate, b.coordinate] }
+        if length == 0 { return [from, to] }
         let bulge = min(0.14 + 0.09 * Double(rank), 0.7)
         // Map points run x east, y south; the right-hand normal of (dx, dy) is (-dy, dx).
         let cx = (p0.x + p2.x) / 2 - dy * bulge

@@ -175,7 +175,10 @@ struct TripView: View {
     }
 }
 
-enum TrackStatus: Equatable { case loading, loaded, failed(String) }
+enum TrackStatus: Equatable {
+    case loading, loaded, failed(String)
+    var isFailure: Bool { if case .failed = self { return true } else { return false } }
+}
 
 struct SectionTitle: View {
     let text: String

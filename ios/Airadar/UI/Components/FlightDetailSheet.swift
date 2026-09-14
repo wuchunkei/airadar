@@ -17,6 +17,8 @@ struct FlightDetailSheet<Actions: View>: View {
     /// Measured content height: the sheet opens just tall enough, not full screen.
     @State private var contentHeight: CGFloat = 0
     @State private var fullMap = false
+    @State private var detent: PresentationDetent = .large
+    @State private var trackRefreshed: Date?
     @State private var footerHeight: CGFloat = 0
 
     var body: some View {
@@ -61,8 +63,12 @@ struct FlightDetailSheet<Actions: View>: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             }
         }
-        .presentationDetents(detents)
+        .presentationDetents(detents, selection: $detent)
         .presentationDragIndicator(.visible)
+        // Measured: settle on the fitted height rather than leaving the sheet at whatever it opened at.
+        .onChange(of: contentHeight + footerHeight, initial: true) { _, total in
+            if let fitted = fittedDetent(total) { detent = fitted }
+        }
         // In the air: the path flown so far is fetched quietly, so the plane sits where it really is.
         .task(id: flight.id) {
             if flight.phase == .inProgress, flight.trackFlownOn == nil, flight.callsign != nil { onLoadTrack?() }
@@ -76,10 +82,22 @@ struct FlightDetailSheet<Actions: View>: View {
                     .navigationTitle("\(flight.flightNumber) · \(flight.departure) → \(flight.arrival)")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { fullMap = false } } }
+                    .safeAreaInset(edge: .bottom) {
+                        if flight.phase == .inProgress {
+                            HStack(spacing: 8) {
+                                if trackStatus == .loading { ProgressView().controlSize(.small) }
+                                Text(trackCaption).font(.caption).foregroundStyle(trackStatus?.isFailure == true ? .red : .secondary)
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .glassEffect(.regular, in: .capsule).padding(.bottom, 12)
+                        }
+                    }
+                    .onChange(of: trackStatus) { _, s in if s == .loaded { trackRefreshed = Date() } }
                     .task {
                         guard flight.phase == .inProgress, flight.callsign != nil else { return }
+                        onLoadTrack?()
                         while !Task.isCancelled {
-                            try? await Task.sleep(for: .seconds(60))
+                            try? await Task.sleep(for: .seconds(90))
                             onLoadTrack?()
                         }
                     }
@@ -87,14 +105,35 @@ struct FlightDetailSheet<Actions: View>: View {
         }
     }
 
+    private var trackCaption: String {
+        switch trackStatus {
+        case .loading: return "Fetching the track"
+        case .failed(let why): return "Track not available: \(why)"
+        default:
+            if let t = trackRefreshed {
+                let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
+                return "Track updated \(f.string(from: t)) · every 90 s"
+            }
+            return flight.track == nil ? "Estimated from the timetable" : "Track as last received"
+        }
+    }
+
+    private var screenHeight: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        return scene?.screen.bounds.height ?? 844
+    }
+
     /// Just tall enough for the content; only content that does not fit on one
     /// screen can be pulled up to full height.
     private var detents: Set<PresentationDetent> {
         let fitted = contentHeight + footerHeight
         guard fitted > 0 else { return [.large] }
-        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        let screen = scene?.screen.bounds.height ?? 844
-        return fitted < screen * 0.88 ? [.height(fitted)] : [.height(screen * 0.88), .large]
+        return fitted < screenHeight * 0.88 ? [.height(fitted)] : [.height(screenHeight * 0.88), .large]
+    }
+
+    private func fittedDetent(_ total: CGFloat) -> PresentationDetent? {
+        guard total > 0 else { return nil }
+        return total < screenHeight * 0.88 ? .height(total) : .height(screenHeight * 0.88)
     }
 
     private var header: some View {
