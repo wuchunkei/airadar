@@ -13,6 +13,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from . import names
 from .auth import current_user
 from .billing import membership
 from .schema import FlightStatus
@@ -42,6 +43,8 @@ class TripIn(BaseModel):
     isPending: bool = False
     # Entered by hand because no source knew the flight; shown with a warning block.
     isManual: bool = False
+    # Names found on the ticket text this trip was imported from; drives automatic sharing.
+    passengers: list[str] = []
     track: list[list[float]] | None = None
     trackFlownOn: date | None = None
 
@@ -133,6 +136,7 @@ async def put_trip(trip_id: str, trip: TripIn, request: Request, user: dict = De
         upsert=True,
         return_document=True,
     )
+    await names.auto_share_for_trip(request.app.state.db, user, doc)
     return _out(doc)
 
 

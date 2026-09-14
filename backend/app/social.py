@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from . import names
 from .auth import current_user
 from .billing import Membership, membership
 from .db import PALETTE
@@ -63,12 +64,14 @@ class Me(Person):
     name: str | None
     avatarUrl: str | None
     findableByEmail: bool
+    passengerName: str | None = None
     membership: Membership
 
 
 class ProfilePatch(BaseModel):
-    """The colour is dealt at sign-up and never changes; only findability is the traveller's to set."""
+    """The colour is dealt at sign-up and never changes; findability and the ticket name are the traveller's."""
     findableByEmail: bool | None = None
+    passengerName: str | None = None
 
 
 def _me(user: dict, m: Membership) -> Me:
@@ -79,6 +82,7 @@ def _me(user: dict, m: Membership) -> Me:
         name=user.get("name"),
         avatarUrl=user.get("avatarUrl"),
         findableByEmail=bool(user.get("findableByEmail", False)),
+        passengerName=user.get("passengerName"),
         membership=m,
     )
 
@@ -91,10 +95,14 @@ async def me(request: Request, user: dict = Depends(current_user)):
 @router.patch("/me", response_model=Me)
 async def patch_me(body: ProfilePatch, request: Request, user: dict = Depends(current_user)):
     changes = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "passengerName" in changes:
+        changes["passengerName"] = changes["passengerName"].strip()
     if changes:
         user = await request.app.state.db.users.find_one_and_update(
             {"_id": user["_id"]}, {"$set": changes}, return_document=True
         )
+        if "passengerName" in changes:
+            await names.auto_share_for_name(request.app.state.db, user)
     return _me(user, await membership(request.app.state.db, user))
 
 

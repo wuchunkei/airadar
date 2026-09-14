@@ -9,6 +9,7 @@ struct FlightCard: View {
     let onTap: () -> Void
 
     @State private var expandedShares = false
+    @EnvironmentObject private var auth: AuthStore
 
     private var shared: TripShare? { flight.sharedBy }
     /// Once taken together it is my own trip again, and only the name block remains.
@@ -20,6 +21,10 @@ struct FlightCard: View {
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 10) {
+                if PassengerName.looksLikeSomeoneElse(flight, mine: auth.user?.passengerName) {
+                    Label("This may not be your trip — the ticket names someone else", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(Color(red: 0.96, green: 0.65, blue: 0.14))
+                }
                 if dashed && shared == nil {
                     Text("Imported · needs review").font(.caption.weight(.semibold)).foregroundStyle(.tint)
                 }

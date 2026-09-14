@@ -11,6 +11,8 @@ struct AuthUser: Codable, Hashable, Sendable {
     var givenName: String?
     var color: String?
     var findableByEmail: Bool = false
+    /// The name on their tickets, once confirmed; nil until asked.
+    var passengerName: String?
     var membership: Membership = .guest
 
     // The sign-in reply carries only the first four; the rest arrive with /me.
@@ -24,6 +26,7 @@ struct AuthUser: Codable, Hashable, Sendable {
         givenName = try c.decodeIfPresent(String.self, forKey: .givenName)
         color = try c.decodeIfPresent(String.self, forKey: .color)
         findableByEmail = try c.decodeIfPresent(Bool.self, forKey: .findableByEmail) ?? false
+        passengerName = try c.decodeIfPresent(String.self, forKey: .passengerName)
         membership = try c.decodeIfPresent(Membership.self, forKey: .membership) ?? .guest
     }
 }

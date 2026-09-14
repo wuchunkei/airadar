@@ -7,6 +7,7 @@ import MapKit
 struct Candidate: Hashable, Sendable {
     let flightNumber: String
     let date: String  // yyyy-MM-dd
+    var passengers: [String] = []
 }
 
 /// Pulls flight numbers and dates out of a booking confirmation, a calendar event,
@@ -19,6 +20,29 @@ enum FlightEmailParser {
     private static let namedDateFirst = try! NSRegularExpression(pattern: #"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})\b"#, options: .caseInsensitive)
     private static let months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
     private static let decoys: Set<String> = ["PNR", "ID", "NO", "REF", "TEL", "FAX", "VAT", "PO", "PIN"]
+    // Airline style SURNAME/GIVEN, and "Passenger: Mr Chun Kei Wu" in a few languages.
+    private static let slashName = try! NSRegularExpression(pattern: #"\b([A-Z]{2,})/([A-Z]{2,}(?:\s+[A-Z]{2,}){0,3})\b"#)
+    private static let labelledName = try! NSRegularExpression(
+        pattern: #"(?i:passenger|traveller|traveler|guest|name|乘客|旅客|姓名)\s*[:：]?\s*(?i:MR|MS|MRS|MISS|DR)?\.?\s*([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){1,3})"#)
+
+    /// Names the text says the ticket is for, in the shapes airlines write them.
+    static func passengers(in text: String) -> [String] {
+        let ns = text as NSString
+        let all = NSRange(location: 0, length: ns.length)
+        var out: [String] = []
+        for m in slashName.matches(in: text, range: all) {
+            let surname = ns.substring(with: m.range(at: 1)), given = ns.substring(with: m.range(at: 2))
+            // "HKG/LHR" is a route, not a person.
+            if surname.count <= 3 && given.count <= 3 { continue }
+            let s = surname + "/" + given
+            if !out.contains(s) { out.append(s) }
+        }
+        for m in labelledName.matches(in: text, range: all) {
+            let s = ns.substring(with: m.range(at: 1))
+            if !out.contains(s) { out.append(s) }
+        }
+        return Array(out.prefix(6))
+    }
 
     static func candidates(_ text: String, fallbackDates: [String] = []) -> [Candidate] {
         let upper = text.uppercased()
@@ -34,8 +58,12 @@ enum FlightEmailParser {
             if code.filter(\.isNumber).count < 2 && code.count < 4 { continue }
             if !codes.contains(code) { codes.append(code) }
         }
+        let names = passengers(in: text)
         var out: [Candidate] = []
-        for c in codes { for d in dates { let cand = Candidate(flightNumber: c, date: d); if !out.contains(cand) { out.append(cand) } } }
+        for c in codes { for d in dates {
+            let cand = Candidate(flightNumber: c, date: d, passengers: names)
+            if !out.contains(where: { $0.flightNumber == c && $0.date == d }) { out.append(cand) }
+        } }
         return out
     }
 
@@ -78,6 +106,7 @@ enum TripImporter {
             let already = existing.contains { $0.flightNumber == c.flightNumber && $0.departureDay == c.date }
             if !already, var f = try? await BackendClient.flight(c.flightNumber, on: c.date) {
                 f.isPending = true
+                f.passengers = c.passengers
                 // A refusal means the plan is full; the rest would be refused too.
                 if !FlightStore.shared.add(f) { return added }
                 added += 1

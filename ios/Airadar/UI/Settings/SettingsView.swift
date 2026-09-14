@@ -12,6 +12,9 @@ struct SettingsView: View {
     @State private var authError: String?
     @State private var calendarStatus: String?
     @State private var showPlans = false
+    @State private var namePrompt: String?        // the Google name, while the prompt is up
+    @State private var nameDraft = ""
+    @State private var editingName = false
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -40,6 +43,18 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .alert("Is this your name?", isPresented: Binding(get: { namePrompt != nil }, set: { if !$0 { namePrompt = nil } })) {
+            TextField("Name as printed on tickets", text: $nameDraft)
+            Button("Yes, that's me") { saveName(nameDraft) }
+            Button("Skip", role: .cancel) { namePrompt = nil }
+        } message: {
+            Text("The name on your Google account is “\(namePrompt ?? "")”. Airadar uses it only to recognise which imported flights are yours and to let friends recognise you — never to analyse your trips. Skip it if you will not use those features.")
+        }
+        .alert("Name on tickets", isPresented: $editingName) {
+            TextField("Name as printed on tickets", text: $nameDraft)
+            Button("Save") { saveName(nameDraft) }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Used only to recognise your flights and let friends recognise you.") }
         .sheet(isPresented: $showPlans) { MembershipView(current: auth.user?.membership.tier ?? .guest, reason: nil) { showPlans = false } }
     }
 
@@ -71,6 +86,12 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("Friends can find me by email", isOn: findableBinding(user.findableByEmail))
+                HStack {
+                    Text("Name on tickets")
+                    Spacer()
+                    Button(user.passengerName ?? "Not set") { nameDraft = user.passengerName ?? user.name ?? ""; editingName = true }
+                        .foregroundStyle(user.passengerName == nil ? .secondary : .primary)
+                }
             } else {
                 // Token accepted for this phone: sign in with Google, or swap the token —
                 // two standalone buttons, no card around them. Nothing about the plan
@@ -126,8 +147,8 @@ struct SettingsView: View {
         Task {
             defer { busy = false }
             do {
-                let idToken = try await GoogleAuth.idToken()
-                _ = try await BackendClient.signInWithGoogle(idToken: idToken)
+                let google = try await GoogleAuth.idToken()
+                _ = try await BackendClient.signInWithGoogle(idToken: google.idToken)
                 do {
                     // The account must be the one the token belongs to (or the first to use it).
                     _ = try await BackendClient.redeem(checked.token)
@@ -135,12 +156,27 @@ struct SettingsView: View {
                     await BackendClient.signOut()
                     throw error
                 }
-                _ = try? await BackendClient.me()
+                let me = try? await BackendClient.me()
                 try? await store.syncFromServer()
+                // First sign-in: is the account's name the one on their tickets?
+                // Asked once per account; a skip is remembered, the name can be set from Settings later.
+                let askedKey = "namePromptShown:" + (me?.email ?? "")
+                if me?.passengerName == nil, !UserDefaults.standard.bool(forKey: askedKey) {
+                    UserDefaults.standard.set(true, forKey: askedKey)
+                    nameDraft = google.fullName ?? me?.name ?? ""
+                    namePrompt = nameDraft
+                }
             } catch is GoogleAuth.Cancelled {
                 // Nothing to say: the traveller closed the picker.
             } catch { authError = error.localizedDescription }
         }
+    }
+
+    private func saveName(_ name: String) {
+        namePrompt = nil
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        Task { try? await BackendClient.updateProfile(passengerName: trimmed) }
     }
 
     /// Back to the token field; a signed-in account is signed out first.

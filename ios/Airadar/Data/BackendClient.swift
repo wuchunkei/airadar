@@ -105,6 +105,7 @@ enum BackendClient {
     private struct Me: Decodable {
         let id: String, email: String, name: String?, avatarUrl: String?, givenName: String?, color: String?
         let findableByEmail: Bool
+        let passengerName: String?
         let membership: Membership
     }
 
@@ -113,16 +114,19 @@ enum BackendClient {
         let m = try decoder.decode(Me.self, from: try await authed("GET", "me"))
         AuthStore.shared.updateProfile { u in
             u.givenName = m.givenName; u.color = m.color; u.findableByEmail = m.findableByEmail; u.membership = m.membership
-            u.name = m.name ?? u.name; u.avatarUrl = m.avatarUrl
+            u.name = m.name ?? u.name; u.avatarUrl = m.avatarUrl; u.passengerName = m.passengerName
         }
         guard let user = AuthStore.shared.user else { throw BackendError(message: "Sign in required.", code: 401) }
         return user
     }
 
     @MainActor
-    static func updateProfile(findableByEmail: Bool) async throws {
-        let m = try decoder.decode(Me.self, from: try await authed("PATCH", "me", json: ["findableByEmail": findableByEmail]))
-        AuthStore.shared.updateProfile { $0.findableByEmail = m.findableByEmail; $0.membership = m.membership }
+    static func updateProfile(findableByEmail: Bool? = nil, passengerName: String? = nil) async throws {
+        var body: [String: Any] = [:]
+        if let findableByEmail { body["findableByEmail"] = findableByEmail }
+        if let passengerName { body["passengerName"] = passengerName }
+        let m = try decoder.decode(Me.self, from: try await authed("PATCH", "me", json: body))
+        AuthStore.shared.updateProfile { $0.findableByEmail = m.findableByEmail; $0.membership = m.membership; $0.passengerName = m.passengerName }
     }
 
     // MARK: - Plan tokens

@@ -122,6 +122,8 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     var isPending: Bool = false
     /// Typed in by hand because no source knew it; shown with a warning block.
     var isManual: Bool = false
+    /// Names found on the ticket text this trip was imported from.
+    var passengers: [String] = []
     var track: [TrackPoint]?
     var trackFlownOn: String?  // yyyy-MM-dd
     var deletedAt: Date?
@@ -132,7 +134,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     // The wire carries the track as [[lat, lon]]; everything else is one-to-one.
     enum CodingKeys: String, CodingKey {
         case id, flightNumber, airlineName, departure, arrival, departureTerminal, arrivalTerminal, departureGate, arrivalGate
-        case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, callsign, pnr, isPending, isManual
+        case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, callsign, pnr, isPending, isManual, passengers
         case track, trackFlownOn, deletedAt, sharedBy, shares
     }
 
@@ -168,6 +170,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         pnr = try c.decodeIfPresent(String.self, forKey: .pnr)
         isPending = try c.decodeIfPresent(Bool.self, forKey: .isPending) ?? false
         isManual = try c.decodeIfPresent(Bool.self, forKey: .isManual) ?? false
+        passengers = try c.decodeIfPresent([String].self, forKey: .passengers) ?? []
         track = try c.decodeIfPresent([[Double]].self, forKey: .track)?.compactMap { $0.count >= 2 ? TrackPoint(lat: $0[0], lon: $0[1]) : nil }
         trackFlownOn = try c.decodeIfPresent(String.self, forKey: .trackFlownOn).map { String($0.prefix(10)) }
         deletedAt = try c.decodeIfPresent(Date.self, forKey: .deletedAt)
@@ -196,6 +199,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         try c.encodeIfPresent(pnr, forKey: .pnr)
         try c.encode(isPending, forKey: .isPending)
         try c.encode(isManual, forKey: .isManual)
+        if !passengers.isEmpty { try c.encode(passengers, forKey: .passengers) }
         try c.encodeIfPresent(track?.map { [$0.lat, $0.lon] }, forKey: .track)
         try c.encodeIfPresent(trackFlownOn, forKey: .trackFlownOn)
         try c.encodeIfPresent(deletedAt, forKey: .deletedAt)
@@ -342,6 +346,29 @@ func greatCircleKm(_ lat1: Double, _ lon1: Double, _ lat2: Double, _ lon2: Doubl
     let a: Double = sdp * sdp + cos(p1) * cos(p2) * sdl * sdl
     let c: Double = 2 * atan2(sqrt(a), sqrt(1 - a))
     return r * c
+}
+
+/// Passenger names come as "WU/CHUNKEI", "MR CHUN KEI WU", "Chun Kei Wu". They match
+/// when every token of the traveller's name is in the candidate's letters and little is left over.
+enum PassengerName {
+    private static let titles: Set<String> = ["MR", "MRS", "MS", "MISS", "DR", "MSTR", "MASTER"]
+
+    static func tokens(_ name: String) -> [String] {
+        name.uppercased().split { !$0.isLetter }.map(String.init).filter { !titles.contains($0) }
+    }
+
+    static func samePerson(mine: String, candidate: String) -> Bool {
+        let mineTokens = tokens(mine)
+        let cand = tokens(candidate).joined()
+        guard !mineTokens.isEmpty, !cand.isEmpty, mineTokens.allSatisfy({ cand.contains($0) }) else { return false }
+        return cand.count - mineTokens.reduce(0) { $0 + $1.count } <= 2
+    }
+
+    /// True when the ticket names people and none of them is the traveller.
+    static func looksLikeSomeoneElse(_ flight: Flight, mine: String?) -> Bool {
+        guard let mine, !mine.isEmpty, !flight.passengers.isEmpty else { return false }
+        return !flight.passengers.contains { samePerson(mine: mine, candidate: $0) }
+    }
 }
 
 extension Color {
