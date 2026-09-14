@@ -28,7 +28,7 @@ actor OpenSkyClient {
         case .inProgress:
             // Airborne now: the flights endpoints only list finished flights; look at live state vectors.
             guard let icao24 = try await findAirborne(bearer, callsign, origin, destination) else {
-                throw OpenSkyError(message: "\(callsign) is not in OpenSky's live picture right now. Either no receiver can hear it, or it is not actually in the air.")
+                throw OpenSkyError(message: "\(flight.flightNumber) (ATC callsign \(callsign)) is not in OpenSky's live picture right now — no receiver is hearing it at the moment. Tried again shortly.")
             }
             return FetchedTrack(points: try await fetchPath(bearer, icao24, at: 0),
                                 flownOn: LocalDateTime.from(Date(), in: origin.zone).dayString)
@@ -49,9 +49,10 @@ actor OpenSkyClient {
             let hint = seenFromAirline.isEmpty ? " No \(prefix) flight at all was seen there."
                 : " Same-airline callsigns it did see: \(seenFromAirline.prefix(6).joined(separator: ", "))."
             let whereText = "\(origin.iata) departures, \(destination.iata) arrivals and the global list"
+            let who = "\(flight.flightNumber) (ATC callsign \(callsign))"
             throw OpenSkyError(message: flight.phase == .upcoming
-                ? "OpenSky has no \(callsign) in \(whereText) on \(checked.first ?? "")–\(checked.last ?? "")." + hint + " Coverage relies on volunteer receivers."
-                : "OpenSky has no \(callsign) in \(whereText) on \(checked.first ?? "")." + hint + " Its history only reaches back about 30 days.")
+                ? "OpenSky has no \(who) in \(whereText) on \(checked.first ?? "")–\(checked.last ?? "")." + hint + " Coverage relies on volunteer receivers."
+                : "OpenSky has no \(who) in \(whereText) on \(checked.first ?? "")." + hint + " Its history only reaches back about 30 days.")
         }
     }
 
