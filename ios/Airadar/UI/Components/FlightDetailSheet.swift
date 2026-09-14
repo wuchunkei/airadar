@@ -117,7 +117,7 @@ struct FlightDetailSheet<Actions: View>: View {
 
     private var routes: [MapRoute] {
         guard flight.track == nil, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
-        return [MapRoute(from: a, to: b, weight: 1)]
+        return [MapRoute(from: a, to: b, rank: 0)]
     }
 
     private var tracks: [MapTrack] {
@@ -184,7 +184,7 @@ private struct TrackLoader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(text).font(.caption).foregroundStyle(.secondary)
+                if let text { Text(text).font(.caption).foregroundStyle(.secondary) }
                 Spacer()
                 if status == .loading { ProgressView().controlSize(.small) }
                 else { Button(flownOn == nil ? "Load flown track" : "Reload", action: onLoad).font(.caption) }
@@ -193,9 +193,9 @@ private struct TrackLoader: View {
         }
     }
 
-    private var text: String {
+    private var text: String? {
         if status == .loading { return "Fetching ADS-B track" }
-        if flownOn == nil { return "Route shown as a great circle" }
+        if flownOn == nil { return nil }
         return phase == .inProgress ? "Showing the path flown so far" : "Showing the path actually flown"
     }
 }

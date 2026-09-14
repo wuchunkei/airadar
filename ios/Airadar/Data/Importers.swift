@@ -20,6 +20,9 @@ enum FlightEmailParser {
     private static let namedDateFirst = try! NSRegularExpression(pattern: #"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})\b"#, options: .caseInsensitive)
     private static let months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
     private static let decoys: Set<String> = ["PNR", "ID", "NO", "REF", "TEL", "FAX", "VAT", "PO", "PIN"]
+    // Two capital letters before a number that are a word, not an airline: "AT 10", "ON 2025", "PM 7".
+    private static let words: Set<String> = ["AT", "TO", "ON", "IN", "OF", "AM", "PM", "OR", "BY", "IS", "AS", "IT", "UP", "US",
+                                             "GO", "DO", "IF", "SO", "AN", "BE", "WE", "HE", "ME", "MY", "OK", "NO", "ID", "PO"]
     // Airline style SURNAME/GIVEN, and "Passenger: Mr Chun Kei Wu" in a few languages.
     private static let slashName = try! NSRegularExpression(pattern: #"\b([A-Z]{2,})/([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2})\b"#)
     private static let labelledName = try! NSRegularExpression(
@@ -44,16 +47,18 @@ enum FlightEmailParser {
         return Array(out.prefix(6))
     }
 
-    /// Flight numbers in the text, gates and seats weeded out.
+    /// Flight numbers in the text, gates, seats and English words weeded out. Matched
+    /// against the text as written: airlines print their codes in capitals, and
+    /// upper-casing everything first turned "at 10" and "on 2025" into flights.
     static func codes(in text: String) -> [String] {
-        let upper = text.uppercased()
-        let ns = upper as NSString
+        let ns = text as NSString
         var codes: [String] = []
-        for m in flightNumber.matches(in: upper, range: NSRange(location: 0, length: ns.length)) {
-            let code = ns.substring(with: m.range(at: 1)) + ns.substring(with: m.range(at: 2))
-            if decoys.contains(where: { code.hasPrefix($0) }) { continue }
-            // Two letters plus a bare "1" or "12" is far more often a gate or a seat.
-            if code.filter(\.isNumber).count < 2 && code.count < 4 { continue }
+        for m in flightNumber.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let letters = ns.substring(with: m.range(at: 1)), digits = ns.substring(with: m.range(at: 2))
+            let code = letters + digits
+            if decoys.contains(where: { code.hasPrefix($0) }) || words.contains(letters) { continue }
+            // A one-digit number is a gate or a seat unless it is glued to the code ("CX7").
+            if digits.count < 2 && m.range.length != code.count { continue }
             if !codes.contains(code) { codes.append(code) }
         }
         return codes

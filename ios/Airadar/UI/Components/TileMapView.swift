@@ -1,23 +1,28 @@
 import SwiftUI
 import MapKit
 
-struct MapRoute: Hashable { let from: Airport; let to: Airport; let weight: Int }
+/// One flight's leg. `rank` counts earlier flights between the same two airports
+/// (either way round): each repeat bows a little further out, so none overlap.
+struct MapRoute: Hashable { let from: Airport; let to: Airport; let rank: Int }
 struct MapTrack: Hashable { let from: Airport; let to: Airport; let points: [TrackPoint] }
 
 extension Array where Element == Flight {
-    /// Distinct legs, weighted by how often they were flown.
+    /// A leg per flight, oldest first, ranked among its repeats.
     func toMapRoutes() -> [MapRoute] {
-        var counts: [String: (Airport, Airport, Int)] = [:]
-        for f in self {
+        var seen: [String: Int] = [:]
+        var out: [MapRoute] = []
+        for f in self.sorted(by: { ($0.departureInstant ?? .distantPast) < ($1.departureInstant ?? .distantPast) }) {
             guard let a = f.departureAirport, let b = f.arrivalAirport else { continue }
-            let key = "\(a.iata)-\(b.iata)"
-            counts[key] = (a, b, (counts[key]?.2 ?? 0) + 1)
+            let key = [a.iata, b.iata].sorted().joined(separator: "-")
+            let rank = seen[key] ?? 0
+            seen[key] = rank + 1
+            out.append(MapRoute(from: a, to: b, rank: rank))
         }
-        return counts.values.map { MapRoute(from: $0.0, to: $0.1, weight: $0.2) }
+        return out
     }
 }
 
-/// Apple Maps (the platform's own) with great-circle routes, flown tracks, a
+/// Apple Maps (the platform's own) with bowed routes, flown tracks, a
 /// midpoint arrow on each, and a tap that picks the single nearest leg.
 struct TileMapView: UIViewRepresentable {
     var routes: [MapRoute]
@@ -60,10 +65,10 @@ struct TileMapView: UIViewRepresentable {
         var legs: [Coordinator.Leg] = []
 
         for r in routes {
-            let coords = Self.greatCirclePath(r.from, r.to)
+            let coords = Self.arcPath(r.from, r.to, rank: r.rank)
             let line = LegPolyline(coordinates: coords, count: coords.count)
             line.color = isSelected(r.from, r.to) ? Coordinator.selectedColor : Coordinator.routeColor
-            line.width = min(1.5 + CGFloat(r.weight) * 0.5, 5)
+            line.width = 2
             map.addOverlay(line, level: .aboveLabels)
             legs.append(.init(line: line, from: r.from, to: r.to))
         }
@@ -108,7 +113,30 @@ struct TileMapView: UIViewRepresentable {
         selected.contains { $0.0.iata == a.iata && $0.1.iata == b.iata }
     }
 
-    /// The route as drawn on the map, and on a shared picture of it.
+    /// The bowed line between two airports: a quadratic curve whose control point
+    /// sits off the chord's midpoint, to the left of the direction of travel — so the
+    /// return leg bows the other way — and further out for every repeat of the pair.
+    static func arcPath(_ a: Airport, _ b: Airport, rank: Int = 0) -> [CLLocationCoordinate2D] {
+        let p0 = MKMapPoint(a.coordinate), p2 = MKMapPoint(b.coordinate)
+        let dx = p2.x - p0.x, dy = p2.y - p0.y
+        let length = (dx * dx + dy * dy).squareRoot()
+        if length == 0 { return [a.coordinate, b.coordinate] }
+        let bulge = min(0.18 + 0.09 * Double(rank), 0.6)
+        let cx = (p0.x + p2.x) / 2 - dy / length * length * bulge
+        let cy = (p0.y + p2.y) / 2 + dx / length * length * bulge
+        let steps = 48
+        var out: [CLLocationCoordinate2D] = []
+        out.reserveCapacity(steps + 1)
+        for i in 0...steps {
+            let t = Double(i) / Double(steps), u = 1 - t
+            let x = u * u * p0.x + 2 * u * t * cx + t * t * p2.x
+            let y = u * u * p0.y + 2 * u * t * cy + t * t * p2.y
+            out.append(MKMapPoint(x: x, y: y).coordinate)
+        }
+        return out
+    }
+
+    /// The shortest path over the globe; kept for measuring, not drawing.
     static func greatCirclePath(_ a: Airport, _ b: Airport) -> [CLLocationCoordinate2D] {
         let steps = 64
         let rad: Double = Double.pi / 180

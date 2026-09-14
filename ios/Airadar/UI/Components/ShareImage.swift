@@ -35,10 +35,10 @@ enum ShareImage {
         return UIImage(cgImage: cg)
     }
 
-    /// Apple Maps with the great-circle route and both airports drawn on.
+    /// Apple Maps with the route bowed as on the app's own map, both airports drawn on.
     private static func mapSnapshot(_ flight: Flight) async -> UIImage? {
         guard let from = flight.departureAirport, let to = flight.arrivalAirport else { return nil }
-        let path = TileMapView.greatCirclePath(from, to)
+        let path = TileMapView.arcPath(from, to)
         let line = MKPolyline(coordinates: path, count: path.count)
         var rect = line.boundingMapRect
         let pad = max(rect.width, rect.height) * 0.25 + 50_000

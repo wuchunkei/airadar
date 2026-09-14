@@ -68,7 +68,7 @@ struct TripView: View {
                         // Room below a short present so it can sit at the top while the past is
                         // open above it; with the past folded away there is nothing to scroll to,
                         // so a swipe up springs back.
-                        if showHistory { Color.clear.frame(height: 520) }
+                        Color.clear.frame(height: showHistory ? 520 : 0)
                     }
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
