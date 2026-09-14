@@ -39,7 +39,7 @@ struct PresentFence: UIViewRepresentable {
         private var springing = false
         private var visited = false
         private var heading: CGFloat?  // the offset at which the heading sits at the top; cached while off-screen
-        private var settleTimer: Timer?
+        private var settleTask: Task<Void, Never>?
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -139,11 +139,12 @@ struct PresentFence: UIViewRepresentable {
 
         /// Deceleration inside the fence ends on its own; look in on it until it has.
         private func watchForRest(_ s: UIScrollView) {
-            settleTimer?.invalidate()
-            settleTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] t in
-                MainActor.assumeIsolated {
-                    guard let self, let s = self.scroll else { t.invalidate(); return }
-                    if !s.isDecelerating && !s.isDragging { t.invalidate(); self.settled(s) }
+            settleTask?.cancel()
+            settleTask = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    guard let self, let s = self.scroll else { return }
+                    if !s.isDecelerating && !s.isDragging { self.settled(s); return }
                 }
             }
         }
