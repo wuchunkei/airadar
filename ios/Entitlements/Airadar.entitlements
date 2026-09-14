@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<!-- Universal links (https://LINK_HOST/s/…) open the app. Needs a paid Developer Program team;
-	     a personal team cannot sign this, so leave AIRADAR_ENTITLEMENTS empty in Config.xcconfig there. -->
+	     a personal team cannot sign this, so do not reference this file in Config.xcconfig there. -->
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:$(LINK_HOST)</string>

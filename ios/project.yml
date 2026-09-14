@@ -69,9 +69,8 @@ targets:
         OPENSKY_CLIENT_ID: $(OPENSKY_CLIENT_ID)
         OPENSKY_CLIENT_SECRET: $(OPENSKY_CLIENT_SECRET)
         LINK_HOST: $(LINK_HOST)
-        # Empty on a personal team (no Associated Domains there); the file with universal
-        # links on a paid team. Chosen in Config.xcconfig.
-        CODE_SIGN_ENTITLEMENTS: $(AIRADAR_ENTITLEMENTS)
+        # No entitlements by default, so a free personal team can sign it. A paid team adds
+        # universal links with CODE_SIGN_ENTITLEMENTS = Entitlements/Airadar.entitlements in Config.xcconfig.
     configFiles:
       Debug: Config.xcconfig
       Release: Config.xcconfig
@@ -92,7 +91,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.airadar.app.widgets
-        CODE_SIGN_ENTITLEMENTS: ""
     configFiles:
       Debug: Config.xcconfig
       Release: Config.xcconfig
