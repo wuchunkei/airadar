@@ -1,12 +1,26 @@
 import Foundation
 
 /// Twenty airports bundled so the map draws before the network answers; anything
-/// else is fetched from the server once and remembered for the session.
+/// else is fetched from the server once and kept on disk, so a relaunch places
+/// every cached trip without asking again.
 final class AirportDatabase: @unchecked Sendable {
     static let shared = AirportDatabase()
 
     private let lock = NSLock()
     private var learned: [String: Airport] = [:]
+
+    private static let cacheURL: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("airports.json")
+    }()
+
+    private init() {
+        if let data = try? Data(contentsOf: Self.cacheURL),
+           let saved = try? JSONDecoder().decode([Airport].self, from: data) {
+            for a in saved { learned[a.iata.uppercased()] = a }
+        }
+    }
 
     private let bundled: [String: Airport] = {
         let rows: [(String, String, String, String, String, String, Double, Double, String)] = [
@@ -66,5 +80,9 @@ final class AirportDatabase: @unchecked Sendable {
     private func remember(_ a: Airport) {
         lock.lock(); defer { lock.unlock() }
         learned[a.iata.uppercased()] = a
+        let snapshot = Array(learned.values)
+        Task.detached(priority: .utility) {
+            if let data = try? JSONEncoder().encode(snapshot) { try? data.write(to: Self.cacheURL, options: .atomic) }
+        }
     }
 }

@@ -1,4 +1,11 @@
 // Copy to Config.xcconfig (gitignored) and fill in. Values reach the code through Info.plist / build settings.
+
+// Signing. Your team id: Xcode › Settings › Accounts › your Apple ID › team (the 10-character code),
+// or the "Zeon Gei Wu (Personal Team)" entry's id. A free personal team runs on your own iPhone.
+DEVELOPMENT_TEAM = XXXXXXXXXX
+// Universal links need a paid Developer Program team. Personal team: leave this EMPTY
+// (the airadar:// scheme and the QR/web link still work). Paid team: Airadar/Airadar.entitlements
+AIRADAR_ENTITLEMENTS =
 BACKEND_URL = https:/$()/airadar.wuchunkei.com
 BACKEND_TOKEN = your-app-token
 OPENSKY_CLIENT_ID = wuchunkei-api-client

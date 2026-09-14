@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Universal links (https://LINK_HOST/s/…) open the app. Needs a paid Developer Program team;
+	     a personal team cannot sign this, so leave AIRADAR_ENTITLEMENTS empty in Config.xcconfig there. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:$(LINK_HOST)</string>
+	</array>
+</dict>
+</plist>
