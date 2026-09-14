@@ -36,7 +36,7 @@ struct TripView: View {
                         if showHistory && !past.isEmpty {
                             SectionTitle("Past")
                             cards(past, dimmed: true, headings: true)
-                            Divider().padding(.vertical, 6)
+                            Divider().padding(.top, 10).padding(.bottom, 4)
                         }
 
                         Color.clear.frame(height: 1).id("present")
@@ -45,7 +45,7 @@ struct TripView: View {
                         if !airborne.isEmpty {
                             SectionTitle("Now")
                             cards(airborne, dimmed: false, headings: false)
-                            Divider().padding(.vertical, 6)
+                            Divider().padding(.top, 10).padding(.bottom, 4)
                             SectionTitle("Coming")
                         } else {
                             // "Now" only when a flight departs today; otherwise what is ahead is "Coming".
@@ -59,7 +59,7 @@ struct TripView: View {
                                 // Nothing at all yet: one line, mid-screen, that opens Search.
                                 EmptyInvite()
                             } else {
-                                Text("No upcoming trips.").font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 24)
+                                Text("No upcoming trips.").font(.subheadline).foregroundStyle(.secondary).padding(.top, 6).padding(.bottom, 16)
                             }
                         }
                         // Room below a short present so it can always sit at the top.
@@ -67,9 +67,11 @@ struct TripView: View {
                     }
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 }
                 .listStyle(.plain)
+                // Rows are as tall as their content — the 44pt minimum would pad every heading.
+                .environment(\.defaultMinListRowHeight, 1)
                 .scrollContentBackground(.hidden)
                 .coordinateSpace(name: "trip")
                 .refreshable { await store.refresh() }
@@ -118,6 +120,7 @@ struct TripView: View {
                 DateTitle(flight.departureDay, dimmed: dimmed)
             }
             FlightCard(flight: flight, forceSystemZone: settings.forceSystemZone, dimmed: dimmed) { selectedId = flight.id }
+                .padding(.vertical, 5)
                 .swipeToDelete {
                     store.delete(flight.id)
                     onDeleted(flight)
@@ -177,7 +180,7 @@ enum TrackStatus: Equatable { case loading, loaded, failed(String) }
 struct SectionTitle: View {
     let text: String
     init(_ text: String) { self.text = text }
-    var body: some View { Text(text).font(.title.bold()).padding(.vertical, 4) }
+    var body: some View { Text(text).font(.title.bold()).padding(.top, 6).padding(.bottom, 2) }
 }
 
 /// A day's heading over its cards: the section title's shape, at a smaller size.
@@ -186,7 +189,7 @@ struct DateTitle: View {
     let dimmed: Bool
     init(_ text: String, dimmed: Bool) { self.text = text; self.dimmed = dimmed }
     var body: some View {
-        Text(text).font(.headline).foregroundStyle(dimmed ? .secondary : .primary).padding(.vertical, 6)
+        Text(text).font(.headline).foregroundStyle(dimmed ? .secondary : .primary).padding(.top, 8).padding(.bottom, 2)
     }
 }
 
