@@ -120,16 +120,18 @@ struct TileMapView: UIViewRepresentable {
         selected.contains { $0.0.iata == a.iata && $0.1.iata == b.iata }
     }
 
-    /// The bowed line between two airports: a quadratic curve whose control point
-    /// sits off the chord's midpoint, to the left of the direction of travel — so
-    /// the way out and the way back mirror each other about the line between the
-    /// two — and a fixed step further out for every repeat in that direction.
+    /// The bowed line between two airports. The rule: every flight keeps to the
+    /// RIGHT of its direction of travel — northbound bows east, southbound west,
+    /// eastbound south, westbound north — so the way out and the way back sit on
+    /// opposite sides of the line between the two airports, and every repeat in
+    /// one direction steps a fixed amount further out on its own side.
     static func arcPath(_ a: Airport, _ b: Airport, rank: Int = 0) -> [CLLocationCoordinate2D] {
         let p0 = MKMapPoint(a.coordinate), p2 = MKMapPoint(b.coordinate)
         let dx = p2.x - p0.x, dy = p2.y - p0.y
         let length = (dx * dx + dy * dy).squareRoot()
         if length == 0 { return [a.coordinate, b.coordinate] }
         let bulge = min(0.14 + 0.09 * Double(rank), 0.7)
+        // Map points run x east, y south; the right-hand normal of (dx, dy) is (-dy, dx).
         let cx = (p0.x + p2.x) / 2 - dy * bulge
         let cy = (p0.y + p2.y) / 2 + dx * bulge
         let steps = 48
