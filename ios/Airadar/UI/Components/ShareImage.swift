@@ -152,20 +152,23 @@ private struct ShareCardView: View {
 /// The words that go with the picture: an itinerary in the shape the mail import
 /// recognises — flight code and ISO date on their own lines — with the link at the
 /// end. Sent as an email, Airadar on the other side files the trip by itself.
-@MainActor
-final class ShareText: NSObject, UIActivityItemSource {
-    let flight: Flight
+// The protocol is not actor-bound, so everything is worked out up front in the
+// initialiser and the callbacks only hand back strings.
+final class ShareText: NSObject, UIActivityItemSource, @unchecked Sendable {
+    let subject: String
+    let title: String
+    let body: String
     let link: URL?
-    let forceSystemZone: Bool
     let icon: UIImage?
 
     init(flight: Flight, link: URL?, forceSystemZone: Bool, icon: UIImage?) {
-        self.flight = flight; self.link = link; self.forceSystemZone = forceSystemZone; self.icon = icon
+        self.link = link; self.icon = icon
+        subject = "Flight \(flight.flightNumber) on \(flight.departureDay) · Airadar itinerary"
+        title = "\(flight.flightNumber) \(flight.departure) → \(flight.arrival) · \(flight.departureDay)"
+        body = Self.itinerary(flight, link: link, forceSystemZone: forceSystemZone)
     }
 
-    var subject: String { "Flight \(flight.flightNumber) on \(flight.departureDay) · Airadar itinerary" }
-
-    var body: String {
+    private static func itinerary(_ flight: Flight, link: URL?, forceSystemZone: Bool) -> String {
         let dep = flight.shownTime(arrival: false, forceSystemZone: forceSystemZone)
         let arr = flight.shownTime(arrival: true, forceSystemZone: forceSystemZone)
         // Airport codes are three letters and cities are spelt out, so nothing here
@@ -196,7 +199,7 @@ final class ShareText: NSObject, UIActivityItemSource {
 
     func activityViewControllerLinkMetadata(_ vc: UIActivityViewController) -> LPLinkMetadata? {
         let meta = LPLinkMetadata()
-        meta.title = "\(flight.flightNumber) \(flight.departure) → \(flight.arrival) · \(flight.departureDay)"
+        meta.title = title
         meta.originalURL = link
         meta.url = link
         if let icon { meta.iconProvider = NSItemProvider(object: icon) }
