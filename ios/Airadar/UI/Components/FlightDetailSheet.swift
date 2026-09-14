@@ -12,6 +12,10 @@ struct FlightDetailSheet<Actions: View>: View {
     var primaryAction: (label: String, action: () -> Void)? = nil
     @ViewBuilder var extraActions: () -> Actions
 
+    /// Measured content height: the sheet opens just tall enough, not full screen.
+    @State private var contentHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -30,6 +34,7 @@ struct FlightDetailSheet<Actions: View>: View {
                 extraActions()
             }
             .padding(20)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
         // The main action sits at the very bottom, whatever the sheet's height.
         .safeAreaInset(edge: .bottom) {
@@ -39,10 +44,18 @@ struct FlightDetailSheet<Actions: View>: View {
                 }
                 .buttonStyle(.glassProminent)
                 .padding(.horizontal, 20).padding(.vertical, 12)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             }
         }
-        .presentationDetents([.large])
+        .presentationDetents(detents)
         .presentationDragIndicator(.visible)
+    }
+
+    /// Just tall enough for the content (plus the grabber); taller content can still be pulled to full height.
+    private var detents: Set<PresentationDetent> {
+        let fitted = contentHeight + footerHeight + 28
+        guard fitted > 0 else { return [.large] }
+        return [.height(fitted), .large]
     }
 
     private var header: some View {
