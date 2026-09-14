@@ -20,6 +20,17 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""   # set in Config.xcconfig
 
+# The one scheme to run: the app (the widget extension rides along inside it).
+schemes:
+  Airadar:
+    build:
+      targets:
+        Airadar: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
 targets:
   Airadar:
     type: application
@@ -38,6 +49,7 @@ targets:
         CFBundleDisplayName: Airadar
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiresFullScreen: true
         NSCalendarsFullAccessUsageDescription: Airadar reads your calendars to find flights you already have.
         NSLocationWhenInUseUsageDescription: Used only to centre the map on your region until you have trips.
         NSSupportsLiveActivities: true
