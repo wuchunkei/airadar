@@ -18,7 +18,8 @@ final class AirportDatabase: @unchecked Sendable {
     private init() {
         if let data = try? Data(contentsOf: Self.cacheURL),
            let saved = try? JSONDecoder().decode([Airport].self, from: data) {
-            for a in saved { learned[a.iata.uppercased()] = a }
+            // A "UTC" zone means the server could not place it at the time; ask again.
+            for a in saved where a.zoneId != "UTC" { learned[a.iata.uppercased()] = a }
         }
     }
 
@@ -72,7 +73,7 @@ final class AirportDatabase: @unchecked Sendable {
 
     /// Fetches an unknown airport once; a failure is not fatal, the code just cannot be placed.
     func ensure(_ iata: String, fetch: @Sendable () async throws -> Airport) async {
-        if airport(iata) != nil { return }
+        if let known = airport(iata), known.zoneId != "UTC" { return }
         if let a = try? await fetch() { remember(a) }
     }
 

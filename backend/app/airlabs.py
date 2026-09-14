@@ -3,9 +3,15 @@
 import os
 from datetime import date, datetime, timedelta
 
+import re
+
 import httpx
+import pycountry
+from timezonefinder import TimezoneFinder
 
 from .schema import Airport, Flight, FlightStatus, flight_id
+
+_tzf = TimezoneFinder(in_memory=True)
 
 BASE = "https://airlabs.co/api/v9"
 
@@ -107,17 +113,37 @@ async def airport(client: httpx.AsyncClient, iata: str) -> Airport:
     if not rows:
         raise AirLabsError(f"AirLabs has no airport with code {iata.upper()}.")
     r = rows[0]
+    lat, lng = float(r["lat"]), float(r["lng"])
+    name = r.get("name") or iata.upper()
+    code = (r.get("country_code") or "").upper()
+    country = pycountry.countries.get(alpha_2=code)
     return Airport(
         iata=r["iata_code"],
         icao=r.get("icao_code") or "",
-        name=r.get("name") or iata.upper(),
-        city=r.get("city") or r.get("name") or iata.upper(),
-        country=r.get("country_code") or "",
-        countryCode=r.get("country_code") or "",
-        latitude=float(r["lat"]),
-        longitude=float(r["lng"]),
-        zoneId=r.get("timezone") or "UTC",
+        name=name,
+        city=await _city_name(client, r.get("city_code"), name),
+        country=(getattr(country, "common_name", None) or getattr(country, "name", None) or code) if country else code,
+        countryCode=code,
+        latitude=lat,
+        longitude=lng,
+        # AirLabs rarely names the zone; the coordinates always know it.
+        zoneId=r.get("timezone") or _tzf.timezone_at(lat=lat, lng=lng) or "UTC",
     )
+
+
+_AIRPORT_WORDS = re.compile(r"\s+(international|intl\.?|regional|municipal|airport|airfield|field).*$", re.I)
+
+
+async def _city_name(client: httpx.AsyncClient, city_code: str | None, airport_name: str) -> str:
+    """The city from AirLabs' cities table; failing that, the airport name shorn of "… International Airport"."""
+    if city_code:
+        try:
+            rows = (await _get(client, "cities", city_code=city_code)).get("response") or []
+            if rows and rows[0].get("name"):
+                return rows[0]["name"]
+        except AirLabsError:
+            pass
+    return _AIRPORT_WORDS.sub("", airport_name).strip() or airport_name
 
 
 def _time(row: dict, key: str) -> datetime | None:
@@ -133,6 +159,14 @@ def _time(row: dict, key: str) -> datetime | None:
 def _text(row: dict, key: str) -> str | None:
     v = row.get(key)
     return None if v in (None, "", "null") else str(v)
+
+
+def _terminal(row: dict, key: str) -> str | None:
+    """Airlines write "1", "T1" or "Terminal 1"; the apps add their own "T"."""
+    v = _text(row, key)
+    if v is None:
+        return None
+    return re.sub(r"^\s*(terminal|t)\s*", "", v, flags=re.I).strip() or None
 
 
 def _status(status: str, delayed: int) -> FlightStatus:
@@ -159,8 +193,8 @@ def _parse(row: dict, number: str, day: date) -> Flight:
         airlineName=row.get("airline_name") or number[:2],
         departure=dep,
         arrival=arr,
-        departureTerminal=_text(row, "dep_terminal"),
-        arrivalTerminal=_text(row, "arr_terminal"),
+        departureTerminal=_terminal(row, "dep_terminal"),
+        arrivalTerminal=_terminal(row, "arr_terminal"),
         departureGate=_text(row, "dep_gate"),
         arrivalGate=_text(row, "arr_gate"),
         departureTime=std,

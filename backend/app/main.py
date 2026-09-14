@@ -81,9 +81,17 @@ async def _airlabs_flight(number: str, day: date) -> Flight:
     return await airlabs.schedule(_http(), number, day)
 
 
+_airports: dict[str, Airport] = {}  # airports do not move; one AirLabs call each per process
+
+
 @app.get("/airports/{iata}", response_model=Airport, dependencies=[Depends(require_token)])
 async def airport(iata: str):
+    code = iata.upper()
+    if code in _airports:
+        return _airports[code]
     try:
-        return await airlabs.airport(_http(), iata)
+        a = await airlabs.airport(_http(), code)
     except airlabs.AirLabsError as e:
         raise HTTPException(status_code=502, detail=str(e))
+    _airports[code] = a
+    return a

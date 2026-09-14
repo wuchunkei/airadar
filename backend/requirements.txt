@@ -8,3 +8,5 @@ google-auth==2.35.0
 requests==2.32.3
 stripe==11.1.0
 python-multipart==0.0.12
+timezonefinder==6.5.4
+pycountry==24.6.1
