@@ -10,10 +10,14 @@ import os
 from datetime import date
 
 import httpx
+import airportsdata
+import pycountry
 from fastapi import Depends, FastAPI, Header, HTTPException
 
 from . import airlabs, auth, billing, db, social, trips
 from .schema import Airport, Flight
+
+_AIRPORTS_TABLE = airportsdata.load("IATA")
 
 app = FastAPI(title="Airadar backend", version="0.2.0")
 app.include_router(auth.router)
@@ -81,7 +85,21 @@ async def _airlabs_flight(number: str, day: date) -> Flight:
     return await airlabs.schedule(_http(), number, day)
 
 
-_airports: dict[str, Airport] = {}  # airports do not move; one AirLabs call each per process
+_airports: dict[str, Airport] = {}  # airports do not move; looked up once per process
+
+
+def _bundled_airport(code: str) -> Airport | None:
+    """The airportsdata table (MIT, offline): proper city, country and zone for ~28k airports."""
+    row = _AIRPORTS_TABLE.get(code)
+    if not row or not row.get("tz"):
+        return None
+    country = pycountry.countries.get(alpha_2=row["country"])
+    return Airport(
+        iata=code, icao=row.get("icao") or "", name=row.get("name") or code,
+        city=row.get("city") or row.get("name") or code,
+        country=(getattr(country, "common_name", None) or country.name) if country else row["country"],
+        countryCode=row["country"], latitude=float(row["lat"]), longitude=float(row["lon"]), zoneId=row["tz"],
+    )
 
 
 @app.get("/airports/{iata}", response_model=Airport, dependencies=[Depends(require_token)])
@@ -89,9 +107,11 @@ async def airport(iata: str):
     code = iata.upper()
     if code in _airports:
         return _airports[code]
-    try:
-        a = await airlabs.airport(_http(), code)
-    except airlabs.AirLabsError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    a = _bundled_airport(code)
+    if a is None:
+        try:
+            a = await airlabs.airport(_http(), code)
+        except airlabs.AirLabsError as e:
+            raise HTTPException(status_code=502, detail=str(e))
     _airports[code] = a
     return a
