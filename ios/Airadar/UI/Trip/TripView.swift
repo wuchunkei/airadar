@@ -21,7 +21,9 @@ struct TripView: View {
     @State private var showFriends = false
     @State private var trackStatus: [String: TrackStatus] = [:]
 
-    private var past: [Flight] { store.flights.filter { $0.phase == .past } }
+    // Newest first — the store itself keeps everyone sorted soonest-departure-first,
+    // which is right for what's still coming but backwards for what's already flown.
+    private var past: [Flight] { store.flights.filter { $0.phase == .past }.sorted { ($0.departureInstant ?? .distantPast) > ($1.departureInstant ?? .distantPast) } }
     private var airborne: [Flight] { store.flights.filter { $0.phase == .inProgress } }
     private var coming: [Flight] { store.flights.filter { $0.phase == .upcoming } }
 

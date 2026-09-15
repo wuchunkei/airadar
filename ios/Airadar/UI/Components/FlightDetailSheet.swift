@@ -1,4 +1,5 @@
 import SwiftUI
+import MapKit
 
 /// The bottom sheet for one flight: a map thumbnail, airline and status, the big
 /// airport codes, times (a delay shows the original struck through), the facts,
@@ -16,6 +17,10 @@ struct FlightDetailSheet<Actions: View>: View {
 
     @State private var fullMap = false
     @State private var trackRefreshed: Date?
+    /// Where adsb.lol last saw it — free, keyless, and live over China where
+    /// OpenSky's own coverage is thin. Places the plane precisely on the arc
+    /// without needing OpenSky's (often missing, there) full track.
+    @State private var liveFix: AdsbLolClient.LiveFix?
 
     var body: some View {
         // One page, always: the sheet is full height and whatever room the facts leave
@@ -48,6 +53,15 @@ struct FlightDetailSheet<Actions: View>: View {
         // In the air: the path flown so far is fetched quietly, so the plane sits where it really is.
         .task(id: flight.id) {
             if flight.phase == .inProgress, flight.trackFlownOn == nil, flight.callsign != nil { onLoadTrack?() }
+        }
+        // A live fix, every 30 s, whether or not the full map is open — cheap and
+        // keyless, so the thumbnail alone already shows an accurate position.
+        .task(id: flight.id) {
+            guard flight.phase == .inProgress, let callsign = flight.callsign else { return }
+            while !Task.isCancelled {
+                liveFix = try? await AdsbLolClient.shared.fetchLivePosition(callsign: callsign)
+                try? await Task.sleep(for: .seconds(30))
+            }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -165,7 +179,10 @@ struct FlightDetailSheet<Actions: View>: View {
 
     private var routes: [MapRoute] {
         guard flight.track == nil, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
-        let progress: Double? = flight.phase == .inProgress ? flight.fractionFlown : nil
+        guard flight.phase == .inProgress else { return [MapRoute(from: a, to: b, rank: 0, isReturn: false, progress: nil)] }
+        // A live fix places the plane where it actually is; short of that, the clock's estimate.
+        let progress = liveFix.map { TileMapView.fraction(of: CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon), alongArcFrom: a, to: b) }
+            ?? flight.fractionFlown
         return [MapRoute(from: a, to: b, rank: 0, isReturn: false, progress: progress)]
     }
 

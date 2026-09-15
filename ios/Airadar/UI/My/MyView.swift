@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// Full-screen map of every leg flown, the stats panel at the bottom, Settings at
-/// the top right. Tap a leg (or an airport dot) for the trips that flew it.
+/// Full-screen map of every leg flown — bowed arcs only, never the raw jagged
+/// ADS-B trail, coloured by direction (blue north, green south) rather than by
+/// trip — with the stats panel at the bottom and Settings at the top right. Tap
+/// a leg (or an airport dot) for the trips that flew it.
 struct MyView: View {
     @EnvironmentObject private var store: FlightStore
     @EnvironmentObject private var settings: SettingsModel
@@ -14,13 +16,10 @@ struct MyView: View {
 
     /// Flown legs, and the one in the air right now with the plane on it.
     private var history: [Flight] { store.flights.filter { ($0.phase == .past || $0.phase == .inProgress) && !$0.isPending } }
-    private var tracks: [MapTrack] {
-        history.compactMap { f in
-            guard let a = f.departureAirport, let b = f.arrivalAirport, let t = f.track else { return nil }
-            return MapTrack(from: a, to: b, points: t, live: f.phase == .inProgress)
-        }
-    }
-    private var routes: [MapRoute] { history.filter { $0.track == nil }.toMapRoutes() }
+    /// Every leg as a bowed arc — never the real recorded track, which kinks and
+    /// looks jagged at the zoomed-out scale this overview is seen at. The one in
+    /// the air still gets its dashed-ahead / solid-flown split, timed by the clock.
+    private var routes: [MapRoute] { history.toMapRoutes() }
     private var legFlights: [Flight] {
         history.filter { f in selectedLegs.contains { f.departure == $0.0.iata && f.arrival == $0.1.iata } }
             .sorted { ($0.departureInstant ?? .distantPast) > ($1.departureInstant ?? .distantPast) }
@@ -29,7 +28,9 @@ struct MyView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
-                TileMapView(routes: routes, tracks: tracks, interactive: true, selected: selectedLegs, emptyFocus: homeRegion,
+                // Full-bleed, as it was — direction tells the colour: blue heading
+                // north, green heading south, so the web of past legs reads at a glance.
+                TileMapView(routes: routes, interactive: true, directionColored: true, selected: selectedLegs, emptyFocus: homeRegion,
                             onLegTap: { selectedLegs = $0 }, onMapTap: { selectedLegs = [] })
                     .ignoresSafeArea()
 

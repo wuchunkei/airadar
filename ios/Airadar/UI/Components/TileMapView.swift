@@ -45,6 +45,10 @@ struct TileMapView: UIViewRepresentable {
     var interactive = true
     /// City names beside the airport dots — for the small preview, where the map's own labels are too sparse.
     var cityLabels = false
+    /// Colour by compass direction instead of outbound/return — northbound blue,
+    /// southbound green — for the "My" overview, where one line per leg reads
+    /// better by which way it points than by which trip it belonged to.
+    var directionColored = false
     var selected: [(Airport, Airport)] = []
     var emptyFocus: Region? = nil
     var onLegTap: (([(Airport, Airport)]) -> Void)? = nil
@@ -97,7 +101,8 @@ struct TileMapView: UIViewRepresentable {
                 continue
             }
             let line = LegPolyline(coordinates: coords, count: coords.count)
-            line.color = isSelected(r.from, r.to) ? Coordinator.selectedColor : (r.isReturn ? Coordinator.returnColor : Coordinator.routeColor)
+            let base = directionColored ? Coordinator.directionColor(r.from, r.to) : (r.isReturn ? Coordinator.returnColor : Coordinator.routeColor)
+            line.color = isSelected(r.from, r.to) ? Coordinator.selectedColor : base
             line.width = 1.0
             map.addOverlay(line, level: .aboveLabels)
             legs.append(.init(line: line, from: r.from, to: r.to))
@@ -183,6 +188,22 @@ struct TileMapView: UIViewRepresentable {
         return out
     }
 
+    /// How far along the bowed arc a real reported position sits — the nearest of
+    /// the arc's own sampled points, as a fraction of the way from `a` to `b`. Lets
+    /// a live fix (from adsb.lol, say) place the plane precisely while the line
+    /// drawn underneath stays the same clean curve, not the raw jagged trail.
+    static func fraction(of point: CLLocationCoordinate2D, alongArcFrom a: Airport, to b: Airport) -> Double {
+        let coords = arcPath(a, b)
+        let target = MKMapPoint(point)
+        var bestIndex = 0
+        var bestDistance = Double.greatestFiniteMagnitude
+        for (i, c) in coords.enumerated() {
+            let d = MKMapPoint(c).distance(to: target)
+            if d < bestDistance { bestDistance = d; bestIndex = i }
+        }
+        return coords.count > 1 ? Double(bestIndex) / Double(coords.count - 1) : 0
+    }
+
     /// Compass bearing from one point to the next, degrees clockwise from north.
     static func bearing(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
         let rad = Double.pi / 180
@@ -225,6 +246,12 @@ struct TileMapView: UIViewRepresentable {
         static let returnColor = UIColor(red: 0.00, green: 0.60, blue: 0.53, alpha: 1)
         static let liveColor = UIColor(red: 0.20, green: 0.70, blue: 0.30, alpha: 1)
         static let selectedColor = UIColor(red: 0.91, green: 0.35, blue: 0.05, alpha: 1)
+
+        /// Northbound (destination the higher latitude) draws blue, southbound green —
+        /// due-east/west counts as northbound so nothing is left uncoloured.
+        static func directionColor(_ a: Airport, _ b: Airport) -> UIColor {
+            b.latitude >= a.latitude ? routeColor : returnColor
+        }
 
         struct Leg { let line: LegPolyline; let from: Airport; let to: Airport }
 
