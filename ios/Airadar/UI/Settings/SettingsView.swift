@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var pickingCalendars = false
     @State private var showPlans = false
     @State private var nameSheet: NameSheet?
+    @State private var confirmDeleteAll = false
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -39,6 +40,8 @@ struct SettingsView: View {
             }
             Section("Trips") {
                 NavigationLink("Recycle Bin") { RecycleBinView() }
+                Button("Delete all trips", role: .destructive) { confirmDeleteAll = true }
+                    .disabled(store.flights.isEmpty)
             }
             Section("About") {
                 LabeledContent("Version", value: "1.0.0")
@@ -59,6 +62,12 @@ struct SettingsView: View {
                            onCancel: { pickingCalendars = false; if settings.calendarIds.isEmpty { settings.calendarSync = false } })
         }
         .sheet(isPresented: $showPlans) { MembershipView(current: auth.user?.membership.tier ?? .guest, reason: nil) { showPlans = false } }
+        .confirmationDialog("Delete all \(store.flights.count) trips?", isPresented: $confirmDeleteAll, titleVisibility: .visible) {
+            Button("Delete All", role: .destructive) { store.deleteAll() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They go to the Recycle Bin for \(FlightStore.retentionDays) days, so this can be undone.")
+        }
     }
 
     @ViewBuilder

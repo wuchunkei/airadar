@@ -158,6 +158,13 @@ final class FlightStore: ObservableObject {
         push { try await BackendClient.deleteTrip(id) }
     }
 
+    /// Every current trip, one at a time — the same as swiping each away, all
+    /// at once: a real trip goes to the Recycle Bin, a friend's shared one is
+    /// just declined, exactly as a single delete already does either way.
+    func deleteAll() {
+        for f in flights { delete(f.id) }
+    }
+
     func restore(_ id: String) {
         publish(all.map { var f = $0; if f.id == id { f.deletedAt = nil }; return f })
         push { try await BackendClient.restoreTrip(id) }
