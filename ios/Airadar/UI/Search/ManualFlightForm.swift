@@ -24,6 +24,11 @@ struct ManualFlightForm: View {
 
     @State private var showAirlineConfirm = false
     @State private var showAirlinePicker = false
+    /// What each airport's own terminals turn out to be, once `from`/`to`
+    /// resolves to one — empty means either not resolved yet or nothing found,
+    /// and the text field is still there to type one by hand either way.
+    @State private var depTerminalOptions: [String] = []
+    @State private var arrTerminalOptions: [String] = []
 
     init(flightNumber: String, date: Date, onAdd: @escaping (Flight) -> Void) {
         self.flightNumber = flightNumber; self.date = date; self.onAdd = onAdd
@@ -78,11 +83,11 @@ struct ManualFlightForm: View {
                 Section("Route") {
                     HStack {
                         TextField("From (IATA)", text: $from).textInputAutocapitalization(.characters).autocorrectionDisabled()
-                        TextField("Terminal", text: $depTerminal).frame(width: 90)
+                        terminalField($depTerminal, options: depTerminalOptions)
                     }
                     HStack {
                         TextField("To (IATA)", text: $to).textInputAutocapitalization(.characters).autocorrectionDisabled()
-                        TextField("Terminal", text: $arrTerminal).frame(width: 90)
+                        terminalField($arrTerminal, options: arrTerminalOptions)
                     }
                 }
                 Section("Times (local at each airport)") {
@@ -109,7 +114,40 @@ struct ManualFlightForm: View {
             .sheet(isPresented: $showAirlinePicker) {
                 AirlinePickerSheet(flightNumber: number) { name in airline = name }
             }
+            // Whichever airport is typed, its own terminals get looked up quietly —
+            // cancelled and restarted on every keystroke, so only the pause after
+            // typing actually finishes one.
+            .task(id: from) { depTerminalOptions = await Self.lookupTerminals(from) }
+            .task(id: to) { arrTerminalOptions = await Self.lookupTerminals(to) }
         }
+    }
+
+    /// A little dropdown beside the free-text field — a terminal typed by hand
+    /// still works (a small airfield may have nothing worth looking up), but
+    /// once the airport's own terminals are known, picking one beats typing it.
+    @ViewBuilder
+    private func terminalField(_ text: Binding<String>, options: [String]) -> some View {
+        HStack(spacing: 2) {
+            TextField("Terminal", text: text)
+            if !options.isEmpty {
+                Menu {
+                    ForEach(options, id: \.self) { option in
+                        Button(TerminalDiscovery.displayLabel(option)) { text.wrappedValue = option }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down.circle.fill").foregroundStyle(.secondary).font(.caption)
+                }
+            }
+        }
+        .frame(width: 130)
+    }
+
+    private static func lookupTerminals(_ iata: String) async -> [String] {
+        let code = iata.uppercased()
+        guard code.count == 3 else { return [] }
+        await AirportDatabase.shared.ensure(code) { try await BackendClient.airport(code) }
+        guard let airport = AirportDatabase.shared.airport(code) else { return [] }
+        return await TerminalDiscovery.availableTerminals(for: airport)
     }
 
     private func add() {

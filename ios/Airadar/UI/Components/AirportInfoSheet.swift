@@ -57,59 +57,12 @@ struct AirportInfoSheet: View {
         if let known = AirportDatabase.shared.terminals(airport.iata) {
             names = known.map { ($0.name, $0.closed) }
         } else {
-            let discovered = await Self.discoverTerminals(airport)
-            names = discovered.isEmpty ? counts.keys.map { ($0, false) } : discovered
+            let discovered = await TerminalDiscovery.discover(airport)
+            names = discovered.isEmpty ? counts.keys.map { ($0, false) } : discovered.map { ($0, false) }
         }
 
         terminalRows = names.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             .map { (terminal: $0.name, count: counts[$0.name] ?? 0, closed: $0.closed) }
-    }
-
-    /// Every "Terminal N" Apple's own map data has near this airport — the
-    /// same search a traveller typing into Maps would get, so it reaches any
-    /// airport on Earth without a hand-built database behind it. Some airports
-    /// (Zhuhai's ZUH, say) have no numbered terminals at all, just a Departure
-    /// Hall and an Arrival Hall — searched for by name too, since "Terminal"
-    /// alone would never turn those up. Nothing here says whether a result is
-    /// closed — Apple's search doesn't carry that — so a discovered one is
-    /// only ever assumed open; a closed one only shows as such where it's
-    /// been hand-checked into `AirportDatabase`.
-    private static func discoverTerminals(_ airport: Airport) async -> [(name: String, closed: Bool)] {
-        async let terminals = search(airport, keyword: "Terminal")
-        async let departures = search(airport, keyword: "Departure")
-        async let arrivals = search(airport, keyword: "Arrival")
-        var seen: Set<String> = []
-        var out: [(String, Bool)] = []
-        for label in await terminals + departures + arrivals where seen.insert(label).inserted {
-            out.append((label, false))
-        }
-        return out
-    }
-
-    private static func search(_ airport: Airport, keyword: String) async -> [String] {
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = "\(airport.name) \(keyword)"
-        request.region = MKCoordinateRegion(center: airport.coordinate, latitudinalMeters: 8000, longitudinalMeters: 8000)
-        guard let response = try? await MKLocalSearch(request: request).start() else { return [] }
-        let target = CLLocation(latitude: airport.latitude, longitude: airport.longitude)
-        return response.mapItems.compactMap { item in
-            guard item.location.distance(from: target) < 15_000, let name = item.name else { return nil }
-            return extractLabel(name)
-        }
-    }
-
-    /// "Terminal 1", "Terminal T1 Building" → "1"; "Departure Hall" → literally
-    /// "Departure" (there's no number to normalize); nil for a place whose name
-    /// says none of these (the airport itself, a lounge, a car park, …).
-    private static func extractLabel(_ name: String) -> String? {
-        if let r = name.range(of: "Terminal", options: .caseInsensitive) {
-            let token = name[r.upperBound...].trimmingCharacters(in: .whitespaces).prefix { $0.isLetter || $0.isNumber }
-            return token.isEmpty ? nil : normalizeTerminal(String(token))
-        }
-        for word in ["Departure", "Arrival"] where name.range(of: word, options: .caseInsensitive) != nil {
-            return word
-        }
-        return nil
     }
 
     private func loadETAs() async {
@@ -144,9 +97,7 @@ private struct TerminalRow: View {
     /// nil (fine) just means the button falls back to the airport as a whole.
     @State private var resolved: MKMapItem?
 
-    /// "Departure"/"Arrival" (an airport with halls, not numbered terminals)
-    /// read as themselves; anything else reads as "Terminal 1", "Terminal 3", …
-    private var label: String { ["Departure", "Arrival"].contains(terminal) ? terminal : "Terminal \(terminal)" }
+    private var label: String { TerminalDiscovery.displayLabel(terminal) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -197,7 +148,7 @@ private struct TerminalRow: View {
     /// once came back with Hong Kong's Terminal 1). So the result only counts if
     /// it is actually near the airport it was searched for.
     private static func resolve(airport: Airport, terminal: String) async -> MKMapItem? {
-        let label = ["Departure", "Arrival"].contains(terminal) ? terminal : "Terminal \(terminal)"
+        let label = TerminalDiscovery.displayLabel(terminal)
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = "\(airport.name) \(label)"
         request.region = MKCoordinateRegion(center: airport.coordinate, latitudinalMeters: 6000, longitudinalMeters: 6000)
