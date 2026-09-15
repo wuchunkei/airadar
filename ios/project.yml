@@ -51,7 +51,7 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIRequiresFullScreen: true
         NSCalendarsFullAccessUsageDescription: Airadar reads your calendars to find flights you already have.
-        NSLocationWhenInUseUsageDescription: Used only to centre the map on your region until you have trips.
+        NSLocationWhenInUseUsageDescription: Used to centre the map on your region until you have trips, and to show driving/transit time from here to an airport you tap.
         NSSupportsLiveActivities: true
         # OpenSky's TLS setup lacks the forward-secrecy ciphers ATS insists on.
         NSAppTransportSecurity:
@@ -70,6 +70,7 @@ targets:
         OPENSKY_CLIENT_ID: $(OPENSKY_CLIENT_ID)
         OPENSKY_CLIENT_SECRET: $(OPENSKY_CLIENT_SECRET)
         LINK_HOST: $(LINK_HOST)
+        AERODATABOX_KEY: $(AERODATABOX_KEY)
         CFBundleURLTypes:
           - CFBundleURLSchemes: [airadar, $(GID_REVERSED_CLIENT_ID)]
     settings:
@@ -81,6 +82,7 @@ targets:
         OPENSKY_CLIENT_ID: $(OPENSKY_CLIENT_ID)
         OPENSKY_CLIENT_SECRET: $(OPENSKY_CLIENT_SECRET)
         LINK_HOST: $(LINK_HOST)
+        AERODATABOX_KEY: $(AERODATABOX_KEY)
         # No entitlements by default, so a free personal team can sign it. A paid team adds
         # universal links with CODE_SIGN_ENTITLEMENTS = Entitlements/Airadar.entitlements in Config.xcconfig.
     configFiles:

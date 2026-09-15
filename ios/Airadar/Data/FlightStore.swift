@@ -163,8 +163,30 @@ final class FlightStore: ObservableObject {
         push { try await BackendClient.restoreTrip(id) }
     }
 
-    func setTrack(_ id: String, points: [TrackPoint], flownOn: String) {
+    func setTrack(_ id: String, points: [TrackPoint], flownOn: String, icao24: String? = nil) {
         publish(all.map { var f = $0; if f.id == id { f.track = points; f.trackFlownOn = flownOn }; return f })
+        if let updated = all.first(where: { $0.id == id }) { push { try await BackendClient.putTrip(updated) } }
+        // The airframe's own hex, from the track just fetched — worth a free,
+        // one-off aircraft-type lookup if the trip doesn't already have one.
+        if let icao24, all.first(where: { $0.id == id })?.aircraft == nil {
+            Task { await self.fillAircraft(id, icao24: icao24) }
+        }
+    }
+
+    /// adsbdb, keyed by Mode-S hex — free, and separate from AeroDataBox's
+    /// quota entirely. Only ever fills a gap, never overwrites a real value.
+    private func fillAircraft(_ id: String, icao24: String) async {
+        guard let found = try? await AdsbdbClient.shared.aircraft(modeS: icao24),
+              let type = found.type ?? found.icaoType else { return }
+        publish(all.map { f in var g = f; if g.id == id, g.aircraft == nil { g.aircraft = type }; return g })
+        if let updated = all.first(where: { $0.id == id }) { push { try await BackendClient.putTrip(updated) } }
+    }
+
+    /// A callsign adsbdb resolved that the trip didn't already have — the
+    /// static bundled table only knows a few dozen airlines; this reaches any
+    /// of them. Filled in and synced like a track is, so it is asked for once.
+    func applyCallsign(_ id: String, callsign: String) {
+        publish(all.map { f in var g = f; if g.id == id, g.callsign == nil { g.callsign = callsign }; return g })
         if let updated = all.first(where: { $0.id == id }) { push { try await BackendClient.putTrip(updated) } }
     }
 

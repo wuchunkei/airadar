@@ -11,8 +11,9 @@ actor OpenSkyClient {
 
     struct OpenSkyError: LocalizedError { let message: String; var errorDescription: String? { message } }
 
-    /// Positions plus the day they were flown.
-    struct FetchedTrack: Sendable { let points: [TrackPoint]; let flownOn: String }
+    /// Positions plus the day they were flown, and the airframe's own hex —
+    /// handed back so a caller can look its aircraft type up for free elsewhere.
+    struct FetchedTrack: Sendable { let points: [TrackPoint]; let flownOn: String; let icao24: String }
 
     private var token: String?
     private var tokenExpiresAt = Date.distantPast
@@ -31,7 +32,7 @@ actor OpenSkyClient {
                 throw OpenSkyError(message: "\(flight.flightNumber) (ATC callsign \(callsign)) is not in OpenSky's live picture right now — no receiver is hearing it at the moment. Tried again shortly.")
             }
             return FetchedTrack(points: try await fetchPath(bearer, icao24, at: 0),
-                                flownOn: LocalDateTime.from(Date(), in: origin.zone).dayString)
+                                flownOn: LocalDateTime.from(Date(), in: origin.zone).dayString, icao24: icao24)
 
         case .past, .upcoming:
             let days: [Date] = flight.phase == .past ? [scheduled]
@@ -42,7 +43,7 @@ actor OpenSkyClient {
                 checked.append(String(LocalDateTime.from(day, in: origin.zone).dayString.dropFirst(5)))
                 if let (icao24, first, last) = try await findFlight(bearer, callsign, origin, destination, day, flight.durationMinutes, &seenFromAirline) {
                     let flownOn = LocalDateTime.from(Date(timeIntervalSince1970: TimeInterval(first)), in: origin.zone).dayString
-                    return FetchedTrack(points: try await fetchPath(bearer, icao24, at: (first + last) / 2), flownOn: flownOn)
+                    return FetchedTrack(points: try await fetchPath(bearer, icao24, at: (first + last) / 2), flownOn: flownOn, icao24: icao24)
                 }
             }
             let prefix = String(callsign.prefix { $0.isLetter })

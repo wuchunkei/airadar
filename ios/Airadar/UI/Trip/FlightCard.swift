@@ -42,6 +42,9 @@ struct FlightCard: View {
                 HStack(spacing: 8) {
                     StatusChip(flight: flight)
                     if flight.isManual { NameBlock(name: "Manual", color: Color(red: 0.96, green: 0.65, blue: 0.14), dashed: false) }
+                    if let via = flight.importedVia {
+                        NameBlock(name: via == "gmail" ? "Email" : "Calendar", color: .secondary, dashed: false)
+                    }
                     ShareBlocks(flight: flight, ink: ink, expanded: $expandedShares)
                     Spacer(minLength: 4)
                     Text("Usually \(formatDuration(flight.typicalDurationMinutes ?? flight.durationMinutes))")
@@ -93,7 +96,7 @@ struct AirportRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Text(code).font(.title3.bold()).foregroundStyle(ink)
-                    if let terminal { Text("T\(terminal)").font(.title3.bold()).foregroundStyle(ink) }
+                    if let terminal { Text("T\(normalizeTerminal(terminal))").font(.title3.bold()).foregroundStyle(ink) }
                 }
                 Text(city ?? "").font(.caption).foregroundStyle(muted)
             }
@@ -112,10 +115,10 @@ struct AirportRow: View {
 struct StatusChip: View {
     let flight: Flight
     var body: some View {
-        Text(flight.status.label + (flight.delayMinutes > 0 ? " \(flight.delayMinutes)m" : ""))
-            .font(.caption.weight(.semibold)).foregroundStyle(flight.status.color)
+        Text(flight.displayStatus.label + (flight.delayMinutes > 0 ? " \(flight.delayMinutes)m" : ""))
+            .font(.caption.weight(.semibold)).foregroundStyle(flight.displayStatus.color)
             .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(flight.status.color.opacity(0.14), in: .rect(cornerRadius: 6))
+            .background(flight.displayStatus.color.opacity(0.14), in: .rect(cornerRadius: 6))
     }
 }
 

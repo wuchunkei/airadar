@@ -10,6 +10,9 @@ struct LivePosition: Sendable, Equatable {
     /// Degrees clockwise from north.
     let heading: Double
     let altitudeFeet: Int?
+    /// The airframe's Mode-S / ICAO24 hex — what adsbdb keys its aircraft
+    /// lookup by, so a type and photo can be filled in for free.
+    let hex: String?
     let seenAt: Date
 
     static func == (a: LivePosition, b: LivePosition) -> Bool {
@@ -44,7 +47,7 @@ actor LivePositionClient {
             let alt: Int? = (ac["alt_baro"] as? Int) ?? (ac["alt_geom"] as? Int)
             let ageSeconds = (ac["seen"] as? Double) ?? 0
             return LivePosition(coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon), heading: heading,
-                                altitudeFeet: alt, seenAt: Date().addingTimeInterval(-ageSeconds))
+                                altitudeFeet: alt, hex: ac["hex"] as? String, seenAt: Date().addingTimeInterval(-ageSeconds))
         }
         return nil
     }

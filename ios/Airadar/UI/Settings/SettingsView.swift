@@ -222,10 +222,13 @@ struct SettingsView: View {
         calendarStatus = "Reading calendars"
         Task {
             let found = (try? await CalendarImporter.scan(calendarIds: settings.calendarIds)) ?? []
-            let added = await TripImporter.run(found)
+            let result = await TripImporter.run(found)
             calendarStatus = found.isEmpty ? "No flights found in your calendars."
-                : added == 0 ? "Every calendar flight is already in Trips."
-                : "\(added) trips added from your calendars — confirm them in Trips."
+                : result.added > 0 ? "\(result.added) trips added from your calendars — confirm them in Trips."
+                : result.alreadyPresent == found.count ? "Every calendar flight is already in Trips."
+                // Found something, but the schedule source could not confirm it — a renumbered,
+                // seasonal, or long-past flight, most likely, not a reading failure.
+                : "Found \(found.count) but couldn't confirm \(result.unconfirmed.count) (\(result.unconfirmed.prefix(3).map(\.flightNumber).joined(separator: ", "))) against the schedule."
         }
     }
 }

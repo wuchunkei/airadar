@@ -20,6 +20,8 @@ struct TripView: View {
     @State private var shareFor: Flight?
     @State private var showFriends = false
     @State private var trackStatus: [String: TrackStatus] = [:]
+    /// A manual trip being edited — swiped to from its card.
+    @State private var editingFlight: Flight?
 
     // Newest first — the store itself keeps everyone sorted soonest-departure-first,
     // which is right for what's still coming but backwards for what's already flown.
@@ -55,7 +57,7 @@ struct TripView: View {
                                 cards(now, dimmed: false, headings: false)
                             }
                             ForEach(soon) { f in
-                                SectionTitle("Coming \(Int(hoursLeft(f).rounded(.down)))H")
+                                SectionTitle("In \(Int(hoursLeft(f).rounded(.down)))h")
                                 cards([f], dimmed: false, headings: false)
                             }
                             if !later.isEmpty || (now.isEmpty && soon.isEmpty) {
@@ -113,6 +115,12 @@ struct TripView: View {
             // The share flow presents its own sheets; it just needs to exist while sharing.
             if let f = shareFor { ShareFlow(flight: f) { shareFor = nil } }
         }
+        .sheet(item: $editingFlight) { flight in
+            ManualFlightForm(editing: flight) { updated in
+                store.replace(flight, with: updated)
+                editingFlight = nil
+            }
+        }
     }
 
     @ViewBuilder
@@ -123,7 +131,7 @@ struct TripView: View {
             }
             FlightCard(flight: flight, forceSystemZone: settings.forceSystemZone, dimmed: dimmed) { selectedId = flight.id }
                 .padding(.vertical, 5)
-                .swipeToDelete {
+                .swipeToDelete(onEdit: flight.isManual ? { editingFlight = flight } : nil) {
                     store.delete(flight.id)
                     onDeleted(flight)
                 }
@@ -168,7 +176,7 @@ struct TripView: View {
         Task {
             do {
                 let fetched = try await OpenSkyClient.shared.fetchTrack(flight)
-                store.setTrack(flight.id, points: fetched.points, flownOn: fetched.flownOn)
+                store.setTrack(flight.id, points: fetched.points, flownOn: fetched.flownOn, icao24: fetched.icao24)
                 trackStatus[flight.id] = .loaded
             } catch {
                 trackStatus[flight.id] = .failed(error.localizedDescription)
@@ -238,9 +246,14 @@ struct RespondButtons: View {
 
 extension View {
     /// Drag left to uncover Delete — the platform's own gesture, not a full-swipe dismiss.
-    func swipeToDelete(_ action: @escaping () -> Void) -> some View {
+    /// A manual trip also gets Edit beside it — there's nothing to edit on one
+    /// a real source keeps in sync, so `onEdit` is only ever passed for those.
+    func swipeToDelete(onEdit: (() -> Void)? = nil, onDelete: @escaping () -> Void) -> some View {
         self.swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(role: .destructive, action: action) { Label("Delete", systemImage: "trash") }
+            Button(role: .destructive, action: onDelete) { Label("Delete", systemImage: "trash") }
+            if let onEdit {
+                Button(action: onEdit) { Label("Edit", systemImage: "pencil") }.tint(.orange)
+            }
         }
     }
 }

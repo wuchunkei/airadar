@@ -4,12 +4,26 @@ import SwiftUI
 /// airport codes, times (a delay shows the original struck through), the facts,
 /// and whatever actions the caller adds.
 struct FlightDetailSheet<Actions: View>: View {
+    @EnvironmentObject private var store: FlightStore
     let flight: Flight
     var forceSystemZone = false
     var trackStatus: TrackStatus? = nil
     var onLoadTrack: (() -> Void)? = nil
     /// The aircraft's real position while it flies, asked for every minute the sheet is open.
     @State private var live: LivePosition?
+    /// AeroDataBox's answer for this exact flight, asked once and cached on
+    /// device from then on — fills in a terminal, gate or aircraft type this
+    /// trip didn't already have; never overwrites one it did.
+    @State private var enriched: AeroDataBoxClient.FlightStatus?
+    /// A callsign the trip didn't have, resolved via adsbdb — used for the rest
+    /// of this session even before the store's own copy catches up.
+    @State private var resolvedCallsign: String?
+    /// Whether adsbdb has already had its chance at a missing callsign — so
+    /// "still nil" only counts as truly exhausted once that has actually happened.
+    @State private var callsignResolutionAttempted = false
+    /// adsbdb's free aircraft lookup, from the live position's own hex —
+    /// separate from AeroDataBox's quota, and this is the one place a photo shows.
+    @State private var adsbdbAircraft: AdsbdbClient.Aircraft?
     let onDismiss: () -> Void
     var primaryAction: (label: String, action: () -> Void)? = nil
     /// Under the primary one, quieter — "Incorrect" beneath "Correct".
@@ -29,6 +43,7 @@ struct FlightDetailSheet<Actions: View>: View {
 
                 header
                 codes
+                if let url = adsbdbAircraft?.photoURL { aircraftPhoto(url) }
                 facts
                 extraActions()
             }
@@ -58,14 +73,63 @@ struct FlightDetailSheet<Actions: View>: View {
         }
         .presentationDetents(detents)
         .presentationDragIndicator(.visible)
-        // In the air: where the aircraft really is, from ADS-B, refreshed every minute.
+        // No ATC callsign yet: the bundled ~35-airline table missed this one at
+        // import time — adsbdb reaches any airline it knows, so it gets asked
+        // once and, once found, is synced like any other trip detail.
         .task(id: flight.id) {
-            guard let callsign = flight.callsign else { return }
+            defer { callsignResolutionAttempted = true }
+            guard flight.callsign == nil else { return }
+            if let found = try? await AdsbdbClient.shared.icaoCallsign(forFlightNumber: flight.flightNumber) {
+                resolvedCallsign = found
+                store.applyCallsign(flight.id, callsign: found)
+            }
+        }
+        // In the air: where the aircraft really is, from ADS-B, refreshed every minute.
+        .task(id: "\(flight.id)|\(callsign ?? "")") {
+            guard let callsign else { return }
             while !Task.isCancelled, flight.phase == .inProgress {
                 if let p = await LivePositionClient.shared.position(callsign: callsign) { live = p }
                 try? await Task.sleep(for: .seconds(60))
             }
         }
+        // OpenSky gets the first shot at a real track — free, whatever the
+        // phase — quietly, the way it always has.
+        .task(id: "\(flight.id)|\(callsign ?? "")") {
+            if flight.trackFlownOn == nil, callsign != nil { onLoadTrack?() }
+        }
+        // AeroDataBox only gets asked once OpenSky has had its shot and failed
+        // (or can't even be tried — no ATC callsign at all): a paid-adjacent,
+        // quota-limited source stays a fallback, not a first resort.
+        .task(id: aeroDataBoxTrigger) {
+            guard aeroDataBoxTrigger.exhausted else { return }
+            await loadAeroDataBox()
+        }
+        // The live fix's own hex, once there is one — adsbdb's aircraft lookup
+        // is free and separate from AeroDataBox, so this never waits on that quota.
+        .task(id: live?.hex) {
+            guard let hex = live?.hex else { return }
+            adsbdbAircraft = try? await AdsbdbClient.shared.aircraft(modeS: hex)
+        }
+    }
+
+    /// `flight.callsign` for the rest of this session, or whatever adsbdb just
+    /// resolved — the store's own copy of `flight` will not reflect the update
+    /// until the sheet is reopened, but nothing here should have to wait for that.
+    private var callsign: String? { flight.callsign ?? resolvedCallsign }
+
+    private struct AeroDataBoxTrigger: Equatable { let flightId: String; let exhausted: Bool }
+    private var aeroDataBoxTrigger: AeroDataBoxTrigger {
+        let noCallsignAtAll = callsign == nil && callsignResolutionAttempted
+        return .init(flightId: flight.id, exhausted: noCallsignAtAll || trackStatus?.isFailure == true)
+    }
+
+    private func loadAeroDataBox() async {
+        guard Config.isAeroDataBoxConfigured else { return }
+        if let cached = AeroDataBoxCache.shared.result(for: flight.id) { enriched = cached; return }
+        let found = try? await AeroDataBoxClient.shared.fetchStatus(number: flight.flightNumber, dateLocal: flight.departureDay)
+        let best = found?.first
+        AeroDataBoxCache.shared.remember(flight.id, best)
+        enriched = best
     }
 
     /// Just tall enough for the content; only content that does not fit on one
@@ -87,18 +151,34 @@ struct FlightDetailSheet<Actions: View>: View {
             Spacer()
             VStack(alignment: .trailing) {
                 Text("Status").font(.caption).foregroundStyle(.secondary)
-                Text(flight.status.label).fontWeight(.semibold).foregroundStyle(flight.status.color)
+                Text(flight.displayStatus.label).fontWeight(.semibold).foregroundStyle(flight.displayStatus.color)
             }
         }
     }
 
     private var codes: some View {
         HStack(spacing: 12) {
-            BigCode(code: flight.departure, terminal: flight.departureTerminal, city: flight.departureAirport?.cityCountry, trailing: false)
+            BigCode(code: flight.departure, terminal: flight.departureTerminal ?? enriched?.departure.terminal,
+                    gate: flight.departureGate ?? enriched?.departure.gate, city: flight.departureAirport?.cityCountry, trailing: false)
             // The way between: an arrow before departure, the plane along a dashed line in the air, done after.
             FlightProgressLine(flight: flight).frame(maxWidth: .infinity).frame(height: 18)
-            BigCode(code: flight.arrival, terminal: flight.arrivalTerminal, city: flight.arrivalAirport?.cityCountry, trailing: true)
+            BigCode(code: flight.arrival, terminal: flight.arrivalTerminal ?? enriched?.arrival.terminal,
+                    gate: flight.arrivalGate ?? enriched?.arrival.gate, city: flight.arrivalAirport?.cityCountry, trailing: true)
         }
+    }
+
+    /// The actual airframe, if adsbdb had a photo of it — a real plane, not a
+    /// stock shot of the type. Only ever shown while it's live-tracked (that's
+    /// the only time a hex is known here), so it's gone once the flight lands.
+    private func aircraftPhoto(_ url: URL) -> some View {
+        AsyncImage(url: url) { image in
+            image.resizable().aspectRatio(contentMode: .fill)
+        } placeholder: {
+            Color(.tertiarySystemFill)
+        }
+        .frame(height: 140)
+        .frame(maxWidth: .infinity)
+        .clipShape(.rect(cornerRadius: 12))
     }
 
     private var facts: some View {
@@ -111,7 +191,8 @@ struct FlightDetailSheet<Actions: View>: View {
             DetailRow(label: "Arriving", value: arrValue, secondary: longDay(flight.arrivalTime.dayString), superseded: arr.original)
             DetailRow(label: "Duration", value: formatDuration(flight.durationMinutes))
             DetailRow(label: "Distance", value: formatDistance(flight.distanceKm))
-            if let a = flight.aircraft { DetailRow(label: "Aircraft", value: a) }
+            if let a = flight.aircraft ?? enriched?.aircraftModel ?? adsbdbAircraft?.type { DetailRow(label: "Aircraft", value: a) }
+            if let reg = adsbdbAircraft?.registration { DetailRow(label: "Registration", value: reg) }
             // Belt numbers appear close to landing; the row is always there.
             DetailRow(label: "Baggage claim", value: flight.baggageClaim ?? "–")
             if let p = flight.pnr { DetailRow(label: "Booking reference", value: p) }
@@ -143,12 +224,15 @@ extension FlightDetailSheet where Actions == EmptyView {
 }
 
 private struct BigCode: View {
-    let code: String, terminal: String?, city: String?, trailing: Bool
+    let code: String, terminal: String?, gate: String?, city: String?, trailing: Bool
     var body: some View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
             Text(city ?? "").font(.caption).foregroundStyle(.secondary)
             Text(code).font(.system(size: 40, weight: .bold))
-            if let terminal { Text("Terminal \(terminal)").font(.caption).foregroundStyle(.secondary) }
+            if terminal != nil || gate != nil {
+                Text([terminal.map { "Terminal \(normalizeTerminal($0))" }, gate.map { "Gate \($0)" }].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 }

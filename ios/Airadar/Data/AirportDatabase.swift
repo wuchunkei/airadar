@@ -62,12 +62,32 @@ final class AirportDatabase: @unchecked Sendable {
         "EK": "UAE", "QR": "QTR", "NX": "AMU", "UO": "HKE",
     ]
 
+    /// A terminal's name and whether it is currently out of service — closed for
+    /// renovation, superseded, whatever — so nothing points a traveller at it.
+    struct KnownTerminal { let name: String; let closed: Bool
+        init(_ name: String, closed: Bool = false) { self.name = name; self.closed = closed }
+    }
+
+    /// Hand-checked corrections for the airports worth double-checking — a
+    /// terminal Apple's own map data might not have caught up on yet (just
+    /// reopened, just closed, freshly renumbered). Everywhere else, the info
+    /// sheet asks Apple's map data directly, which is how this reaches every
+    /// airport on Earth without a hand-built database behind it.
+    private let knownTerminals: [String: [KnownTerminal]] = [
+        "HKG": [.init("1"), .init("2")],                                    // Hong Kong Intl — T2 reopened for regional carriers, May 2026
+        "PEK": [.init("1"), .init("2"), .init("3")],                        // Beijing Capital — T1 now flies as a satellite wing of T2
+        "SZX": [.init("3")],                                                // Shenzhen Bao'an — the only terminal open; T1/T2 due 2027
+        "CAN": [.init("1", closed: true), .init("2"), .init("3")],          // Guangzhou Baiyun — T3 opened 30 Oct 2025; T1 shut for renovation, May 2026
+    ]
+
     func airport(_ iata: String) -> Airport? {
         let code = iata.uppercased()
         if let a = bundled[code] { return a }
         lock.lock(); defer { lock.unlock() }
         return learned[code]
     }
+
+    func terminals(_ iata: String) -> [KnownTerminal]? { knownTerminals[iata.uppercased()] }
 
     func airlineIcao(_ iata: String) -> String? { airlineIcaoByIata[iata.uppercased()] }
 

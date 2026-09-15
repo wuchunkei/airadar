@@ -13,7 +13,9 @@ enum Config {
     static var linkHost: String { plist("LINK_HOST") }
     static var googleClientId: String { plist("GIDClientID") }
     static var googleServerClientId: String { plist("GIDServerClientID") }
+    static var aeroDataBoxKey: String { plist("AERODATABOX_KEY") }
 
     static var isBackendConfigured: Bool { !backendURL.isEmpty }
     static var isOpenSkyConfigured: Bool { !openSkyClientId.isEmpty && !openSkyClientSecret.isEmpty }
+    static var isAeroDataBoxConfigured: Bool { !aeroDataBoxKey.isEmpty }
 }

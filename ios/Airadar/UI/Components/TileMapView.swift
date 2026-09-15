@@ -51,9 +51,19 @@ struct TileMapView: UIViewRepresentable {
     var directionColored = false
     /// Where the aircraft actually is (ADS-B); with it, the plane leaves the arc's estimate for the real point.
     var livePlane: LivePosition? = nil
-    var selected: [(Airport, Airport)] = []
+    /// The one leg to highlight — (from, to, rank), naming the exact repeat of
+    /// that pair a line tap picked out — or nil for none.
+    var selected: (Airport, Airport, Int)? = nil
+    /// An airport to show a dot for even with no route touching it — an upcoming
+    /// departure, say — and whether to draw that dot blue (a route to it is
+    /// actually available) or leave it the ordinary colour.
+    struct HighlightedAirport { let airport: Airport; let reachable: Bool }
+    var highlightedAirports: [HighlightedAirport] = []
     var emptyFocus: Region? = nil
-    var onLegTap: (([(Airport, Airport)]) -> Void)? = nil
+    /// A tap on one line: which leg, exactly.
+    var onLegTap: ((Airport, Airport, Int) -> Void)? = nil
+    /// A tap on an airport's dot.
+    var onAirportTap: ((Airport) -> Void)? = nil
     var onMapTap: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -109,20 +119,20 @@ struct TileMapView: UIViewRepresentable {
                 flown.color = Coordinator.liveColor; flown.width = 1.6; flown.arrow = false
                 map.addOverlay(flown, level: .aboveLabels)
                 map.addAnnotation(PlaneAnnotation(coordinate: planeAt, heading: heading))
-                legs.append(.init(line: whole, from: r.from, to: r.to))
+                legs.append(.init(line: whole, from: r.from, to: r.to, rank: r.rank))
                 continue
             }
             let line = LegPolyline(coordinates: coords, count: coords.count)
             let base = directionColored ? Coordinator.directionColor(r.from, r.to) : (r.isReturn ? Coordinator.returnColor : Coordinator.routeColor)
-            line.color = isSelected(r.from, r.to) ? Coordinator.selectedColor : base
+            line.color = isSelected(r.from, r.to, rank: r.rank) ? Coordinator.selectedColor : base
             line.width = 1.0
             map.addOverlay(line, level: .aboveLabels)
-            legs.append(.init(line: line, from: r.from, to: r.to))
+            legs.append(.init(line: line, from: r.from, to: r.to, rank: r.rank))
         }
         for t in tracks {
             let coords = t.points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
             let line = LegPolyline(coordinates: coords, count: coords.count)
-            line.color = isSelected(t.from, t.to) ? Coordinator.selectedColor : (t.live ? Coordinator.liveColor : Coordinator.routeColor)
+            line.color = isSelected(t.from, t.to, rank: 0) ? Coordinator.selectedColor : (t.live ? Coordinator.liveColor : Coordinator.routeColor)
             line.width = t.live ? 1.6 : 1.2
             line.arrow = !t.live
             map.addOverlay(line, level: .aboveLabels)
@@ -135,15 +145,17 @@ struct TileMapView: UIViewRepresentable {
                 ahead.color = UIColor.secondaryLabel.withAlphaComponent(0.6); ahead.width = 1.0; ahead.dashed = true; ahead.arrow = false
                 map.addOverlay(ahead, level: .aboveLabels)
             }
-            legs.append(.init(line: line, from: t.from, to: t.to))
+            legs.append(.init(line: line, from: t.from, to: t.to, rank: 0))
         }
         context.coordinator.legs = legs
 
         var airports: [String: Airport] = [:]
         for r in routes { airports[r.from.iata] = r.from; airports[r.to.iata] = r.to }
         for t in tracks { airports[t.from.iata] = t.from; airports[t.to.iata] = t.to }
+        for h in highlightedAirports { airports[h.airport.iata] = h.airport }
+        let blue = Set(highlightedAirports.filter(\.reachable).map { $0.airport.iata })
         for a in airports.values {
-            let pin = AirportAnnotation(airport: a, label: cityLabels ? a.city : nil)
+            let pin = AirportAnnotation(airport: a, label: cityLabels ? a.city : nil, blue: blue.contains(a.iata))
             map.addAnnotation(pin)
         }
 
@@ -166,8 +178,9 @@ struct TileMapView: UIViewRepresentable {
         }
     }
 
-    private func isSelected(_ a: Airport, _ b: Airport) -> Bool {
-        selected.contains { $0.0.iata == a.iata && $0.1.iata == b.iata }
+    private func isSelected(_ a: Airport, _ b: Airport, rank: Int) -> Bool {
+        guard let selected else { return false }
+        return selected.0.iata == a.iata && selected.1.iata == b.iata && selected.2 == rank
     }
 
     /// The bowed line between two airports. The rule: every flight keeps to the
@@ -265,7 +278,7 @@ struct TileMapView: UIViewRepresentable {
             b.latitude >= a.latitude ? routeColor : returnColor
         }
 
-        struct Leg { let line: LegPolyline; let from: Airport; let to: Airport }
+        struct Leg { let line: LegPolyline; let from: Airport; let to: Airport; let rank: Int }
 
         var parent: TileMapView
         var legs: [Leg] = []
@@ -298,10 +311,10 @@ struct TileMapView: UIViewRepresentable {
                 view.canShowCallout = false
                 return view
             }
-            guard annotation is AirportAnnotation else { return nil }
+            guard let pin = annotation as? AirportAnnotation else { return nil }
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: "airport") ?? MKAnnotationView(annotation: annotation, reuseIdentifier: "airport")
             view.annotation = annotation
-            view.image = Self.dot
+            view.image = pin.blue ? Self.blueDot : Self.dot
             view.canShowCallout = false
             // The city's name, set just above the dot.
             view.subviews.forEach { $0.removeFromSuperview() }
@@ -319,18 +332,25 @@ struct TileMapView: UIViewRepresentable {
             return view
         }
 
-        /// A tap on an airport dot: every leg touching it.
+        /// A tap on an airport dot: the airport itself, not its legs.
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             guard let a = (view.annotation as? AirportAnnotation)?.airport else { return }
-            let touching = legs.filter { $0.from.iata == a.iata || $0.to.iata == a.iata }.map { ($0.from, $0.to) }
-            if !touching.isEmpty { parent.onLegTap?(touching) }
+            parent.onAirportTap?(a)
             mapView.deselectAnnotation(view.annotation, animated: false)
         }
 
-        /// A tap on the map: the single nearest leg within reach, measured in points.
+        /// A tap on the map: the single nearest leg within reach, measured in
+        /// points — just that one repeat of the pair, not every flight on it.
+        /// An airport's own dot wins first: a line often passes right by one, and
+        /// without this a tap meant for the dot would light up its line as well.
         @objc func tapped(_ g: UITapGestureRecognizer) {
             guard let map = g.view as? MKMapView else { return }
             let p = g.location(in: map)
+            for annotation in map.annotations {
+                guard let airport = annotation as? AirportAnnotation else { continue }
+                let at = map.convert(airport.coordinate, toPointTo: map)
+                if hypot(p.x - at.x, p.y - at.y) <= 18 { return }
+            }
             var best: (Leg, CGFloat)?
             for leg in legs {
                 let pts = leg.line.points()
@@ -343,7 +363,7 @@ struct TileMapView: UIViewRepresentable {
                 }
                 if best == nil || minD < best!.1 { best = (leg, minD) }
             }
-            if let best, best.1 <= 28 { parent.onLegTap?([(best.0.from, best.0.to)]) }
+            if let best, best.1 <= 28 { parent.onLegTap?(best.0.from, best.0.to, best.0.rank) }
             else { parent.onMapTap?() }
         }
 
@@ -381,6 +401,18 @@ struct TileMapView: UIViewRepresentable {
                 ctx.cgContext.fillEllipse(in: CGRect(x: 3, y: 3, width: 6, height: 6))
             }
         }()
+
+        /// A trip's leaving from here within a day, and it's actually reachable —
+        /// the same dot, in a colour that pops off the muted basemap.
+        static let blueDot: UIImage = {
+            let size = CGSize(width: 14, height: 14)
+            return UIGraphicsImageRenderer(size: size).image { ctx in
+                UIColor.systemBlue.setFill()
+                ctx.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
+                UIColor.white.setFill()
+                ctx.cgContext.fillEllipse(in: CGRect(x: 3.5, y: 3.5, width: 7, height: 7))
+            }
+        }()
     }
 }
 
@@ -410,8 +442,10 @@ final class PlaneAnnotation: NSObject, MKAnnotation {
 final class AirportAnnotation: NSObject, MKAnnotation {
     let airport: Airport
     let label: String?
+    /// A trip leaving from here within a day, and a route to it actually exists.
+    let blue: Bool
     var coordinate: CLLocationCoordinate2D { airport.coordinate }
-    init(airport: Airport, label: String? = nil) { self.airport = airport; self.label = label }
+    init(airport: Airport, label: String? = nil, blue: Bool = false) { self.airport = airport; self.label = label; self.blue = blue }
 }
 
 extension Airport {

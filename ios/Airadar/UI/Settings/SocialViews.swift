@@ -267,7 +267,12 @@ struct EmailImportView: View {
             Section("Or paste a booking confirmation") {
                 TextEditor(text: $pasted).frame(minHeight: 140)
                 Button("Scan the text") {
-                    Task { let n = await TripImporter.run(FlightEmailParser.candidates(pasted)); status = n == 0 ? "No new flights recognised." : "\(n) trips added — confirm them in Trips." }
+                    Task {
+                        let result = await TripImporter.run(FlightEmailParser.candidates(pasted))
+                        status = result.added > 0 ? "\(result.added) trips added — confirm them in Trips."
+                            : result.unconfirmed.isEmpty ? "No new flights recognised."
+                            : "Recognised \(result.unconfirmed.map(\.flightNumber).joined(separator: ", ")), but couldn't confirm against the schedule: \(result.unconfirmed.first?.reason ?? "")"
+                    }
                 }
                 .disabled(pasted.isEmpty)
             }
@@ -283,10 +288,11 @@ struct EmailImportView: View {
                 let token = try await GoogleAuth.gmailAccessToken()
                 status = "Searching the mailbox"
                 let found = try await GmailImporter.scan(accessToken: token) { p in Task { @MainActor in status = "Reading mail \(p.scanned) of \(p.total)" } }
-                let added = await TripImporter.run(found) { done, total in status = "Checking flight \(done) of \(total)" }
+                let result = await TripImporter.run(found) { done, total in status = "Checking flight \(done) of \(total)" }
                 status = found.isEmpty ? "No mail mentioning a flight in the last two years."
-                    : added == 0 ? "Read \(found.count) candidates; every flight is already in Trips."
-                    : "\(added) trips added — open each one in Trips to confirm."
+                    : result.added > 0 ? "\(result.added) trips added — open each one in Trips to confirm."
+                    : result.alreadyPresent == found.count ? "Read \(found.count) candidates; every flight is already in Trips."
+                    : "Read \(found.count) candidates; \(result.unconfirmed.count) couldn't be confirmed against the schedule (renumbered, seasonal, or too far past)."
             } catch { status = error.localizedDescription }
         }
     }

@@ -131,6 +131,9 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     var isPending: Bool = false
     /// Typed in by hand because no source knew it; shown with a warning block.
     var isManual: Bool = false
+    /// Where this trip was found: "gmail" or "calendar" — nil for one the
+    /// backend already knew, one typed by hand, or one pasted as plain text.
+    var importedVia: String?
     /// Names found on the ticket text this trip was imported from.
     var passengers: [String] = []
     var track: [TrackPoint]?
@@ -144,7 +147,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, flightNumber, airlineName, departure, arrival, departureTerminal, arrivalTerminal, departureGate, arrivalGate
         case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, callsign, pnr, isPending, isManual, passengers
-        case track, trackFlownOn, deletedAt, sharedBy, shares
+        case track, trackFlownOn, deletedAt, sharedBy, shares, importedVia
     }
 
     init(id: String, flightNumber: String, airlineName: String, departure: String, arrival: String,
@@ -179,6 +182,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         pnr = try c.decodeIfPresent(String.self, forKey: .pnr)
         isPending = try c.decodeIfPresent(Bool.self, forKey: .isPending) ?? false
         isManual = try c.decodeIfPresent(Bool.self, forKey: .isManual) ?? false
+        importedVia = try c.decodeIfPresent(String.self, forKey: .importedVia)
         passengers = try c.decodeIfPresent([String].self, forKey: .passengers) ?? []
         track = try c.decodeIfPresent([[Double]].self, forKey: .track)?.compactMap { $0.count >= 2 ? TrackPoint(lat: $0[0], lon: $0[1]) : nil }
         trackFlownOn = try c.decodeIfPresent(String.self, forKey: .trackFlownOn).map { String($0.prefix(10)) }
@@ -208,6 +212,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         try c.encodeIfPresent(pnr, forKey: .pnr)
         try c.encode(isPending, forKey: .isPending)
         try c.encode(isManual, forKey: .isManual)
+        try c.encodeIfPresent(importedVia, forKey: .importedVia)
         if !passengers.isEmpty { try c.encode(passengers, forKey: .passengers) }
         try c.encodeIfPresent(track?.map { [$0.lat, $0.lon] }, forKey: .track)
         try c.encodeIfPresent(trackFlownOn, forKey: .trackFlownOn)
@@ -241,6 +246,15 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         if arrival < now || status == .landed || status == .completed { return .past }
         if dep.addingTimeInterval(TimeInterval(delayMinutes * 60)) <= now { return .inProgress }
         return .upcoming
+    }
+
+    /// What the status should read once the clock alone already knows the
+    /// flight is over — a source that never polls again after departure can
+    /// leave a real trip stuck reading "Scheduled" long after it landed.
+    /// Cancelled and diverted stay as they are; those are real outcomes worth keeping.
+    var displayStatus: FlightStatus {
+        guard phase == .past, status != .cancelled, status != .diverted else { return status }
+        return .landed
     }
 
     var durationMinutes: Int {
@@ -345,6 +359,16 @@ func systemPrefersMetric() -> Bool {
 
 func formatDistance(_ km: Int) -> String {
     systemPrefersMetric() ? "\(km.formatted()) km" : "\(Int(Double(km) * 0.621371).formatted()) mi"
+}
+
+/// "T1", "Terminal 1" and "1" are the same terminal spelled three ways
+/// depending on which source recorded it — decided here, once, so nowhere
+/// else risks compounding an already-prefixed "T1" into a displayed "TT1".
+func normalizeTerminal(_ raw: String) -> String {
+    var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if s.lowercased().hasPrefix("terminal ") { s = String(s.dropFirst("terminal ".count)) }
+    if s.uppercased().hasPrefix("T"), s.count > 1, s.dropFirst().first?.isNumber == true { s = String(s.dropFirst()) }
+    return s.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 func formatDuration(_ minutes: Int) -> String {

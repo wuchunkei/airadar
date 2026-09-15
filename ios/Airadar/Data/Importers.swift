@@ -3,11 +3,26 @@ import EventKit
 import CoreLocation
 import MapKit
 
+/// Where a candidate was spotted — carried through to the finished `Flight` as
+/// `importedVia`, for the badge on its card. Not part of equality: the same
+/// flight+date found twice should still dedupe, whichever way it was found.
+enum CandidateSource: String, Sendable { case gmail, calendar }
+
 /// A flight number and a date spotted in some text, not yet checked against anything.
-struct Candidate: Hashable, Sendable {
+struct Candidate: Sendable {
     let flightNumber: String
     let date: String  // yyyy-MM-dd
     var passengers: [String] = []
+    var source: CandidateSource? = nil
+}
+
+extension Candidate: Hashable {
+    static func == (a: Candidate, b: Candidate) -> Bool {
+        a.flightNumber == b.flightNumber && a.date == b.date && a.passengers == b.passengers
+    }
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(flightNumber); hasher.combine(date); hasher.combine(passengers)
+    }
 }
 
 /// Pulls flight numbers and dates out of a booking confirmation, a calendar event,
@@ -108,23 +123,42 @@ enum FlightEmailParser {
 
 /// Candidates → pending trips, each checked against the server's timetable.
 enum TripImporter {
+    /// `unconfirmed` is why a hunt can find candidates and add none of them
+    /// without it looking like nothing was found at all: the server's
+    /// schedule source only reaches a flight number's *current* timetable, so
+    /// one renumbered, seasonal, or long discontinued since a calendar entry
+    /// or old email named it comes back with nothing to confirm against —
+    /// silently, unless this is looked at.
+    struct Result: Sendable {
+        var added = 0
+        var alreadyPresent = 0
+        var unconfirmed: [(flightNumber: String, reason: String)] = []
+    }
+
     @MainActor
-    static func run(_ candidates: [Candidate], progress: (Int, Int) -> Void = { _, _ in }) async -> Int {
+    static func run(_ candidates: [Candidate], progress: (Int, Int) -> Void = { _, _ in }) async -> Result {
         let distinct = Array(Set(candidates))
         let existing = FlightStore.shared.flights
-        var added = 0
+        var result = Result()
         for (i, c) in distinct.enumerated() {
-            let already = existing.contains { $0.flightNumber == c.flightNumber && $0.departureDay == c.date }
-            if !already, var f = try? await BackendClient.flight(c.flightNumber, on: c.date) {
+            defer { progress(i + 1, distinct.count) }
+            if existing.contains(where: { $0.flightNumber == c.flightNumber && $0.departureDay == c.date }) {
+                result.alreadyPresent += 1
+                continue
+            }
+            do {
+                var f = try await BackendClient.flight(c.flightNumber, on: c.date)
                 f.isPending = true
                 f.passengers = c.passengers
+                f.importedVia = c.source?.rawValue
                 // A refusal means the plan is full; the rest would be refused too.
-                if !FlightStore.shared.add(f) { return added }
-                added += 1
+                guard FlightStore.shared.add(f) else { return result }
+                result.added += 1
+            } catch {
+                result.unconfirmed.append((c.flightNumber, error.localizedDescription))
             }
-            progress(i + 1, distinct.count)
         }
-        return added
+        return result
     }
 }
 
@@ -150,7 +184,7 @@ enum CalendarImporter {
             let cands = spansDays
                 ? FlightEmailParser.candidates(text, fallbackDates: [day])
                 : FlightEmailParser.codes(in: text).map { Candidate(flightNumber: $0, date: day, passengers: FlightEmailParser.passengers(in: text)) }
-            for c in cands where !found.contains(c) { found.append(c) }
+            for var c in cands where !found.contains(c) { c.source = .calendar; found.append(c) }
         }
         return found
     }
@@ -180,7 +214,7 @@ enum GmailImporter {
             let message = try await get(accessToken, "messages/\(id)?format=full")
             var text = (message["snippet"] as? String ?? "") + "\n"
             if let payload = message["payload"] as? [String: Any] { collectText(payload, into: &text) }
-            for c in FlightEmailParser.candidates(text) where !found.contains(c) { found.append(c) }
+            for var c in FlightEmailParser.candidates(text) where !found.contains(c) { c.source = .gmail; found.append(c) }
             progress(Progress(scanned: i + 1, total: ids.count))
         }
         return found
@@ -227,6 +261,14 @@ enum HomeRegion {
         if let fix = await coarseFix() { return fix }
         let code = Locale.current.region?.identifier ?? ""
         return countries[code] ?? Region(latitude: 20, longitude: 0, spanDegrees: 120)
+    }
+
+    /// The same coarse, ask-once fix as `find()`, as a bare coordinate — for
+    /// anything that wants "roughly where the traveller is" without a map span,
+    /// such as an ETA to an airport. Nil with no permission or no fix yet.
+    @MainActor
+    static func coarseCoordinate() async -> CLLocationCoordinate2D? {
+        await coarseFix().map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
     @MainActor

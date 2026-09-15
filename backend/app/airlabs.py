@@ -74,13 +74,38 @@ async def schedule(client: httpx.AsyncClient, number: str, day: date) -> Flight:
     body = await _get(client, "schedules", flight_iata=number.upper())
     rows = body.get("response") or []
     if not rows:
-        raise AirLabsError(f"AirLabs has no schedule for {number.upper()}.")
+        hint = await _adsbdb_route_hint(client, number)
+        raise AirLabsError(
+            f"AirLabs has no schedule for {number.upper()} anymore — likely renumbered, "
+            f"seasonal, or discontinued since." + hint
+        )
     row = next((r for r in rows if str(r.get("dep_time", "")).startswith(day.isoformat())), None)
     if row is not None:
         return _parse(await _with_airline_name(client, row, number), number, day)
     # AirLabs only lists the next day or two. Further out, the timetable is the
     # same clock times on the asked-for day, with nothing live attached to it.
     return _rebase(_parse(await _with_airline_name(client, rows[0], number), number, day), day)
+
+
+async def _adsbdb_route_hint(client: httpx.AsyncClient, number: str) -> str:
+    """A free, keyless fallback for the *route alone*, when AirLabs no longer
+    operates a flight number at all — renumbered, seasonal, long discontinued.
+    adsbdb (github.com/mrjackwills/adsbdb) has no schedule/time data either, so
+    this only ever enriches the error message, never stands in for a real
+    Flight: a traveller reading it at least knows which airports to add by
+    hand rather than being told nothing more than "not found". Never raises —
+    a network hiccup here should not change how the caller's own error reads.
+    """
+    try:
+        resp = await client.get(f"https://api.adsbdb.com/v0/callsign/{number.upper()}", timeout=8)
+        route = (resp.json().get("response") or {}).get("flightroute") or {}
+        origin = (route.get("origin") or {}).get("iata_code")
+        destination = (route.get("destination") or {}).get("iata_code")
+        if origin and destination:
+            return f" adsbdb still has its route though: {origin} → {destination} — worth adding by hand with the real times from your own booking."
+    except Exception:
+        pass
+    return ""
 
 
 def _rebase(f: Flight, day: date) -> Flight:
