@@ -62,26 +62,36 @@ def _local(node: dict | None, key: str) -> datetime | None:
         return None
 
 
-async def flight(client: httpx.AsyncClient, number: str, day: date) -> Flight:
-    cleaned = number.upper().replace(" ", "")
-    url = f"{API}/flights/number/{cleaned}/{day.isoformat()}"
+async def _fetch(client: httpx.AsyncClient, number: str, day: date, role: str) -> list[dict]:
+    url = f"{API}/flights/number/{number}/{day.isoformat()}?dateLocalRole={role}"
     headers = {"x-rapidapi-key": _key(), "x-rapidapi-host": "aerodatabox.p.rapidapi.com"}
     resp = await client.get(url, headers=headers, timeout=20)
-    if resp.status_code == 404:
-        raise AeroDataBoxError(f"AeroDataBox has nothing for {cleaned} on {day.isoformat()}.")
+    if resp.status_code in (204, 404):
+        return []
     if resp.status_code != 200:
-        raise AeroDataBoxError(f"AeroDataBox answered HTTP {resp.status_code} for {cleaned}.")
-    rows = resp.json() or []
+        raise AeroDataBoxError(f"AeroDataBox answered HTTP {resp.status_code} for {number}.")
+    return resp.json() or []
+
+
+async def flight(client: httpx.AsyncClient, number: str, day: date) -> Flight:
+    cleaned = number.upper().replace(" ", "")
+    # "Departure date" in the app means exactly that — ask AeroDataBox for the
+    # same thing (dateLocalRole=Departure), not its default "Both", which
+    # matched a flight only by its *arrival* falling on the asked-for day and
+    # so quietly handed back the wrong calendar date at least once (ZH9315,
+    # asked for the 15th, got the 14th's late-night departure that landed
+    # into the 15th instead).
+    rows = await _fetch(client, cleaned, day, "Departure")
     if not rows:
-        raise AeroDataBoxError(f"AeroDataBox found no flights for {cleaned} on {day.isoformat()}.")
+        # Nothing genuinely departs this day — the closest real thing is often
+        # a late-night flight the day before, still arriving into it; every
+        # date shown afterwards is the row's own, so this is never presented
+        # as if it were an on-day departure.
+        rows = await _fetch(client, cleaned, day, "Both")
+    if not rows:
+        raise AeroDataBoxError(f"AeroDataBox found no flights for {cleaned} around {day.isoformat()}.")
 
-    # "Both" (the default role) can hand back a departure-day row and an
-    # arrival-day row for an overnight flight; the one whose own departure
-    # falls on the asked-for local day is the one that actually matches it.
-    def local_day(row: dict) -> str:
-        return ((row.get("departure") or {}).get("scheduledTime") or {}).get("local", "")
-
-    row = next((r for r in rows if local_day(r).startswith(day.isoformat())), rows[0])
+    row = rows[0]
     dep, arr = row.get("departure") or {}, row.get("arrival") or {}
     dep_iata = ((dep.get("airport") or {}).get("iata") or "").upper()
     arr_iata = ((arr.get("airport") or {}).get("iata") or "").upper()
