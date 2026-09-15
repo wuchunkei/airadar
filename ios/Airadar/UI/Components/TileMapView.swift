@@ -59,6 +59,13 @@ struct TileMapView: UIViewRepresentable {
     /// actually available) or leave it the ordinary colour.
     struct HighlightedAirport { let airport: Airport; let reachable: Bool }
     var highlightedAirports: [HighlightedAirport] = []
+    /// The blue dot — off by default. On, `userTrackingMode` decides whether
+    /// the camera actually follows it too.
+    var showsUserLocation = false
+    /// Two-way: setting `.follow` recentres the camera on the user: MapKit
+    /// itself demotes this back to `.none` the moment a manual pan happens,
+    /// and that demotion needs to flow back out to whatever drives a button.
+    var userTrackingMode: Binding<MKUserTrackingMode>? = nil
     var emptyFocus: Region? = nil
     /// A tap on one line: which leg, exactly.
     var onLegTap: ((Airport, Airport, Int) -> Void)? = nil
@@ -159,8 +166,15 @@ struct TileMapView: UIViewRepresentable {
             map.addAnnotation(pin)
         }
 
+        map.showsUserLocation = showsUserLocation
+        if let mode = userTrackingMode?.wrappedValue, map.userTrackingMode != mode {
+            map.setUserTrackingMode(mode, animated: true)
+        }
+
         // Frame the network once per set of legs, so a later redraw does not yank the
-        // map out from under a pinch the traveller just made.
+        // map out from under a pinch the traveller just made — or, now, away from
+        // wherever `.follow` has the camera locked onto the user instead.
+        guard userTrackingMode?.wrappedValue != .follow && userTrackingMode?.wrappedValue != .followWithHeading else { return }
         let key = routes.hashValue &* 31 &+ tracks.hashValue
         if routes.isEmpty && tracks.isEmpty {
             if let focus = emptyFocus, context.coordinator.framedFor != focus.latitude.hashValue {
@@ -330,6 +344,12 @@ struct TileMapView: UIViewRepresentable {
                 view.addSubview(label)
             }
             return view
+        }
+
+        /// MapKit demotes `.follow` to `.none` the moment a manual pan happens —
+        /// the button watching this binding needs to hear about that too.
+        func mapView(_ mapView: MKMapView, didChange mode: MKUserTrackingMode, animated: Bool) {
+            parent.userTrackingMode?.wrappedValue = mode
         }
 
         /// A tap on an airport dot: the airport itself, not its legs.

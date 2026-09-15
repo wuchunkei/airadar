@@ -23,6 +23,11 @@ struct MyView: View {
     /// Among today's departures, which ones driving can actually reach — those
     /// dots draw blue and skip straight to Maps instead of opening the sheet.
     @State private var reachableSoon: Set<String> = []
+    /// The location button's own little state machine: centred by default: a
+    /// pan away and the button just recentres; already centred and the button
+    /// hides the dot outright; hidden and it shows and centres again.
+    @State private var showsUserLocation = true
+    @State private var trackingMode: MKUserTrackingMode = .follow
 
     /// Flown legs, and the one in the air right now with the plane on it.
     private var history: [Flight] { store.flights.filter { ($0.phase == .past || $0.phase == .inProgress) && !$0.isPending } }
@@ -68,6 +73,23 @@ struct MyView: View {
         currentFlightId = (onRoute.indices.contains(rank) ? onRoute[rank] : onRoute.last)?.id
     }
 
+    /// The same three-way cycle Apple's own location button uses, plus a
+    /// fourth: press it while already centred and the dot goes away outright,
+    /// rather than just stopping the camera from following it. Opening My
+    /// straight into "centred" is what makes tapping it immediately hide —
+    /// there's nothing special-cased for that, it just falls out of the states.
+    private func locationButtonTapped() {
+        if !showsUserLocation {
+            showsUserLocation = true
+            trackingMode = .follow
+        } else if trackingMode == .follow || trackingMode == .followWithHeading {
+            showsUserLocation = false
+            trackingMode = .none
+        } else {
+            trackingMode = .follow
+        }
+    }
+
     /// A blue dot (leaving within a day, and reachable) jumps straight into
     /// driving directions; any other dot opens the airport's own info sheet.
     /// Blue or not, a tap opens the same info sheet — blue only says a trip
@@ -95,7 +117,8 @@ struct MyView: View {
                 // Full-bleed, as it was — direction tells the colour: blue heading
                 // north, green heading south, so the web of past legs reads at a glance.
                 TileMapView(routes: routes, interactive: true, directionColored: true, selected: highlighted,
-                            highlightedAirports: highlightedAirports, emptyFocus: homeRegion,
+                            highlightedAirports: highlightedAirports, showsUserLocation: showsUserLocation,
+                            userTrackingMode: $trackingMode, emptyFocus: homeRegion,
                             onLegTap: legTapped, onAirportTap: airportTapped, onMapTap: { browsing = []; currentFlightId = nil })
                     .ignoresSafeArea()
 
@@ -119,6 +142,11 @@ struct MyView: View {
                 .padding(.bottom, 12)
             }
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: locationButtonTapped) {
+                        Image(systemName: showsUserLocation && trackingMode != .none ? "location.fill" : "location")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
