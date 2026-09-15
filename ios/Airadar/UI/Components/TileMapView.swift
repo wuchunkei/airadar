@@ -59,12 +59,15 @@ struct TileMapView: UIViewRepresentable {
     /// actually available) or leave it the ordinary colour.
     struct HighlightedAirport { let airport: Airport; let reachable: Bool }
     var highlightedAirports: [HighlightedAirport] = []
-    /// The blue dot — off by default. On, `userTrackingMode` decides whether
-    /// the camera actually follows it too.
+    /// The dot — off by default. On, `userTrackingMode` decides whether the
+    /// camera actually follows it too.
     var showsUserLocation = false
-    /// Two-way: setting `.follow` recentres the camera on the user: MapKit
-    /// itself demotes this back to `.none` the moment a manual pan happens,
-    /// and that demotion needs to flow back out to whatever drives a button.
+    /// Two-way: `.follow` recentres the camera on the user each time a new fix
+    /// comes in — a plain re-centre, not MapKit's own tracking-mode camera,
+    /// which snaps to a close, street-level zoom the moment it engages and
+    /// would undo whatever zoom was showing the route network. A manual pan
+    /// lets go of following, same as MapKit's own tracking mode would, so a
+    /// button watching this binding still sees it demoted back to `.none`.
     var userTrackingMode: Binding<MKUserTrackingMode>? = nil
     var emptyFocus: Region? = nil
     /// A tap on one line: which leg, exactly.
@@ -167,14 +170,19 @@ struct TileMapView: UIViewRepresentable {
         }
 
         map.showsUserLocation = showsUserLocation
-        if let mode = userTrackingMode?.wrappedValue, map.userTrackingMode != mode {
-            map.setUserTrackingMode(mode, animated: true)
+        let following = userTrackingMode?.wrappedValue == .follow || userTrackingMode?.wrappedValue == .followWithHeading
+        context.coordinator.following = following
+        // A plain re-centre on whatever fix is already in hand — never through
+        // MapKit's own tracking-mode camera, which would zoom to street level
+        // the instant it engaged and undo the zoom the route network needs.
+        if following, let loc = map.userLocation.location {
+            context.coordinator.recenter(map, on: loc.coordinate)
         }
 
         // Frame the network once per set of legs, so a later redraw does not yank the
         // map out from under a pinch the traveller just made — or, now, away from
-        // wherever `.follow` has the camera locked onto the user instead.
-        guard userTrackingMode?.wrappedValue != .follow && userTrackingMode?.wrappedValue != .followWithHeading else { return }
+        // wherever following has the camera locked onto the user instead.
+        guard !following else { return }
         let key = routes.hashValue &* 31 &+ tracks.hashValue
         if routes.isEmpty && tracks.isEmpty {
             if let focus = emptyFocus, context.coordinator.framedFor != focus.latitude.hashValue {
@@ -299,6 +307,11 @@ struct TileMapView: UIViewRepresentable {
         var framedFor = 0
         var pendingRect: MKMapRect?
         weak var map: MKMapView?
+        /// Whether the camera is meant to be following the user right now.
+        var following = false
+        /// Set while `recenter` itself is moving the camera, so the region
+        /// change it causes isn't mistaken for a manual pan that should let go.
+        var programmaticChange = false
 
         init(_ parent: TileMapView) { self.parent = parent }
 
@@ -316,6 +329,14 @@ struct TileMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if annotation is MKUserLocation {
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: "me") as? PulsingUserLocationView
+                    ?? PulsingUserLocationView(annotation: annotation, reuseIdentifier: "me")
+                view.annotation = annotation
+                view.isEnabled = false
+                view.canShowCallout = false
+                return view
+            }
             if let plane = annotation as? PlaneAnnotation {
                 let view = mapView.dequeueReusableAnnotationView(withIdentifier: "plane") ?? MKAnnotationView(annotation: annotation, reuseIdentifier: "plane")
                 view.annotation = annotation
@@ -346,10 +367,26 @@ struct TileMapView: UIViewRepresentable {
             return view
         }
 
-        /// MapKit demotes `.follow` to `.none` the moment a manual pan happens —
-        /// the button watching this binding needs to hear about that too.
-        func mapView(_ mapView: MKMapView, didChange mode: MKUserTrackingMode, animated: Bool) {
-            parent.userTrackingMode?.wrappedValue = mode
+        /// Each new fix while following: a plain re-centre, preserving whatever
+        /// zoom is already showing — never MapKit's own tracking-mode camera.
+        func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
+            guard following, let loc = userLocation.location else { return }
+            recenter(mapView, on: loc.coordinate)
+        }
+
+        /// A manual pan or pinch while following: let go, the same way MapKit's
+        /// own tracking mode would — but only for a region change we didn't
+        /// ourselves just start with `recenter`.
+        func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            guard following, !programmaticChange else { return }
+            following = false
+            parent.userTrackingMode?.wrappedValue = .none
+        }
+
+        func recenter(_ map: MKMapView, on coordinate: CLLocationCoordinate2D) {
+            programmaticChange = true
+            map.setCenter(coordinate, animated: true)
+            DispatchQueue.main.async { [weak self] in self?.programmaticChange = false }
         }
 
         /// A tap on an airport dot: the airport itself, not its legs.
@@ -457,6 +494,68 @@ final class PlaneAnnotation: NSObject, MKAnnotation {
     let coordinate: CLLocationCoordinate2D
     let heading: Double
     init(coordinate: CLLocationCoordinate2D, heading: Double) { self.coordinate = coordinate; self.heading = heading }
+}
+
+/// The user's own position: a small green dot with a soft ring that bursts
+/// outward once every ten seconds — not MapKit's default blue disc, which
+/// reads too large next to the thin route lines and pulses continuously.
+final class PulsingUserLocationView: MKAnnotationView {
+    private let ring = CALayer()
+    private var timer: Timer?
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        frame = CGRect(x: 0, y: 0, width: 24, height: 24)
+        let green = UIColor(red: 0.20, green: 0.78, blue: 0.35, alpha: 1)
+
+        ring.frame = bounds
+        ring.cornerRadius = bounds.width / 2
+        ring.backgroundColor = UIColor.clear.cgColor
+        ring.borderColor = green.cgColor
+        ring.borderWidth = 1.5
+        ring.opacity = 0
+        layer.addSublayer(ring)
+
+        let dotSize: CGFloat = 10
+        let core = CALayer()
+        core.frame = CGRect(x: (bounds.width - dotSize) / 2, y: (bounds.height - dotSize) / 2, width: dotSize, height: dotSize)
+        core.cornerRadius = dotSize / 2
+        core.backgroundColor = green.cgColor
+        core.borderColor = UIColor.white.cgColor
+        core.borderWidth = 1.5
+        layer.addSublayer(core)
+
+        schedulePulse()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func schedulePulse() {
+        pulseOnce()
+        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in self?.pulseOnce() }
+    }
+
+    private func pulseOnce() {
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 1.0; scale.toValue = 2.6
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.7; fade.toValue = 0
+        let group = CAAnimationGroup()
+        group.animations = [scale, fade]
+        group.duration = 1.1
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        ring.add(group, forKey: "pulse")
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        timer?.invalidate()
+        schedulePulse()
+    }
+    // No deinit invalidating the timer: this view lives as long as the map
+    // does, and a repeating Timer holding only a weak self is harmless to
+    // leave running past that — Swift 6's actor isolation won't let a
+    // nonisolated deinit touch a main-actor Timer property anyway.
 }
 
 final class AirportAnnotation: NSObject, MKAnnotation {

@@ -64,8 +64,6 @@ private enum Urgency {
         case .airborne, .done: .green
         }
     }
-    /// The last three hours are boxed as well as coloured.
-    var boxed: Bool { self == .hours2 || self == .hour1 || self == .last }
 }
 
 // MARK: - The widget
@@ -249,19 +247,16 @@ private struct CountdownDigits: View {
     }
 }
 
-/// The digits with their word, coloured by how close it is, boxed in the last three hours.
+/// The digits with their word, coloured by how close it is — no border, just the colour.
 private struct Countdown: View {
     let state: FlightActivityAttributes.ContentState
     var body: some View {
-        let u = state.urgency
         HStack(spacing: 4) {
             CountdownDigits(state: state).monospacedDigit()
             Text(state.stage == .airborne ? "Landing" : "Boarding")
         }
         .fontWeight(.semibold)
-        .foregroundStyle(u.color)
-        .padding(.horizontal, u.boxed ? 8 : 0).padding(.vertical, u.boxed ? 2 : 0)
-        .overlay { if u.boxed { Capsule().strokeBorder(u.color, lineWidth: 1) } }
+        .foregroundStyle(state.urgency.color)
     }
 }
 
