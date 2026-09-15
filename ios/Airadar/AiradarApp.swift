@@ -11,6 +11,7 @@ struct AiradarApp: App {
 
     init() {
         GoogleAuth.configure()
+        BackgroundRefresh.register()
     }
 
     var body: some Scene {
@@ -35,8 +36,12 @@ struct AiradarApp: App {
                     }
                 }
                 // Back to the foreground: the day's flights may have moved.
+                // Leaving it: queue the best-effort background wake, since
+                // nothing else will keep the Live Activity fresh once this
+                // loop below stops running.
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active, auth.isSignedIn { Task { try? await store.syncFromServer() } }
+                    if phase == .background { BackgroundRefresh.schedule() }
                 }
                 // While a flight is near: the Live Activity rewritten every minute (its countdown,
                 // colours and the plane's place are the app's to write); the server asked every second minute.

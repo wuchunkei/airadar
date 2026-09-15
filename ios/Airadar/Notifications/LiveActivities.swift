@@ -21,7 +21,10 @@ enum LiveActivities {
             Task { await a.end(nil, dismissalPolicy: .immediate) }
         }
         for f in wanted {
-            let content = ActivityContent(state: contentState(f), staleDate: now.addingTimeInterval(3 * 60))
+            // Wider than the foreground loop's own minute-by-minute cadence needs, so a
+            // background wake spaced out further than that (BackgroundRefresh.swift — no
+            // guaranteed interval) doesn't grey the Island out in the gaps between them.
+            let content = ActivityContent(state: contentState(f), staleDate: now.addingTimeInterval(16 * 60))
             if let a = running.first(where: { $0.attributes.tripId == f.id }) {
                 // Attributes cannot change; one started before its mark arrived is replaced.
                 if a.attributes.logo == nil, let logo = AirlineLogos.thumbnail(for: f.flightNumber, onArrival: {}) {

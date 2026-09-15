@@ -53,6 +53,9 @@ targets:
         NSCalendarsFullAccessUsageDescription: Airadar reads your calendars to find flights you already have.
         NSLocationWhenInUseUsageDescription: Used to centre the map on your region until you have trips, to show driving/transit time from here to an airport you tap, and — only while you have it turned on with the map's own location button — to show where you are on the My map.
         NSSupportsLiveActivities: true
+        # Best-effort Live Activity refresh while backgrounded — see BackgroundRefresh.swift.
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [com.airadar.app.refresh]
         # OpenSky's TLS setup lacks the forward-secrecy ciphers ATS insists on.
         NSAppTransportSecurity:
           NSExceptionDomains:
