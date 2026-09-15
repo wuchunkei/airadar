@@ -116,38 +116,57 @@ struct ManualFlightForm: View {
             }
             // Whichever airport is typed, its own terminals get looked up quietly —
             // cancelled and restarted on every keystroke, so only the pause after
-            // typing actually finishes one.
-            .task(id: from) { depTerminalOptions = await Self.lookupTerminals(from) }
-            .task(id: to) { arrTerminalOptions = await Self.lookupTerminals(to) }
-        }
-    }
-
-    /// A little dropdown beside the free-text field — a terminal typed by hand
-    /// still works (a small airfield may have nothing worth looking up), but
-    /// once the airport's own terminals are known, picking one beats typing it.
-    @ViewBuilder
-    private func terminalField(_ text: Binding<String>, options: [String]) -> some View {
-        HStack(spacing: 2) {
-            TextField("Terminal", text: text)
-            if !options.isEmpty {
-                Menu {
-                    ForEach(options, id: \.self) { option in
-                        Button(TerminalDiscovery.displayLabel(option)) { text.wrappedValue = option }
-                    }
-                } label: {
-                    Image(systemName: "chevron.down.circle.fill").foregroundStyle(.secondary).font(.caption)
-                }
+            // typing actually finishes one. A blank field only ever gets filled in
+            // once, on the first resolution — never overwritten after that, so
+            // editing an existing (or already-typed) value is never clobbered.
+            .task(id: from) {
+                let options = await Self.lookupTerminals(from)
+                depTerminalOptions = options
+                if depTerminal.isEmpty, let only = options.first { depTerminal = only }
+            }
+            .task(id: to) {
+                let options = await Self.lookupTerminals(to)
+                arrTerminalOptions = options
+                if arrTerminal.isEmpty, let only = options.first { arrTerminal = only }
             }
         }
-        .frame(width: 130)
     }
 
+    /// One terminal known: forced, nothing to type or pick — there's no other
+    /// answer. Several: an actual choice, a menu rather than free text. None
+    /// known: back to a plain text field, for whatever a small airfield or an
+    /// unlisted one needs typed by hand.
+    @ViewBuilder
+    private func terminalField(_ text: Binding<String>, options: [String]) -> some View {
+        if options.count == 1 {
+            Text(TerminalDiscovery.displayLabel(options[0])).foregroundStyle(.secondary)
+                .frame(width: 130, alignment: .trailing)
+        } else if options.count > 1 {
+            Menu {
+                ForEach(options, id: \.self) { option in
+                    Button(TerminalDiscovery.displayLabel(option)) { text.wrappedValue = option }
+                }
+            } label: {
+                HStack(spacing: 2) {
+                    Text(text.wrappedValue.isEmpty ? "Choose" : TerminalDiscovery.displayLabel(text.wrappedValue))
+                    Image(systemName: "chevron.down").font(.caption2)
+                }
+            }
+            .frame(width: 130, alignment: .trailing)
+        } else {
+            TextField("Terminal", text: text).frame(width: 130).multilineTextAlignment(.trailing)
+        }
+    }
+
+    /// "Departure"/"Arrival" (a hall, not a numbered terminal) never counts as
+    /// one of an airport's terminals — there's nothing to force or choose
+    /// between if that's all a search turns up, just the plain text field.
     private static func lookupTerminals(_ iata: String) async -> [String] {
         let code = iata.uppercased()
         guard code.count == 3 else { return [] }
         await AirportDatabase.shared.ensure(code) { try await BackendClient.airport(code) }
         guard let airport = AirportDatabase.shared.airport(code) else { return [] }
-        return await TerminalDiscovery.availableTerminals(for: airport)
+        return await TerminalDiscovery.availableTerminals(for: airport).filter { !["Departure", "Arrival"].contains($0) }
     }
 
     private func add() {

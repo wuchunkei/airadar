@@ -167,12 +167,15 @@ private struct LegCard: View {
                     Text(flight.flightNumber).font(.subheadline.bold()).foregroundStyle(.tint)
                 }
                 Text(flight.departureDay).font(.caption).foregroundStyle(.secondary)
-                HStack {
+                // Equal-width columns either side of the arrow — a pair of plain
+                // Spacers split the space evenly, but that only lands in the true
+                // centre when the two city names happen to be the same width.
+                HStack(spacing: 0) {
                     VStack(alignment: .leading) { Text(flight.departure).font(.title3.bold()); Text(flight.departureAirport?.city ?? "").font(.caption).foregroundStyle(.secondary) }
-                    Spacer()
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Image(systemName: "arrow.right").foregroundStyle(.tint)
-                    Spacer()
                     VStack(alignment: .trailing) { Text(flight.arrival).font(.title3.bold()); Text(flight.arrivalAirport?.city ?? "").font(.caption).foregroundStyle(.secondary) }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
             .padding(14)

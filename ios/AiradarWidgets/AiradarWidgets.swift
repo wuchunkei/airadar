@@ -276,10 +276,12 @@ private struct RouteLine: View {
             let w = g.size.width, midY = g.size.height / 2
             switch state.stage {
             case .before:
-                Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: w - 6, y: midY)) }
+                // Kept well clear of the island's own rounded corner — flush against
+                // the true edge, the arrowhead crowded the curve and looked cut off.
+                Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: w - 14, y: midY)) }
                     .stroke(.white.opacity(0.9), lineWidth: 1.5)
                 Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(.white.opacity(0.9))
-                    .position(x: w - 4, y: midY)
+                    .position(x: w - 8, y: midY)
             case .airborne, .landed:
                 let f = state.stage == .landed ? 1 : state.fractionFlown
                 Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: w - 8, y: midY)) }
