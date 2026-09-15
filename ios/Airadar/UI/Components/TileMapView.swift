@@ -49,6 +49,8 @@ struct TileMapView: UIViewRepresentable {
     /// southbound green — for the "My" overview, where one line per leg reads
     /// better by which way it points than by which trip it belonged to.
     var directionColored = false
+    /// Where the aircraft actually is (ADS-B); with it, the plane leaves the arc's estimate for the real point.
+    var livePlane: LivePosition? = nil
     var selected: [(Airport, Airport)] = []
     var emptyFocus: Region? = nil
     var onLegTap: (([(Airport, Airport)]) -> Void)? = nil
@@ -88,15 +90,25 @@ struct TileMapView: UIViewRepresentable {
         for r in routes {
             let coords = Self.arcPath(r.from, r.to, rank: r.rank)
             if let p = r.progress {
-                // Whole way dashed; the part flown solid green; the plane at the point reached.
+                // Whole way dashed; the part flown solid green; the plane at the point reached —
+                // the real point when ADS-B has one (the arc is cut where it comes nearest), the
+                // timetable's estimate otherwise.
                 let whole = LegPolyline(coordinates: coords, count: coords.count)
                 whole.color = UIColor.secondaryLabel.withAlphaComponent(0.6); whole.width = 1.0; whole.dashed = true; whole.arrow = false
                 map.addOverlay(whole, level: .aboveLabels)
-                let n = max(2, Int(Double(coords.count - 1) * p) + 1)
+                var n = max(2, Int(Double(coords.count - 1) * p) + 1)
+                var planeAt = coords[n - 1]
+                var heading = Self.bearing(coords[max(0, n - 2)], coords[n - 1])
+                if let live = livePlane {
+                    let here = MKMapPoint(live.coordinate)
+                    n = max(2, (coords.indices.min { MKMapPoint(coords[$0]).distance(to: here) < MKMapPoint(coords[$1]).distance(to: here) } ?? 1) + 1)
+                    planeAt = live.coordinate
+                    heading = live.heading
+                }
                 let flown = LegPolyline(coordinates: Array(coords.prefix(n)), count: n)
                 flown.color = Coordinator.liveColor; flown.width = 1.6; flown.arrow = false
                 map.addOverlay(flown, level: .aboveLabels)
-                map.addAnnotation(PlaneAnnotation(coordinate: coords[n - 1], heading: Self.bearing(coords[max(0, n - 2)], coords[n - 1])))
+                map.addAnnotation(PlaneAnnotation(coordinate: planeAt, heading: heading))
                 legs.append(.init(line: whole, from: r.from, to: r.to))
                 continue
             }

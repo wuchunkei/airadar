@@ -1,5 +1,4 @@
 import SwiftUI
-import MapKit
 
 /// The bottom sheet for one flight: a map thumbnail, airline and status, the big
 /// airport codes, times (a delay shows the original struck through), the facts,
@@ -9,26 +8,32 @@ struct FlightDetailSheet<Actions: View>: View {
     var forceSystemZone = false
     var trackStatus: TrackStatus? = nil
     var onLoadTrack: (() -> Void)? = nil
+    /// The aircraft's real position while it flies, asked for every minute the sheet is open.
+    @State private var live: LivePosition?
     let onDismiss: () -> Void
     var primaryAction: (label: String, action: () -> Void)? = nil
     /// Under the primary one, quieter — "Incorrect" beneath "Correct".
     var secondaryAction: (label: String, action: () -> Void)? = nil
     @ViewBuilder var extraActions: () -> Actions
 
-    @State private var fullMap = false
-    @State private var trackRefreshed: Date?
-    /// Where adsb.lol last saw it — free, keyless, and live over China where
-    /// OpenSky's own coverage is thin. Places the plane precisely on the arc
-    /// without needing OpenSky's (often missing, there) full track.
-    @State private var liveFix: AdsbLolClient.LiveFix?
+    /// Measured content height: the sheet opens just tall enough, not full screen.
+    @State private var contentHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
 
     var body: some View {
-        // One page, always: the sheet is full height and whatever room the facts leave
-        // goes to the map, so nothing is ever blank beneath the button. Only content
-        // taller than the sheet itself falls back to scrolling.
-        ViewThatFits(in: .vertical) {
-            content(mapHeight: nil)
-            ScrollView { content(mapHeight: 180) }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                TileMapView(routes: routes, tracks: [], interactive: false, cityLabels: true, livePlane: live)
+                    .frame(height: 180)
+                    .clipShape(.rect(cornerRadius: 16))
+
+                header
+                codes
+                facts
+                extraActions()
+            }
+            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 8)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
         // The main action sits at the very bottom, whatever the sheet's height.
         .safeAreaInset(edge: .bottom) {
@@ -48,93 +53,30 @@ struct FlightDetailSheet<Actions: View>: View {
                     }
                 }
                 .padding(.horizontal, 20).padding(.vertical, 12)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             }
         }
-        // In the air: the path flown so far is fetched quietly, so the plane sits where it really is.
-        .task(id: flight.id) {
-            if flight.phase == .inProgress, flight.trackFlownOn == nil, flight.callsign != nil { onLoadTrack?() }
-        }
-        // A live fix, every 30 s, whether or not the full map is open — cheap and
-        // keyless, so the thumbnail alone already shows an accurate position.
-        .task(id: flight.id) {
-            guard flight.phase == .inProgress, let callsign = flight.callsign else { return }
-            while !Task.isCancelled {
-                liveFix = try? await AdsbLolClient.shared.fetchLivePosition(callsign: callsign)
-                try? await Task.sleep(for: .seconds(30))
-            }
-        }
-        .presentationDetents([.large])
+        .presentationDetents(detents)
         .presentationDragIndicator(.visible)
-    }
-
-    /// The page. With no fixed map height the map takes whatever is left; with one it is
-    /// a thumbnail and the page scrolls.
-    private func content(mapHeight: CGFloat?) -> some View {
-            VStack(alignment: .leading, spacing: 18) {
-                TileMapView(routes: routes, tracks: tracks, interactive: false, cityLabels: true)
-                    .frame(minHeight: 180, idealHeight: 180, maxHeight: mapHeight ?? .infinity)
-                    .clipShape(.rect(cornerRadius: 16))
-                    .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption.weight(.bold))
-                            .padding(6).background(.thinMaterial, in: .circle).padding(8)
-                    }
-                    .contentShape(.rect)
-                    .onTapGesture { fullMap = true }
-                    // Presented from inside the content, clear of the sheet's own presentation modifiers.
-                    .fullScreenCover(isPresented: $fullMap) { fullMapView }
-
-                header
-                codes
-                facts
-                extraActions()
+        // In the air: where the aircraft really is, from ADS-B, refreshed every minute.
+        .task(id: flight.id) {
+            guard let callsign = flight.callsign else { return }
+            while !Task.isCancelled, flight.phase == .inProgress {
+                if let p = await LivePositionClient.shared.position(callsign: callsign) { live = p }
+                try? await Task.sleep(for: .seconds(60))
             }
-            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 8)
-    }
-
-    /// The whole map. While the flight is in the air the track is asked for again every
-    /// minute and a half; with nothing new from the network the line drawn last stays.
-    private var fullMapView: some View {
-            NavigationStack {
-                TileMapView(routes: routes, tracks: tracks, interactive: true, cityLabels: true)
-                    .ignoresSafeArea(edges: .bottom)
-                    .navigationTitle("\(flight.flightNumber) · \(flight.departure) → \(flight.arrival)")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { fullMap = false } } }
-                    .safeAreaInset(edge: .bottom) {
-                        if flight.phase == .inProgress {
-                            HStack(spacing: 8) {
-                                if trackStatus == .loading { ProgressView().controlSize(.small) }
-                                Text(trackCaption).font(.caption).foregroundStyle(trackStatus?.isFailure == true ? .red : .secondary)
-                            }
-                            .padding(.horizontal, 12).padding(.vertical, 8)
-                            .glassEffect(.regular, in: .capsule).padding(.bottom, 12)
-                        }
-                    }
-                    .onChange(of: trackStatus) { _, s in if s == .loaded { trackRefreshed = Date() } }
-                    .task {
-                        guard flight.phase == .inProgress, flight.callsign != nil else { return }
-                        onLoadTrack?()
-                        while !Task.isCancelled {
-                            try? await Task.sleep(for: .seconds(90))
-                            onLoadTrack?()
-                        }
-                    }
-            }
-    }
-
-    private var trackCaption: String {
-        switch trackStatus {
-        case .loading: return "Fetching the track"
-        case .failed(let why): return "Track not available: \(why)"
-        default:
-            if let t = trackRefreshed {
-                let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
-                return "Track updated \(f.string(from: t)) · every 90 s"
-            }
-            return flight.track == nil ? "Estimated from the timetable" : "Track as last received"
         }
     }
 
+    /// Just tall enough for the content; only content that does not fit on one
+    /// screen can be pulled up to full height.
+    private var detents: Set<PresentationDetent> {
+        let fitted = contentHeight + footerHeight
+        guard fitted > 0 else { return [.large] }
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let screen = scene?.screen.bounds.height ?? 844
+        return fitted < screen * 0.88 ? [.height(fitted)] : [.height(screen * 0.88), .large]
+    }
 
     private var header: some View {
         HStack(alignment: .top) {
@@ -178,17 +120,9 @@ struct FlightDetailSheet<Actions: View>: View {
     }
 
     private var routes: [MapRoute] {
-        guard flight.track == nil, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
-        guard flight.phase == .inProgress else { return [MapRoute(from: a, to: b, rank: 0, isReturn: false, progress: nil)] }
-        // A live fix places the plane where it actually is; short of that, the clock's estimate.
-        let progress = liveFix.map { TileMapView.fraction(of: CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon), alongArcFrom: a, to: b) }
-            ?? flight.fractionFlown
+        guard let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
+        let progress: Double? = flight.phase == .inProgress ? flight.fractionFlown : nil
         return [MapRoute(from: a, to: b, rank: 0, isReturn: false, progress: progress)]
-    }
-
-    private var tracks: [MapTrack] {
-        guard let t = flight.track, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
-        return [MapTrack(from: a, to: b, points: t, live: flight.phase == .inProgress)]
     }
 
     private func longDay(_ day: String) -> String {

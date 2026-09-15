@@ -36,7 +36,6 @@ struct FlightCard: View {
                 AirportRow(city: flight.departureAirport.map { "\($0.city), \($0.countryCode)" }, code: flight.departure,
                            terminal: flight.departureTerminal, time: flight.shownTime(arrival: false, forceSystemZone: forceSystemZone),
                            ink: ink, muted: inkMuted)
-                RouteThumbnail(from: flight.departureAirport, to: flight.arrivalAirport)
                 AirportRow(city: flight.arrivalAirport.map { "\($0.city), \($0.countryCode)" }, code: flight.arrival,
                            terminal: flight.arrivalTerminal, time: flight.shownTime(arrival: true, forceSystemZone: forceSystemZone),
                            ink: ink, muted: inkMuted)
