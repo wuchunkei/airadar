@@ -14,7 +14,7 @@ import airportsdata
 import pycountry
 from fastapi import Depends, FastAPI, Header, HTTPException
 
-from . import airlabs, auth, billing, db, social, trips
+from . import aerodatabox, airlabs, auth, billing, db, social, trips
 from .schema import Airport, Flight
 
 _AIRPORTS_TABLE = airportsdata.load("IATA")
@@ -56,6 +56,7 @@ async def health():
     return {
         "ok": True,
         "airlabs": bool(os.environ.get("AIRLABS_API_KEY")),
+        "aerodatabox": bool(os.environ.get("AERODATABOX_KEY")),
         "google": bool(os.environ.get("GOOGLE_CLIENT_ID")),
         "jwt": bool(os.environ.get("JWT_SECRET")),
         "stripe": bool(os.environ.get("STRIPE_SECRET_KEY")),
@@ -67,8 +68,16 @@ async def flight(number: str, day: date):
     try:
         return await _airlabs_flight(number, day)
     except airlabs.AirLabsError as e:
-        status = 429 if e.quota_exhausted else 502
-        raise HTTPException(status_code=status, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
+        if e.quota_exhausted:
+            raise HTTPException(status_code=429, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
+        # AirLabs has nothing at all — a real, common coverage gap, not always
+        # a dead flight number (see airlabs.schedule). AeroDataBox, a second
+        # paid-adjacent source, gets one shot at a real schedule before this
+        # gives up and reports AirLabs' own (adsbdb-enriched) error instead.
+        try:
+            return await aerodatabox.flight(_http(), number, day)
+        except aerodatabox.AeroDataBoxError:
+            raise HTTPException(status_code=502, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
 
 
 async def _airlabs_flight(number: str, day: date) -> Flight:
