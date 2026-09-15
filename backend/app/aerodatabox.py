@@ -4,6 +4,14 @@ simply doesn't carry every airline). Same RapidAPI service the iOS app itself
 calls for post-hoc enrichment; here it can produce a real Flight outright,
 real scheduled times included, not just enrich an error message.
 
+Queried with dateLocalRole=Both — a flight departing late and landing into
+the next day should still turn up for either date a traveller might search
+by. That can genuinely hand back more than one candidate for one flight
+number around one day (an overnight departure the day before, alongside a
+same-numbered one that really does run again the next day); `flights()`
+returns every one of them, earliest first, so the caller can ask a person
+which one they meant rather than guessing.
+
 Needs its own AERODATABOX_KEY — a RapidAPI key, free tier 400 "API units" a
 month, 2 spent per lookup here. If it's the same key the iOS app already
 carries, the two share that budget; a second free RapidAPI key keeps them
@@ -73,25 +81,7 @@ async def _fetch(client: httpx.AsyncClient, number: str, day: date, role: str) -
     return resp.json() or []
 
 
-async def flight(client: httpx.AsyncClient, number: str, day: date) -> Flight:
-    cleaned = number.upper().replace(" ", "")
-    # "Departure date" in the app means exactly that — ask AeroDataBox for the
-    # same thing (dateLocalRole=Departure), not its default "Both", which
-    # matched a flight only by its *arrival* falling on the asked-for day and
-    # so quietly handed back the wrong calendar date at least once (ZH9315,
-    # asked for the 15th, got the 14th's late-night departure that landed
-    # into the 15th instead).
-    rows = await _fetch(client, cleaned, day, "Departure")
-    if not rows:
-        # Nothing genuinely departs this day — the closest real thing is often
-        # a late-night flight the day before, still arriving into it; every
-        # date shown afterwards is the row's own, so this is never presented
-        # as if it were an on-day departure.
-        rows = await _fetch(client, cleaned, day, "Both")
-    if not rows:
-        raise AeroDataBoxError(f"AeroDataBox found no flights for {cleaned} around {day.isoformat()}.")
-
-    row = rows[0]
+def _parse(cleaned: str, day: date, row: dict) -> Flight:
     dep, arr = row.get("departure") or {}, row.get("arrival") or {}
     dep_iata = ((dep.get("airport") or {}).get("iata") or "").upper()
     arr_iata = ((arr.get("airport") or {}).get("iata") or "").upper()
@@ -121,3 +111,35 @@ async def flight(client: httpx.AsyncClient, number: str, day: date) -> Flight:
         callsign=callsign,
         source="aerodatabox",
     )
+
+
+async def flights(client: httpx.AsyncClient, number: str, day: date) -> list[Flight]:
+    """Every candidate AeroDataBox has for this flight number around this
+    day, earliest departure first — one entry almost always, more than one
+    when the number genuinely runs twice around the same date."""
+    cleaned = number.upper().replace(" ", "")
+    rows = await _fetch(client, cleaned, day, "Both")
+    if not rows:
+        raise AeroDataBoxError(f"AeroDataBox found no flights for {cleaned} around {day.isoformat()}.")
+
+    out: list[Flight] = []
+    seen: set[tuple] = set()
+    for row in rows:
+        try:
+            parsed = _parse(cleaned, day, row)
+        except AeroDataBoxError:
+            continue
+        key = (parsed.departureTime, parsed.arrivalTime)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(parsed)
+    if not out:
+        raise AeroDataBoxError(f"AeroDataBox's records for {cleaned} are missing a route or a schedule.")
+    out.sort(key=lambda f: f.departureTime)
+    return out
+
+
+async def flight(client: httpx.AsyncClient, number: str, day: date) -> Flight:
+    """Just the earliest candidate — for callers that only ever want one."""
+    return (await flights(client, number, day))[0]

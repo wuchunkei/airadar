@@ -84,6 +84,23 @@ async def _airlabs_flight(number: str, day: date) -> Flight:
     return await airlabs.lookup(_http(), number, day)
 
 
+@app.get("/flights/{number}/{day}/candidates", response_model=list[Flight], dependencies=[Depends(require_token)])
+async def flight_candidates(number: str, day: date):
+    """For the search screen: every real candidate, not just one guessed at —
+    almost always a single-item list, more than one only when the number
+    genuinely runs twice around this date. AirLabs' own match (when it has
+    one) is never ambiguous this way, so it is the whole list by itself."""
+    try:
+        return [await _airlabs_flight(number, day)]
+    except airlabs.AirLabsError as e:
+        if e.quota_exhausted:
+            raise HTTPException(status_code=429, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
+        try:
+            return await aerodatabox.flights(_http(), number, day)
+        except aerodatabox.AeroDataBoxError:
+            raise HTTPException(status_code=502, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
+
+
 _airports: dict[str, Airport] = {}  # airports do not move; looked up once per process
 
 

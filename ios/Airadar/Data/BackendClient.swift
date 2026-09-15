@@ -58,6 +58,28 @@ enum BackendClient {
         try decoder.decode(Airport.self, from: try await call("GET", "airports/\(iata.uppercased())"))
     }
 
+    /// Every real candidate for a flight number around one date — almost
+    /// always one, more than one only when it genuinely runs twice around
+    /// that date (an overnight departure the evening before landing into it,
+    /// say, alongside one that really does go again the next day too).
+    static func flightCandidates(_ number: String, on day: String) async throws -> [Flight] {
+        let path = "flights/\(number.uppercased())/\(day)/candidates"
+        let data: Data
+        if await AuthStore.shared.isSignedIn {
+            do { data = try await authed("GET", path) } catch let e as BackendError where e.code == 401 {
+                data = try await call("GET", path)
+            }
+        } else {
+            data = try await call("GET", path)
+        }
+        var flights = try decoder.decode([Flight].self, from: data)
+        for i in flights.indices {
+            await ensureAirports(flights[i].departure, flights[i].arrival)
+            flights[i].callsign = flights[i].callsign ?? AirportDatabase.shared.airlineIcao(String(number.prefix(2))).map { $0 + number.dropFirst(2) }
+        }
+        return flights
+    }
+
     private static func ensureAirports(_ codes: String...) async {
         for c in codes { await AirportDatabase.shared.ensure(c) { try await airport(c) } }
     }

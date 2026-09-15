@@ -12,6 +12,10 @@ struct SearchView: View {
     @State private var error: String?
     @State private var result: Flight?
     @State private var showManual = false
+    /// More than one real candidate for this number around this date — a
+    /// simple card each, earliest first, to pick the one that's actually theirs.
+    @State private var candidates: [Flight] = []
+    @State private var showCandidates = false
 
     private static let shown: DateFormatter = {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US"); f.dateFormat = "yyyy-MM-dd (EEEE)"; return f
@@ -84,6 +88,12 @@ struct SearchView: View {
             FlightDetailSheet(flight: f, forceSystemZone: settings.forceSystemZone, onDismiss: { result = nil },
                               primaryAction: ("Add to trips", { result = nil; onAdd(f) }))
         }
+        .sheet(isPresented: $showCandidates) {
+            CandidatePickerSheet(flights: candidates) { chosen in
+                showCandidates = false
+                result = chosen
+            }
+        }
     }
 
     private func search() {
@@ -91,7 +101,39 @@ struct SearchView: View {
         let day = LocalDateTime.from(date, in: .current).dayString
         Task {
             defer { searching = false }
-            do { result = try await BackendClient.flight(number, on: day) } catch { self.error = error.localizedDescription }
+            do {
+                let found = try await BackendClient.flightCandidates(number, on: day)
+                if found.count <= 1 { result = found.first }
+                else { candidates = found; showCandidates = true }
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+}
+
+/// The same number really runs more than once around the asked-for date — a
+/// simple card each (the same one Trip uses), earliest departure at the top,
+/// instead of guessing which one a person meant.
+private struct CandidatePickerSheet: View {
+    let flights: [Flight]
+    let onPick: (Flight) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var settings: SettingsModel
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 10) {
+                    Text("This flight number runs more than once around this date — which one is yours?")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ForEach(flights) { f in
+                        FlightCard(flight: f, forceSystemZone: settings.forceSystemZone) { onPick(f) }
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("Choose a flight")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
     }
 }
