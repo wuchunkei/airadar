@@ -78,6 +78,7 @@ final class AirportDatabase: @unchecked Sendable {
         "PEK": [.init("1"), .init("2"), .init("3")],                        // Beijing Capital — T1 now flies as a satellite wing of T2
         "SZX": [.init("3")],                                                // Shenzhen Bao'an — the only terminal open; T1/T2 due 2027
         "CAN": [.init("1", closed: true), .init("2"), .init("3")],          // Guangzhou Baiyun — T3 opened 30 Oct 2025; T1 shut for renovation, May 2026
+        "SIN": [.init("1"), .init("2"), .init("3"), .init("4")],            // Singapore Changi — Apple's map data doesn't tag these as searchable POIs
     ]
 
     func airport(_ iata: String) -> Airport? {
