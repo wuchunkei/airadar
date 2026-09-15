@@ -75,10 +75,10 @@ async def schedule(client: httpx.AsyncClient, number: str, day: date) -> Flight:
     rows = body.get("response") or []
     if not rows:
         hint = await _adsbdb_route_hint(client, number)
-        raise AirLabsError(
-            f"AirLabs has no schedule for {number.upper()} anymore — likely renumbered, "
-            f"seasonal, or discontinued since." + hint
-        )
+        # Empty is just as likely a gap in AirLabs' own coverage (an airline or
+        # route it never carried) as an actually-dead flight number — asserting
+        # "discontinued" here would be a guess dressed up as a diagnosis.
+        raise AirLabsError(f"AirLabs has no schedule on file for {number.upper()}." + hint)
     row = next((r for r in rows if str(r.get("dep_time", "")).startswith(day.isoformat())), None)
     if row is not None:
         return _parse(await _with_airline_name(client, row, number), number, day)
@@ -88,13 +88,16 @@ async def schedule(client: httpx.AsyncClient, number: str, day: date) -> Flight:
 
 
 async def _adsbdb_route_hint(client: httpx.AsyncClient, number: str) -> str:
-    """A free, keyless fallback for the *route alone*, when AirLabs no longer
-    operates a flight number at all — renumbered, seasonal, long discontinued.
-    adsbdb (github.com/mrjackwills/adsbdb) has no schedule/time data either, so
-    this only ever enriches the error message, never stands in for a real
-    Flight: a traveller reading it at least knows which airports to add by
-    hand rather than being told nothing more than "not found". Never raises —
-    a network hiccup here should not change how the caller's own error reads.
+    """A free, keyless fallback for the *route alone*, when AirLabs' own
+    schedule data has nothing under this flight number — a real gap in its
+    coverage far more often than an actually-dead one. adsbdb
+    (github.com/mrjackwills/adsbdb) has no schedule/time data either, so this
+    only ever enriches the error message, never stands in for a real Flight:
+    a traveller reading it at least knows which airports to add by hand,
+    and that adsbdb still recognising the callsign is itself a sign the
+    flight is probably still real, not "not found" with nothing more to go on.
+    Never raises — a network hiccup here should not change how the caller's
+    own error reads.
     """
     try:
         resp = await client.get(f"https://api.adsbdb.com/v0/callsign/{number.upper()}", timeout=8)
@@ -102,7 +105,11 @@ async def _adsbdb_route_hint(client: httpx.AsyncClient, number: str) -> str:
         origin = (route.get("origin") or {}).get("iata_code")
         destination = (route.get("destination") or {}).get("iata_code")
         if origin and destination:
-            return f" adsbdb still has its route though: {origin} → {destination} — worth adding by hand with the real times from your own booking."
+            return (
+                f" adsbdb still recognises it though, flying {origin} → {destination} — "
+                f"probably a gap in AirLabs' own coverage rather than a dead flight number; "
+                f"worth adding by hand with the real times from your own booking."
+            )
     except Exception:
         pass
     return ""
