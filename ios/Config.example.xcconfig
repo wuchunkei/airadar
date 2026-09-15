@@ -11,8 +11,6 @@ BACKEND_TOKEN = your-app-token
 OPENSKY_CLIENT_ID = wuchunkei-api-client
 OPENSKY_CLIENT_SECRET = your-opensky-secret
 LINK_HOST = airadar.wuchunkei.com
-// RapidAPI → AeroDataBox — free tier, 400 API units/month (a flight-status lookup costs 2)
-AERODATABOX_KEY = your-rapidapi-key
 // Google Cloud Console → Credentials → OAuth client of type iOS (bundle id com.airadar.app)
 GID_CLIENT_ID = 377774753423-xxxxxxxx.apps.googleusercontent.com
 GID_REVERSED_CLIENT_ID = com.googleusercontent.apps.377774753423-xxxxxxxx

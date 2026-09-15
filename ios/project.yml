@@ -70,7 +70,6 @@ targets:
         OPENSKY_CLIENT_ID: $(OPENSKY_CLIENT_ID)
         OPENSKY_CLIENT_SECRET: $(OPENSKY_CLIENT_SECRET)
         LINK_HOST: $(LINK_HOST)
-        AERODATABOX_KEY: $(AERODATABOX_KEY)
         CFBundleURLTypes:
           - CFBundleURLSchemes: [airadar, $(GID_REVERSED_CLIENT_ID)]
     settings:
@@ -82,7 +81,6 @@ targets:
         OPENSKY_CLIENT_ID: $(OPENSKY_CLIENT_ID)
         OPENSKY_CLIENT_SECRET: $(OPENSKY_CLIENT_SECRET)
         LINK_HOST: $(LINK_HOST)
-        AERODATABOX_KEY: $(AERODATABOX_KEY)
         # No entitlements by default, so a free personal team can sign it. A paid team adds
         # universal links with CODE_SIGN_ENTITLEMENTS = Entitlements/Airadar.entitlements in Config.xcconfig.
     configFiles:

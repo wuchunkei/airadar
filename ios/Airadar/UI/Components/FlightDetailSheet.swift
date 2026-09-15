@@ -11,10 +11,11 @@ struct FlightDetailSheet<Actions: View>: View {
     var onLoadTrack: (() -> Void)? = nil
     /// The aircraft's real position while it flies, asked for every minute the sheet is open.
     @State private var live: LivePosition?
-    /// AeroDataBox's answer for this exact flight, asked once and cached on
-    /// device from then on — fills in a terminal, gate or aircraft type this
-    /// trip didn't already have; never overwrites one it did.
-    @State private var enriched: AeroDataBoxClient.FlightStatus?
+    /// The backend's own answer for this exact flight (AirLabs, AeroDataBox
+    /// behind it), asked once and cached on device from then on — fills in a
+    /// terminal, gate or aircraft type this trip didn't already have; never
+    /// overwrites one it did. Every key involved lives on the server.
+    @State private var enrichedFlight: Flight?
     /// A callsign the trip didn't have, resolved via adsbdb — used for the rest
     /// of this session even before the store's own copy catches up.
     @State private var resolvedCallsign: String?
@@ -97,12 +98,13 @@ struct FlightDetailSheet<Actions: View>: View {
         .task(id: "\(flight.id)|\(callsign ?? "")") {
             if flight.trackFlownOn == nil, callsign != nil { onLoadTrack?() }
         }
-        // AeroDataBox only gets asked once OpenSky has had its shot and failed
-        // (or can't even be tried — no ATC callsign at all): a paid-adjacent,
-        // quota-limited source stays a fallback, not a first resort.
-        .task(id: aeroDataBoxTrigger) {
-            guard aeroDataBoxTrigger.exhausted else { return }
-            await loadAeroDataBox()
+        // The backend's own lookup only gets asked once OpenSky has had its
+        // shot and failed (or can't even be tried — no ATC callsign at all):
+        // AeroDataBox behind it is quota-limited, so it stays a fallback, not
+        // a first resort.
+        .task(id: enrichmentTrigger) {
+            guard enrichmentTrigger.exhausted else { return }
+            await loadEnrichment()
         }
         // The live fix's own hex, once there is one — adsbdb's aircraft lookup
         // is free and separate from AeroDataBox, so this never waits on that quota.
@@ -117,19 +119,17 @@ struct FlightDetailSheet<Actions: View>: View {
     /// until the sheet is reopened, but nothing here should have to wait for that.
     private var callsign: String? { flight.callsign ?? resolvedCallsign }
 
-    private struct AeroDataBoxTrigger: Equatable { let flightId: String; let exhausted: Bool }
-    private var aeroDataBoxTrigger: AeroDataBoxTrigger {
+    private struct EnrichmentTrigger: Equatable { let flightId: String; let exhausted: Bool }
+    private var enrichmentTrigger: EnrichmentTrigger {
         let noCallsignAtAll = callsign == nil && callsignResolutionAttempted
         return .init(flightId: flight.id, exhausted: noCallsignAtAll || trackStatus?.isFailure == true)
     }
 
-    private func loadAeroDataBox() async {
-        guard Config.isAeroDataBoxConfigured else { return }
-        if let cached = AeroDataBoxCache.shared.result(for: flight.id) { enriched = cached; return }
-        let found = try? await AeroDataBoxClient.shared.fetchStatus(number: flight.flightNumber, dateLocal: flight.departureDay)
-        let best = found?.first
-        AeroDataBoxCache.shared.remember(flight.id, best)
-        enriched = best
+    private func loadEnrichment() async {
+        if let cached = FlightLookupCache.shared.result(for: flight.id) { enrichedFlight = cached; return }
+        let found = try? await BackendClient.flight(flight.flightNumber, on: flight.departureDay)
+        FlightLookupCache.shared.remember(flight.id, found)
+        enrichedFlight = found
     }
 
     /// Just tall enough for the content; only content that does not fit on one
@@ -158,12 +158,12 @@ struct FlightDetailSheet<Actions: View>: View {
 
     private var codes: some View {
         HStack(spacing: 12) {
-            BigCode(code: flight.departure, terminal: flight.departureTerminal ?? enriched?.departure.terminal,
-                    gate: flight.departureGate ?? enriched?.departure.gate, city: flight.departureAirport?.cityCountry, trailing: false)
+            BigCode(code: flight.departure, terminal: flight.departureTerminal ?? enrichedFlight?.departureTerminal,
+                    gate: flight.departureGate ?? enrichedFlight?.departureGate, city: flight.departureAirport?.cityCountry, trailing: false)
             // The way between: an arrow before departure, the plane along a dashed line in the air, done after.
             FlightProgressLine(flight: flight).frame(maxWidth: .infinity).frame(height: 18)
-            BigCode(code: flight.arrival, terminal: flight.arrivalTerminal ?? enriched?.arrival.terminal,
-                    gate: flight.arrivalGate ?? enriched?.arrival.gate, city: flight.arrivalAirport?.cityCountry, trailing: true)
+            BigCode(code: flight.arrival, terminal: flight.arrivalTerminal ?? enrichedFlight?.arrivalTerminal,
+                    gate: flight.arrivalGate ?? enrichedFlight?.arrivalGate, city: flight.arrivalAirport?.cityCountry, trailing: true)
         }
     }
 
@@ -191,7 +191,7 @@ struct FlightDetailSheet<Actions: View>: View {
             DetailRow(label: "Arriving", value: arrValue, secondary: longDay(flight.arrivalTime.dayString), superseded: arr.original)
             DetailRow(label: "Duration", value: formatDuration(flight.durationMinutes))
             DetailRow(label: "Distance", value: formatDistance(flight.distanceKm))
-            if let a = flight.aircraft ?? enriched?.aircraftModel ?? adsbdbAircraft?.type { DetailRow(label: "Aircraft", value: a) }
+            if let a = flight.aircraft ?? enrichedFlight?.aircraft ?? adsbdbAircraft?.type { DetailRow(label: "Aircraft", value: a) }
             if let reg = adsbdbAircraft?.registration { DetailRow(label: "Registration", value: reg) }
             // Belt numbers appear close to landing; the row is always there.
             DetailRow(label: "Baggage claim", value: flight.baggageClaim ?? "–")
