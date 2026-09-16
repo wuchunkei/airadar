@@ -220,7 +220,12 @@ private struct LegCard: View {
                 }
             }
             .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // maxHeight too, not just maxWidth — otherwise the glass
+            // background only wraps this VStack's own shorter natural
+            // height, leaving the card visibly smaller than the 118pt the
+            // TabView actually proposes (and than the tier card, which
+            // fills it correctly, swaps into this exact spot).
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .glassEffect(.regular, in: .rect(cornerRadius: 16))
         }
         .buttonStyle(.plain)
