@@ -430,10 +430,19 @@ struct TileMapView: UIViewRepresentable {
         }
 
         /// A manual pan or pinch while following: let go, the same way MapKit's
-        /// own tracking mode would — but only for a region change we didn't
-        /// ourselves just start with `recenter`.
+        /// own tracking mode would. This delegate method fires for any region
+        /// change though, not just a gesture — MapKit sends one for its own
+        /// initial layout settling the moment the map view first appears, with
+        /// no user input at all, and `programmaticChange` alone doesn't cover
+        /// that (it's not `recenter`'s doing either). Left unguarded, that
+        /// phantom callback cancelled following before the first real location
+        /// fix ever arrived, so the map never actually centred on it. Only an
+        /// actively in-progress drag or pinch on the map's own gesture
+        /// recognizers counts as the traveller actually taking hold of it.
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
             guard following, !programmaticChange else { return }
+            let userDragging = (mapView.gestureRecognizers ?? []).contains { $0.state == .began || $0.state == .changed }
+            guard userDragging else { return }
             following = false
             parent.userTrackingMode?.wrappedValue = .none
         }
