@@ -14,7 +14,7 @@ import airportsdata
 import pycountry
 from fastapi import Depends, FastAPI, Header, HTTPException
 
-from . import aerodatabox, airlabs, auth, billing, db, social, trips
+from . import aerodatabox, airlabs, auth, billing, db, social, tiers, trips
 from .schema import Airport, Flight
 
 _AIRPORTS_TABLE = airportsdata.load("IATA")
@@ -24,6 +24,7 @@ app.include_router(auth.router)
 app.include_router(trips.router)
 app.include_router(social.router)
 app.include_router(billing.router)
+app.include_router(tiers.router)
 
 
 def _http() -> httpx.AsyncClient:

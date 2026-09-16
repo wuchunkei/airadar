@@ -41,6 +41,18 @@ final class FlightStore: ObservableObject {
     /// Where the tier ladder puts this traveller right now.
     var tierStanding: TierStanding { .compute(for: completedFlights) }
 
+    /// Rainbow's sequence number, once claimed — "the Nth traveller here".
+    /// Never set locally: only the backend hands one out, and only once
+    /// standing genuinely reads Rainbow.
+    @Published private(set) var rainbowRank: Int?
+
+    /// Safe to call any time standing is checked: an existing claim just
+    /// comes back unchanged, so there's no harm calling this opportunistically.
+    func refreshRainbowRank() async {
+        guard tierStanding.tier == .rainbow, AuthStore.shared.isSignedIn else { return }
+        rainbowRank = try? await BackendClient.claimRainbow()
+    }
+
     // The last published list, on disk, so a relaunch shows the trips at once and
     // the server sync only refines them.
     nonisolated private static let cacheURL: URL = {

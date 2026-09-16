@@ -1,16 +1,25 @@
 import SwiftUI
 
-/// The eight-tier status ladder, run the way a real airline's elite tiers
-/// are: promotion happens on legs flown OR distance flown since the last
-/// rank-up, whichever gets there first — a long-haul traveller and a
-/// short-hop commuter both climb, just by different arithmetic. Lifetime
-/// leg count never resets; the distance budget does, at every rank-up.
+/// The eight visible tiers, plus one hidden one above them — run the way a
+/// real airline's elite tiers are: promotion happens on legs flown OR
+/// distance flown SINCE THE LAST RANK-UP, whichever gets there first, and
+/// both counters reset to zero the moment that happens — a long-haul
+/// traveller and a short-hop commuter both climb, just by different
+/// arithmetic, and neither a single mega-flight nor a burst of short hops
+/// vaults more than one tier at a time. (The lifetime flight total shown
+/// elsewhere — My's own stats panel — is a separate, never-reset count;
+/// it just isn't what decides a rank-up.)
+///
+/// Rainbow (500+ legs) is a secret: nothing before it hints it exists, and
+/// reaching it is rare enough that it also carries a sequence number — the
+/// Nth traveller ever to get there — awarded by the backend, never the
+/// client (`BackendClient.claimRainbow`).
 ///
 /// 首飛 (First Flight) has its own artwork but isn't a rung on this ladder —
 /// it's a one-off "flew at all" stamp, unlocked at leg 1 regardless of tier,
-/// with its own place in the UI still to be designed.
+/// parked for now (its own place in the UI is a later pass).
 enum MilestoneTier: Int, CaseIterable, Comparable {
-    case blackIron, bronze, silver, gold, platinum, diamond, ruby, obsidian
+    case blackIron, bronze, silver, gold, platinum, diamond, ruby, obsidian, rainbow
 
     static func < (a: MilestoneTier, b: MilestoneTier) -> Bool { a.rawValue < b.rawValue }
 
@@ -20,7 +29,7 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
 
     /// The lifetime leg-count band this tier owns — legs 1-10 are Black
     /// Iron, 11-20 Bronze, and so on, however a traveller actually gets
-    /// there (some ranks up early on distance, see `standing(for:)`).
+    /// there (some ranks up early on distance, see `TierStanding.compute`).
     var legBand: ClosedRange<Int> {
         switch self {
         case .blackIron: 1...10
@@ -30,12 +39,13 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .platinum: 51...75
         case .diamond: 76...100
         case .ruby: 101...250
-        case .obsidian: 251...Int.max
+        case .obsidian: 251...499
+        case .rainbow: 500...Int.max
         }
     }
 
-    /// The band's width in legs — Obsidian, the ceiling, has none.
-    var legsInBand: Int { self == .obsidian ? Int.max : legBand.upperBound - legBand.lowerBound + 1 }
+    /// The band's width in legs — Rainbow, the true ceiling, has none.
+    var legsInBand: Int { self == .rainbow ? Int.max : legBand.upperBound - legBand.lowerBound + 1 }
 
     /// The band's width converted to km at the average leg length — the
     /// budget that resets to zero every time a rank-up happens.
@@ -57,6 +67,7 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .diamond: "鑽石"
         case .ruby: "紅寶石"
         case .obsidian: "黑曜石"
+        case .rainbow: "彩虹"
         }
     }
 
@@ -70,6 +81,7 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .diamond: "鑽石級旅人"
         case .ruby: "紅寶石飛行家"
         case .obsidian: "黑曜傳奇"
+        case .rainbow: "隱藏傳說"
         }
     }
 
@@ -86,6 +98,7 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .diamond: "diamond"
         case .ruby: "ruby"
         case .obsidian: "obsidian"
+        case .rainbow: "rainbow"
         }
     }
 
@@ -101,6 +114,7 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .diamond: [Color(red: 0.92, green: 0.99, blue: 1.00), Color(red: 0.37, green: 0.75, blue: 0.88)]
         case .ruby: [Color(red: 1.00, green: 0.54, blue: 0.54), Color(red: 0.48, green: 0.05, blue: 0.12)]
         case .obsidian: [Color(red: 0.23, green: 0.14, blue: 0.31), Color(red: 0.02, green: 0.02, blue: 0.04)]
+        case .rainbow: [Color(red: 0.55, green: 0.95, blue: 0.85), Color(red: 0.30, green: 0.40, blue: 0.85)]
         }
     }
 
@@ -114,14 +128,16 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .diamond: Color(red: 0.74, green: 0.94, blue: 1.00)
         case .ruby: Color(red: 0.85, green: 0.12, blue: 0.25)
         case .obsidian: Color(red: 0.48, green: 0.31, blue: 0.68)
+        case .rainbow: Color(red: 0.70, green: 0.85, blue: 0.60)
         }
     }
 }
 
 /// Where a traveller actually stands: the tier reached after walking every
-/// completed flight in order, and — since a tier's own budget resets on
-/// rank-up while the lifetime leg count keeps climbing — how many legs and
-/// how many km have counted toward the CURRENT tier so far.
+/// completed flight in order, and how many legs and how many km have
+/// counted toward the CURRENT tier so far — both reset to zero at every
+/// rank-up, which is what makes "legs or km, whichever first" a real race
+/// tier by tier instead of a one-time fuse.
 struct TierStanding {
     let tier: MilestoneTier
     let legsIntoTier: Int

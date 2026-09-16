@@ -269,6 +269,22 @@ enum BackendClient {
         try decoder.decode(Flight.self, from: try await authed("POST", "shares/link/\(token)/copy"))
     }
 
+    // MARK: - Rainbow tier
+
+    private struct RainbowRank: Decodable { let rank: Int? }
+
+    /// Only ever called once local standing already reads Rainbow — the
+    /// server re-checks the traveller's own stored trips before handing out
+    /// a number, so this is never how a rank gets faked. Safe to call again
+    /// later: an existing claim just comes back as-is.
+    static func claimRainbow() async throws -> Int? {
+        try decoder.decode(RainbowRank.self, from: try await authed("POST", "tiers/rainbow/claim")).rank
+    }
+
+    static func myRainbowRank() async throws -> Int? {
+        try decoder.decode(RainbowRank.self, from: try await authed("GET", "tiers/rainbow/mine")).rank
+    }
+
     // MARK: - Transport
 
     /// A signed-in call: retried once with a fresh access token after a 401.

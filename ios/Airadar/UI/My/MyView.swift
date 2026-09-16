@@ -136,7 +136,7 @@ struct MyView: View {
                         .tabViewStyle(.page(indexDisplayMode: .never))
                         .frame(height: 118)
                     }
-                    TierProgressCard(standing: .compute(for: history))
+                    TierProgressCard(standing: .compute(for: history), rainbowRank: store.rainbowRank)
                         .padding(.horizontal, 12)
                     StatsPanel(stats: history.travelStats())
                         .padding(.horizontal, 12)
@@ -160,6 +160,8 @@ struct MyView: View {
                 if history.isEmpty { homeRegion = await HomeRegion.find() }
             }
             .task(id: upcomingDepartures.map(\.iata)) { await checkReachability() }
+            // Only ever does anything once standing genuinely reads Rainbow.
+            .task(id: history.count) { await store.refreshRainbowRank() }
         }
         .sheet(item: $openId) { id in
             if let f = store.flights.first(where: { $0.id == id }) {
@@ -221,6 +223,10 @@ private struct LegCard: View {
 /// row for.
 private struct TierProgressCard: View {
     let standing: TierStanding
+    /// Rainbow's sequence number, once the backend has handed one out —
+    /// nil the whole time up to and including the moment standing first
+    /// reads Rainbow but the claim hasn't come back yet.
+    var rainbowRank: Int? = nil
     private var tier: MilestoneTier { standing.tier }
 
     /// "3 flights or 4,200 km to Gold" — whichever the ladder reaches
@@ -238,7 +244,14 @@ private struct TierProgressCard: View {
         HStack(spacing: 14) {
             TierBadgeView(tier: tier, size: 40)
             VStack(alignment: .leading, spacing: 2) {
-                Text(tier.nameCN).font(.subheadline.bold())
+                HStack(spacing: 6) {
+                    Text(tier.nameCN).font(.subheadline.bold())
+                    // Hidden tier, hidden bragging right: which-numbered
+                    // traveller ever to get here, once the backend confirms it.
+                    if tier == .rainbow, let rainbowRank {
+                        Text("#\(rainbowRank)").font(.caption.bold()).foregroundStyle(.secondary)
+                    }
+                }
                 Text(progressText).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
