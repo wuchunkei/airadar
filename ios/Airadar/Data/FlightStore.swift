@@ -11,7 +11,12 @@ final class FlightStore: ObservableObject {
     /// How long a deleted trip waits in the recycle bin before it is gone for good.
     static let retentionDays = 30
 
-    @Published private(set) var flights: [Flight] = []
+    @Published private(set) var flights: [Flight] = [] {
+        // The Home Screen icon follows the tier this recomputes to — a
+        // no-op call whenever it hasn't actually changed (AppIconManager
+        // checks before ever touching UIApplication).
+        didSet { AppIconManager.apply(tierStanding.tier) }
+    }
     @Published private(set) var deleted: [Flight] = []
     /// The last plan refusal, for the UI to explain and offer an upgrade.
     @Published var limitHit: LimitReached?

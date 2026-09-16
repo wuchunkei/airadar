@@ -56,6 +56,41 @@ targets:
         # Best-effort Live Activity refresh while backgrounded — see BackgroundRefresh.swift.
         UIBackgroundModes: [fetch]
         BGTaskSchedulerPermittedIdentifiers: [com.airadar.app.refresh]
+        # The Home Screen icon follows the traveller's tier — AppIconManager.swift
+        # calls setAlternateIconName whenever FlightStore's tierStanding changes.
+        # No paid Developer Program needed for this (unlike Wallet or push): these
+        # are loose files (Resources/AppIcons), not an asset catalog, resolved by
+        # base name with @2x/@3x appended automatically.
+        UIApplicationSupportsAlternateIcons: true
+        CFBundleIcons:
+          CFBundlePrimaryIcon:
+            CFBundleIconFiles: [AppIcon60x60]
+            UIPrerenderedIcon: false
+          CFBundleAlternateIcons:
+            bronze:
+              CFBundleIconFiles: [AppIcon-bronze60x60]
+              UIPrerenderedIcon: false
+            silver:
+              CFBundleIconFiles: [AppIcon-silver60x60]
+              UIPrerenderedIcon: false
+            gold:
+              CFBundleIconFiles: [AppIcon-gold60x60]
+              UIPrerenderedIcon: false
+            platinum:
+              CFBundleIconFiles: [AppIcon-platinum60x60]
+              UIPrerenderedIcon: false
+            diamond:
+              CFBundleIconFiles: [AppIcon-diamond60x60]
+              UIPrerenderedIcon: false
+            ruby:
+              CFBundleIconFiles: [AppIcon-ruby60x60]
+              UIPrerenderedIcon: false
+            obsidian:
+              CFBundleIconFiles: [AppIcon-obsidian60x60]
+              UIPrerenderedIcon: false
+            rainbow:
+              CFBundleIconFiles: [AppIcon-rainbow60x60]
+              UIPrerenderedIcon: false
         # OpenSky's TLS setup lacks the forward-secrecy ciphers ATS insists on.
         NSAppTransportSecurity:
           NSExceptionDomains:
