@@ -58,38 +58,42 @@ targets:
         BGTaskSchedulerPermittedIdentifiers: [com.airadar.app.refresh]
         # The Home Screen icon follows the traveller's tier — AppIconManager.swift
         # calls setAlternateIconName whenever FlightStore's tierStanding changes.
-        # No paid Developer Program needed for this (unlike Wallet or push): these
-        # are loose files (Resources/AppIcons), not an asset catalog, resolved by
-        # base name with @2x/@3x appended automatically.
+        # No paid Developer Program needed for this (unlike Wallet or push).
+        # Assets.xcassets, not loose files, since a light/dark appearance variant
+        # per icon (the glyph's own transparency over a neutral background that
+        # switches with the system, rather than a fixed per-tier colour wash)
+        # only asset catalogs support — CFBundleIconFiles still names each
+        # appiconset the same way it would a loose file; the catalog resolves
+        # @2x/@3x and which appearance to show once compiled.
         UIApplicationSupportsAlternateIcons: true
         CFBundleIcons:
           CFBundlePrimaryIcon:
-            CFBundleIconFiles: [AppIcon60x60]
+            CFBundleIconFiles: [AppIcon]
             UIPrerenderedIcon: false
           CFBundleAlternateIcons:
             bronze:
-              CFBundleIconFiles: [AppIcon-bronze60x60]
+              CFBundleIconFiles: [AppIcon-bronze]
               UIPrerenderedIcon: false
             silver:
-              CFBundleIconFiles: [AppIcon-silver60x60]
+              CFBundleIconFiles: [AppIcon-silver]
               UIPrerenderedIcon: false
             gold:
-              CFBundleIconFiles: [AppIcon-gold60x60]
+              CFBundleIconFiles: [AppIcon-gold]
               UIPrerenderedIcon: false
             platinum:
-              CFBundleIconFiles: [AppIcon-platinum60x60]
+              CFBundleIconFiles: [AppIcon-platinum]
               UIPrerenderedIcon: false
             diamond:
-              CFBundleIconFiles: [AppIcon-diamond60x60]
+              CFBundleIconFiles: [AppIcon-diamond]
               UIPrerenderedIcon: false
             ruby:
-              CFBundleIconFiles: [AppIcon-ruby60x60]
+              CFBundleIconFiles: [AppIcon-ruby]
               UIPrerenderedIcon: false
             obsidian:
-              CFBundleIconFiles: [AppIcon-obsidian60x60]
+              CFBundleIconFiles: [AppIcon-obsidian]
               UIPrerenderedIcon: false
             rainbow:
-              CFBundleIconFiles: [AppIcon-rainbow60x60]
+              CFBundleIconFiles: [AppIcon-rainbow]
               UIPrerenderedIcon: false
         # OpenSky's TLS setup lacks the forward-secrecy ciphers ATS insists on.
         NSAppTransportSecurity:
@@ -113,6 +117,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.airadar.app
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Fill these in Config.xcconfig (not committed) — see Config.example.xcconfig
         BACKEND_URL: $(BACKEND_URL)
         BACKEND_TOKEN: $(BACKEND_TOKEN)
