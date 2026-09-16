@@ -136,7 +136,7 @@ struct MyView: View {
                         .tabViewStyle(.page(indexDisplayMode: .never))
                         .frame(height: 118)
                     }
-                    TierProgressCard(flightCount: history.count)
+                    TierProgressCard(standing: .compute(for: history))
                         .padding(.horizontal, 12)
                     StatsPanel(stats: history.travelStats())
                         .padding(.horizontal, 12)
@@ -220,21 +220,26 @@ private struct LegCard: View {
 /// above the Distance/Flights/Countries/Cities panel it's really an extra
 /// row for.
 private struct TierProgressCard: View {
-    let flightCount: Int
-    private var tier: MilestoneTier { .current(for: flightCount) }
+    let standing: TierStanding
+    private var tier: MilestoneTier { standing.tier }
+
+    /// "3 flights or 4,200 km to Gold" — whichever the ladder reaches
+    /// first is what actually promotes, so both counters are shown.
+    private var progressText: String {
+        guard let legsToNext = standing.legsToNext, let kmToNext = standing.kmToNext, let next = tier.next else {
+            return tier.tagline
+        }
+        let legsWord = legsToNext == 1 ? "flight" : "flights"
+        let distance = systemPrefersMetric() ? "\(kmToNext.formatted()) km" : "\(Int(Double(kmToNext) * 0.621371).formatted()) mi"
+        return "\(legsToNext) \(legsWord) or \(distance) to \(next.nameCN)"
+    }
 
     var body: some View {
         HStack(spacing: 14) {
             TierBadgeView(tier: tier, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tier.nameCN).font(.subheadline.bold())
-                if let next = tier.next {
-                    let remaining = max(0, next.rawValue - flightCount)
-                    Text("\(remaining) more \(remaining == 1 ? "flight" : "flights") to \(next.nameCN)")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Text(tier.tagline).font(.caption).foregroundStyle(.secondary)
-                }
+                Text(progressText).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
         }

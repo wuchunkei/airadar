@@ -112,7 +112,7 @@ struct TripView: View {
                 // visible version of this) actually lives.
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: onShowMyTab) {
-                        TierBadgeView(tier: .current(for: store.completedFlightCount), size: 22)
+                        TierBadgeView(tier: store.tierStanding.tier, size: 22)
                     }
                 }
             }

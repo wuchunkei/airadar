@@ -33,9 +33,13 @@ final class FlightStore: ObservableObject {
     /// Every leg actually flown (or in the air right now) — what the
     /// milestone tiers count against. The same filter My's own map uses for
     /// its route network, kept in one place so the two never drift apart.
-    var completedFlightCount: Int {
-        flights.filter { ($0.phase == .past || $0.phase == .inProgress) && !$0.isPending }.count
+    var completedFlights: [Flight] {
+        flights.filter { ($0.phase == .past || $0.phase == .inProgress) && !$0.isPending }
     }
+    var completedFlightCount: Int { completedFlights.count }
+
+    /// Where the tier ladder puts this traveller right now.
+    var tierStanding: TierStanding { .compute(for: completedFlights) }
 
     // The last published list, on disk, so a relaunch shows the trips at once and
     // the server sync only refines them.
