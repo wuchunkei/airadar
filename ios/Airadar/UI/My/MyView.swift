@@ -28,6 +28,12 @@ struct MyView: View {
     /// hides the dot outright; hidden and it shows and centres again.
     @State private var showsUserLocation = true
     @State private var trackingMode: MKUserTrackingMode = .follow
+    /// The height of the card stack floating over the bottom of the map —
+    /// measured, not guessed, since it grows or shrinks with the leg
+    /// carousel appearing and disappearing. Centring on the user shifts up
+    /// by half of this, so "my location" lands in the map that's actually
+    /// free to look at above it.
+    @State private var overlayHeight: CGFloat = 0
 
     /// Flown legs, and the one in the air right now with the plane on it.
     private var history: [Flight] { store.flights.filter { ($0.phase == .past || $0.phase == .inProgress) && !$0.isPending } }
@@ -118,7 +124,7 @@ struct MyView: View {
                 // north, green heading south, so the web of past legs reads at a glance.
                 TileMapView(routes: routes, interactive: true, directionColored: true, selected: highlighted,
                             highlightedAirports: highlightedAirports, showsUserLocation: showsUserLocation,
-                            userTrackingMode: $trackingMode, emptyFocus: homeRegion,
+                            userTrackingMode: $trackingMode, emptyFocus: homeRegion, bottomInset: overlayHeight,
                             onLegTap: legTapped, onAirportTap: airportTapped, onMapTap: { browsing = []; currentFlightId = nil })
                     .ignoresSafeArea()
 
@@ -142,6 +148,7 @@ struct MyView: View {
                         .padding(.horizontal, 12)
                 }
                 .padding(.bottom, 12)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { overlayHeight = $0 }
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -221,6 +228,11 @@ private struct LegCard: View {
 /// The badge on the left, how far to the next tier on the right — sat just
 /// above the Distance/Flights/Countries/Cities panel it's really an extra
 /// row for.
+/// The current tier's badge and the next one's, a route line flying between
+/// them — flown so far solid and fading from one tier's colour into the
+/// other's, still to go dashed — with the plane sat wherever that progress
+/// actually is, and "N flights/N km still" written over the line itself.
+/// Rainbow, with nothing beyond it, just shows the badge and its tagline.
 private struct TierProgressCard: View {
     let standing: TierStanding
     /// Rainbow's sequence number, once the backend has handed one out —
@@ -228,33 +240,69 @@ private struct TierProgressCard: View {
     /// reads Rainbow but the claim hasn't come back yet.
     var rainbowRank: Int? = nil
     private var tier: MilestoneTier { standing.tier }
+    private var next: MilestoneTier? { tier.next }
 
-    /// "3 flights or 4,200 km to Gold" — whichever the ladder reaches
-    /// first is what actually promotes, so both counters are shown.
-    private var progressText: String {
-        guard let legsToNext = standing.legsToNext, let kmToNext = standing.kmToNext, let next = tier.next else {
-            return tier.tagline
-        }
-        let legsWord = legsToNext == 1 ? "flight" : "flights"
+    /// Whichever of legs-into-tier or km-into-tier is further along is the
+    /// one actually closest to promoting — that's where the plane sits.
+    private var fraction: Double {
+        guard tier.legsInBand != Int.max else { return 0 }
+        let legs = Double(standing.legsIntoTier) / Double(tier.legsInBand)
+        let km = Double(standing.kmIntoTier) / Double(tier.kmBudget)
+        return min(1, max(legs, km))
+    }
+
+    /// "3 flights/4,200 km still" — both counters, since either reaching
+    /// zero first is what actually promotes.
+    private var remainingText: String {
+        guard let legsToNext = standing.legsToNext, let kmToNext = standing.kmToNext else { return tier.tagline }
         let distance = systemPrefersMetric() ? "\(kmToNext.formatted()) km" : "\(Int(Double(kmToNext) * 0.621371).formatted()) mi"
-        return "\(legsToNext) \(legsWord) or \(distance) to \(next.nameCN)"
+        return "\(legsToNext) \(legsToNext == 1 ? "flight" : "flights")/\(distance) still"
+    }
+
+    private func label(_ t: MilestoneTier) -> some View {
+        VStack(spacing: 3) {
+            TierBadgeView(tier: t, size: 36)
+            Text(t.name).font(.caption2.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+        }
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            TierBadgeView(tier: tier, size: 40)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(tier.nameCN).font(.subheadline.bold())
-                    // Hidden tier, hidden bragging right: which-numbered
-                    // traveller ever to get here, once the backend confirms it.
-                    if tier == .rainbow, let rainbowRank {
-                        Text("#\(rainbowRank)").font(.caption.bold()).foregroundStyle(.secondary)
+        HStack(spacing: 10) {
+            label(tier)
+            if let next {
+                GeometryReader { g in
+                    let w = g.size.width, midY = g.size.height / 2
+                    let flownX = w * fraction
+                    let planeColor = tier.rimColor.mixed(with: next.rimColor, fraction: fraction)
+                    ZStack {
+                        Path { p in p.move(to: CGPoint(x: flownX, y: midY)); p.addLine(to: CGPoint(x: w, y: midY)) }
+                            .stroke(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
+                        Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: flownX, y: midY)) }
+                            .stroke(LinearGradient(colors: [tier.rimColor, planeColor], startPoint: .leading, endPoint: .trailing), lineWidth: 2.5)
+                        Image(systemName: "airplane").font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(planeColor)
+                            .position(x: min(max(8, flownX), w - 8), y: midY)
+                        Text(remainingText).font(.caption2).foregroundStyle(.secondary)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(.background.opacity(0.85), in: .rect(cornerRadius: 4))
+                            .fixedSize()
+                            .position(x: w / 2, y: midY - 15)
                     }
                 }
-                Text(progressText).font(.caption).foregroundStyle(.secondary)
+                .frame(height: 40)
+                label(next)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(tier.name).font(.subheadline.bold())
+                        // Hidden tier, hidden bragging right: which-numbered
+                        // traveller ever to get here, once the backend confirms it.
+                        if let rainbowRank { Text("#\(rainbowRank)").font(.caption.bold()).foregroundStyle(.secondary) }
+                    }
+                    Text(tier.tagline).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
             }
-            Spacer()
         }
         .padding(14)
         .glassEffect(.regular, in: .rect(cornerRadius: 16))

@@ -57,31 +57,35 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         return ordered[i + 1]
     }
 
-    var nameCN: String {
+    /// English for now, matching the rest of the app — the Chinese names
+    /// (黑鐵/青銅/白銀/黃金/白金/鑽石/紅寶石/黑曜石/彩虹) wait for the real
+    /// localization pass.
+    var name: String {
         switch self {
-        case .blackIron: "黑鐵"
-        case .bronze: "青銅"
-        case .silver: "白銀"
-        case .gold: "黃金"
-        case .platinum: "白金"
-        case .diamond: "鑽石"
-        case .ruby: "紅寶石"
-        case .obsidian: "黑曜石"
-        case .rainbow: "彩虹"
+        case .blackIron: "Black Iron"
+        case .bronze: "Bronze"
+        case .silver: "Silver"
+        case .gold: "Gold"
+        case .platinum: "Platinum"
+        case .diamond: "Diamond"
+        case .ruby: "Ruby"
+        case .obsidian: "Obsidian"
+        case .rainbow: "Rainbow"
         }
     }
 
+    /// Only ever shown for the tier with no next — today just Rainbow.
     var tagline: String {
         switch self {
-        case .blackIron: "旅程的起點"
-        case .bronze: "常客初現"
-        case .silver: "銀翼行者"
-        case .gold: "黃金旅人"
-        case .platinum: "白金巡航者"
-        case .diamond: "鑽石級旅人"
-        case .ruby: "紅寶石飛行家"
-        case .obsidian: "黑曜傳奇"
-        case .rainbow: "隱藏傳說"
+        case .blackIron: "Every journey starts here."
+        case .bronze: "Ten flights and counting."
+        case .silver: "A quarter-century in the air."
+        case .gold: "Fifty flights strong."
+        case .platinum: "Triple digits — a real habit now."
+        case .diamond: "Diamond-clear dedication."
+        case .ruby: "Six hundred, and still boarding."
+        case .obsidian: "Legend status."
+        case .rainbow: "A secret worth finding."
         }
     }
 
@@ -194,5 +198,19 @@ struct TierBadgeView: View {
             }
         }
         .frame(width: size, height: size)
+    }
+}
+
+extension Color {
+    /// A plain linear blend toward `other` — used to fade the route-progress
+    /// plane and its flown line from one tier's colour into the next's as
+    /// it moves along, rather than snapping from one to the other.
+    func mixed(with other: Color, fraction: Double) -> Color {
+        let f = min(1, max(0, fraction))
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        UIColor(self).getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        UIColor(other).getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+        return Color(red: r1 + (r2 - r1) * f, green: g1 + (g2 - g1) * f, blue: b1 + (b2 - b1) * f, opacity: a1 + (a2 - a1) * f)
     }
 }

@@ -70,6 +70,11 @@ struct TileMapView: UIViewRepresentable {
     /// button watching this binding still sees it demoted back to `.none`.
     var userTrackingMode: Binding<MKUserTrackingMode>? = nil
     var emptyFocus: Region? = nil
+    /// However much of the bottom is covered by cards floating over the map
+    /// — while following the user, the visual centre shifts up by half of
+    /// this, so "my location" centres in the map that's actually free to
+    /// look at, not behind whatever's overlaid at the bottom.
+    var bottomInset: CGFloat = 0
     /// A tap on one line: which leg, exactly.
     var onLegTap: ((Airport, Airport, Int) -> Void)? = nil
     /// A tap on an airport's dot.
@@ -385,7 +390,19 @@ struct TileMapView: UIViewRepresentable {
 
         func recenter(_ map: MKMapView, on coordinate: CLLocationCoordinate2D) {
             programmaticChange = true
-            map.setCenter(coordinate, animated: true)
+            let shiftUp = parent.bottomInset / 2
+            if shiftUp > 1 {
+                // The coordinate sitting `shiftUp` points below `coordinate`'s
+                // own current on-screen spot, under the present camera —
+                // centring on THAT instead puts `coordinate` itself `shiftUp`
+                // points above true centre, clear of whatever's floating over
+                // the bottom of the map.
+                let point = map.convert(coordinate, toPointTo: map)
+                let shifted = map.convert(CGPoint(x: point.x, y: point.y + shiftUp), toCoordinateFrom: map)
+                map.setCenter(shifted, animated: true)
+            } else {
+                map.setCenter(coordinate, animated: true)
+            }
             DispatchQueue.main.async { [weak self] in self?.programmaticChange = false }
         }
 
