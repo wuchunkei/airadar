@@ -352,9 +352,13 @@ extension Array where Element == Flight {
 
 enum ThemeMode: String, CaseIterable, Codable { case system, light, dark }
 
-/// Does the phone measure in miles? Only three countries still do for distance.
+/// Whether to show distances in kilometres — read from the phone's own
+/// Measurement System setting (Settings ▸ General ▸ Language & Region),
+/// not guessed from Region alone: a phone can have Region set to United
+/// States and Measurement System set to Metric (or the other way around),
+/// and going by Region alone got exactly that case backwards.
 func systemPrefersMetric() -> Bool {
-    !["US", "LR", "MM"].contains(Locale.current.region?.identifier ?? "")
+    Locale.current.measurementSystem == .metric
 }
 
 func formatDistance(_ km: Int) -> String {

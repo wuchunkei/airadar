@@ -9,6 +9,9 @@ struct TripView: View {
     let resetSignal: Int
     let canShare: Bool
     let onDeleted: (Flight) -> Void
+    /// The tier badge, right of Friends, jumps to My — where the full
+    /// progress card lives — rather than opening anything of its own here.
+    let onShowMyTab: () -> Void
 
     @EnvironmentObject private var store: FlightStore
     @EnvironmentObject private var auth: AuthStore
@@ -102,6 +105,14 @@ struct TripView: View {
                 if canShare {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { showFriends = true } label: { Image(systemName: "person.2") }
+                    }
+                }
+                // The tier badge, right of Friends — jumps straight to My,
+                // where the full progress card (and, one day, the friend-
+                // visible version of this) actually lives.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: onShowMyTab) {
+                        TierBadgeView(tier: .current(for: store.completedFlightCount), size: 22)
                     }
                 }
             }

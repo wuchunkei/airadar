@@ -136,6 +136,8 @@ struct MyView: View {
                         .tabViewStyle(.page(indexDisplayMode: .never))
                         .frame(height: 118)
                     }
+                    TierProgressCard(flightCount: history.count)
+                        .padding(.horizontal, 12)
                     StatsPanel(stats: history.travelStats())
                         .padding(.horizontal, 12)
                 }
@@ -211,6 +213,33 @@ private struct LegCard: View {
             .glassEffect(.regular, in: .rect(cornerRadius: 16))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The badge on the left, how far to the next tier on the right — sat just
+/// above the Distance/Flights/Countries/Cities panel it's really an extra
+/// row for.
+private struct TierProgressCard: View {
+    let flightCount: Int
+    private var tier: MilestoneTier { .current(for: flightCount) }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            TierBadgeView(tier: tier, size: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tier.nameCN).font(.subheadline.bold())
+                if let next = tier.next {
+                    let remaining = max(0, next.rawValue - flightCount)
+                    Text("\(remaining) more \(remaining == 1 ? "flight" : "flights") to \(next.nameCN)")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text(tier.tagline).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .padding(14)
+        .glassEffect(.regular, in: .rect(cornerRadius: 16))
     }
 }
 

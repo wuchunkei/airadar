@@ -51,11 +51,11 @@ struct RootView: View {
             tab = new
         })) {
             Tab("Trip", systemImage: "airplane.departure", value: .trip) {
-                TripView(scope: .present, resetSignal: tripResetSignal, canShare: canShare, onDeleted: deleted)
+                TripView(scope: .present, resetSignal: tripResetSignal, canShare: canShare, onDeleted: deleted, onShowMyTab: { tab = .my })
             }
             .badge(pendingPresent)
             Tab("Past", systemImage: "clock.arrow.circlepath", value: .past) {
-                TripView(scope: .past, resetSignal: pastResetSignal, canShare: canShare, onDeleted: deleted)
+                TripView(scope: .past, resetSignal: pastResetSignal, canShare: canShare, onDeleted: deleted, onShowMyTab: { tab = .my })
             }
             .badge(pendingPast)
             Tab("Search", systemImage: "magnifyingglass", value: .search) {
