@@ -145,7 +145,6 @@ struct MyView: View {
                     } else {
                         TierProgressCard(standing: .compute(for: history), rainbowRank: store.rainbowRank)
                             .padding(.horizontal, 12)
-                            .frame(height: 118)
                     }
                     StatsPanel(stats: history.travelStats())
                         .padding(.horizontal, 12)
@@ -307,7 +306,12 @@ private struct TierProgressCard: View {
                 Spacer()
             }
         }
-        .padding(14)
+        // Set on the HStack itself, before the glass background — set from
+        // outside instead, the background would only wrap its content's own
+        // natural (shorter) height and just float in extra empty space
+        // rather than actually match the flight card's full 118pt bubble.
+        .frame(maxWidth: .infinity, minHeight: 118, maxHeight: 118)
+        .padding(.horizontal, 14)
         .glassEffect(.regular, in: .rect(cornerRadius: 16))
     }
 }
