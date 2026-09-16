@@ -101,18 +101,21 @@ struct TripView: View {
             .toolbarTitleDisplayMode(.inline)
             .toolbar(.visible, for: .navigationBar)
             .toolbar {
-                // Friends, where My keeps Settings: top right — plan holders only.
-                if canShare {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { showFriends = true } label: { Image(systemName: "person.2") }
-                    }
-                }
-                // The tier badge, right of Friends — jumps straight to My,
-                // where the full progress card (and, one day, the friend-
-                // visible version of this) actually lives.
+                // Friends and the tier badge share one toolbar item — two
+                // separate ones sit the system's own default gap apart,
+                // which read as the badge sitting oddly far from Friends.
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: onShowMyTab) {
-                        TierBadgeView(tier: store.tierStanding.tier, size: 28)
+                    HStack(spacing: 10) {
+                        // Plan holders only.
+                        if canShare {
+                            Button { showFriends = true } label: { Image(systemName: "person.2") }
+                        }
+                        // Jumps straight to My, where the full progress card
+                        // (and, one day, the friend-visible version of this)
+                        // actually lives.
+                        Button(action: onShowMyTab) {
+                            TierBadgeView(tier: store.tierStanding.tier, size: 28)
+                        }
                     }
                 }
             }

@@ -129,9 +129,10 @@ struct MyView: View {
                     .ignoresSafeArea()
 
                 VStack(spacing: 8) {
+                    // A route selected: its flights take this slot, oldest to
+                    // newest; nothing selected: the tier card is back in it.
+                    // Same height either way, so the layout doesn't jump.
                     if !browsing.isEmpty {
-                        // Same width as the stats panel; swiping pages through the flights
-                        // on this route and re-lights the matching arc as you go.
                         TabView(selection: $currentFlightId) {
                             ForEach(browsing) { f in
                                 LegCard(flight: f) { openId = f.id }
@@ -141,9 +142,11 @@ struct MyView: View {
                         }
                         .tabViewStyle(.page(indexDisplayMode: .never))
                         .frame(height: 118)
+                    } else {
+                        TierProgressCard(standing: .compute(for: history), rainbowRank: store.rainbowRank)
+                            .padding(.horizontal, 12)
+                            .frame(height: 118)
                     }
-                    TierProgressCard(standing: .compute(for: history), rainbowRank: store.rainbowRank)
-                        .padding(.horizontal, 12)
                     StatsPanel(stats: history.travelStats())
                         .padding(.horizontal, 12)
                 }
@@ -319,8 +322,8 @@ private struct StatsPanel: View {
     }
     var body: some View {
         HStack {
-            StatCell(value: distanceText, unit: metric ? "km" : "mi", label: "Distance")
             StatCell(value: "\(stats.flightCount)", unit: "", label: "Flights")
+            StatCell(value: distanceText, unit: metric ? "km" : "mi", label: "Distance")
             StatCell(value: "\(stats.countryCount)", unit: "", label: "Countries")
             StatCell(value: "\(stats.cityCount)", unit: "", label: "Cities")
         }

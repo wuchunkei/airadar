@@ -57,7 +57,7 @@ struct TileMapView: UIViewRepresentable {
     /// An airport to show a dot for even with no route touching it — an upcoming
     /// departure, say — and whether to draw that dot blue (a route to it is
     /// actually available) or leave it the ordinary colour.
-    struct HighlightedAirport { let airport: Airport; let reachable: Bool }
+    struct HighlightedAirport: Equatable { let airport: Airport; let reachable: Bool }
     var highlightedAirports: [HighlightedAirport] = []
     /// The dot — off by default. On, `userTrackingMode` decides whether the
     /// camera actually follows it too.
@@ -106,72 +106,22 @@ struct TileMapView: UIViewRepresentable {
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
+        let previous = context.coordinator.parent
         context.coordinator.parent = self
-        // Redraw the legs.
-        map.removeOverlays(map.overlays)
-        map.removeAnnotations(map.annotations)
-        var legs: [Coordinator.Leg] = []
 
-        for r in routes {
-            let coords = Self.arcPath(r.from, r.to, rank: r.rank)
-            if let p = r.progress {
-                // Whole way dashed; the part flown solid green; the plane at the point reached —
-                // the real point when ADS-B has one (the arc is cut where it comes nearest), the
-                // timetable's estimate otherwise.
-                let whole = LegPolyline(coordinates: coords, count: coords.count)
-                whole.color = UIColor.secondaryLabel.withAlphaComponent(0.6); whole.width = 1.0; whole.dashed = true; whole.arrow = false
-                map.addOverlay(whole, level: .aboveLabels)
-                var n = max(2, Int(Double(coords.count - 1) * p) + 1)
-                var planeAt = coords[n - 1]
-                var heading = Self.bearing(coords[max(0, n - 2)], coords[n - 1])
-                if let live = livePlane {
-                    let here = MKMapPoint(live.coordinate)
-                    n = max(2, (coords.indices.min { MKMapPoint(coords[$0]).distance(to: here) < MKMapPoint(coords[$1]).distance(to: here) } ?? 1) + 1)
-                    planeAt = live.coordinate
-                    heading = live.heading
-                }
-                let flown = LegPolyline(coordinates: Array(coords.prefix(n)), count: n)
-                flown.color = Coordinator.liveColor; flown.width = 1.6; flown.arrow = false
-                map.addOverlay(flown, level: .aboveLabels)
-                map.addAnnotation(PlaneAnnotation(coordinate: planeAt, heading: heading))
-                legs.append(.init(line: whole, from: r.from, to: r.to, rank: r.rank))
-                continue
-            }
-            let line = LegPolyline(coordinates: coords, count: coords.count)
-            let base = directionColored ? Coordinator.directionColor(r.from, r.to) : (r.isReturn ? Coordinator.returnColor : Coordinator.routeColor)
-            line.color = isSelected(r.from, r.to, rank: r.rank) ? Coordinator.selectedColor : base
-            line.width = 1.0
-            map.addOverlay(line, level: .aboveLabels)
-            legs.append(.init(line: line, from: r.from, to: r.to, rank: r.rank))
-        }
-        for t in tracks {
-            let coords = t.points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
-            let line = LegPolyline(coordinates: coords, count: coords.count)
-            line.color = isSelected(t.from, t.to, rank: 0) ? Coordinator.selectedColor : (t.live ? Coordinator.liveColor : Coordinator.routeColor)
-            line.width = t.live ? 1.6 : 1.2
-            line.arrow = !t.live
-            map.addOverlay(line, level: .aboveLabels)
-            if t.live, coords.count >= 2 {
-                let last = coords[coords.count - 1]
-                map.addAnnotation(PlaneAnnotation(coordinate: last, heading: Self.bearing(coords[coords.count - 2], last)))
-                // The way still to go, dashed, so the map frames the whole flight and not just the bit flown.
-                let rest = Self.arcPath(from: last, to: t.to.coordinate)
-                let ahead = LegPolyline(coordinates: rest, count: rest.count)
-                ahead.color = UIColor.secondaryLabel.withAlphaComponent(0.6); ahead.width = 1.0; ahead.dashed = true; ahead.arrow = false
-                map.addOverlay(ahead, level: .aboveLabels)
-            }
-            legs.append(.init(line: line, from: t.from, to: t.to, rank: 0))
-        }
-        context.coordinator.legs = legs
-
-        var airports: [String: Airport] = [:]
-        for r in routes { airports[r.from.iata] = r.from; airports[r.to.iata] = r.to }
-        for t in tracks { airports[t.from.iata] = t.from; airports[t.to.iata] = t.to }
-        for h in highlightedAirports { airports[h.airport.iata] = h.airport }
-        let blue = Set(highlightedAirports.filter(\.reachable).map { $0.airport.iata })
-        for a in airports.values {
-            let pin = AirportAnnotation(airport: a, label: cityLabels ? a.city : nil, blue: blue.contains(a.iata))
-            map.addAnnotation(pin)
+        // A tap only ever changes `selected` — tearing down and rebuilding
+        // every overlay and annotation for that (dozens of them, once a
+        // traveller has any real history) is what visibly hitched. When
+        // the network itself hasn't moved, just recolour the two lines
+        // whose selection state actually changed.
+        let networkUnchanged = context.coordinator.hasBuilt
+            && routes == previous.routes && tracks == previous.tracks
+            && highlightedAirports == previous.highlightedAirports
+            && cityLabels == previous.cityLabels && directionColored == previous.directionColored
+        if networkUnchanged {
+            recolorSelection(map, context: context, previousSelected: previous.selected)
+        } else {
+            rebuildOverlays(map, context: context)
         }
 
         map.showsUserLocation = showsUserLocation
@@ -208,6 +158,101 @@ struct TileMapView: UIViewRepresentable {
     private func isSelected(_ a: Airport, _ b: Airport, rank: Int) -> Bool {
         guard let selected else { return false }
         return selected.0.iata == a.iata && selected.1.iata == b.iata && selected.2 == rank
+    }
+
+    private func isSelected(_ leg: Coordinator.Leg, in candidate: (Airport, Airport, Int)?) -> Bool {
+        guard let candidate else { return false }
+        return candidate.0.iata == leg.from.iata && candidate.1.iata == leg.to.iata && candidate.2 == leg.rank
+    }
+
+    /// Only `selected` moved: recolour just the (at most two) lines whose
+    /// highlight state actually flipped, and ask their existing renderers to
+    /// redraw — never touches the overlay or annotation lists themselves.
+    private func recolorSelection(_ map: MKMapView, context: Context, previousSelected: (Airport, Airport, Int)?) {
+        for leg in context.coordinator.legs {
+            let was = isSelected(leg, in: previousSelected)
+            let now = isSelected(leg, in: selected)
+            guard was != now else { continue }
+            leg.line.color = now ? Coordinator.selectedColor : leg.baseColor
+            if let renderer = map.renderer(for: leg.line) as? ArrowedPolylineRenderer {
+                renderer.strokeColor = leg.line.color
+                renderer.setNeedsDisplay()
+            }
+        }
+    }
+
+    /// The full teardown-and-redraw: every overlay and annotation, from
+    /// scratch. Needed whenever the network itself changed — a new route
+    /// appeared, a live position moved the in-flight plane, and so on.
+    private func rebuildOverlays(_ map: MKMapView, context: Context) {
+        context.coordinator.hasBuilt = true
+        map.removeOverlays(map.overlays)
+        map.removeAnnotations(map.annotations)
+        var legs: [Coordinator.Leg] = []
+
+        for r in routes {
+            let coords = Self.arcPath(r.from, r.to, rank: r.rank)
+            if let p = r.progress {
+                // Whole way dashed; the part flown solid green; the plane at the point reached —
+                // the real point when ADS-B has one (the arc is cut where it comes nearest), the
+                // timetable's estimate otherwise.
+                let dashedColor = UIColor.secondaryLabel.withAlphaComponent(0.6)
+                let whole = LegPolyline(coordinates: coords, count: coords.count)
+                whole.color = dashedColor; whole.width = 1.0; whole.dashed = true; whole.arrow = false
+                map.addOverlay(whole, level: .aboveLabels)
+                var n = max(2, Int(Double(coords.count - 1) * p) + 1)
+                var planeAt = coords[n - 1]
+                var heading = Self.bearing(coords[max(0, n - 2)], coords[n - 1])
+                if let live = livePlane {
+                    let here = MKMapPoint(live.coordinate)
+                    n = max(2, (coords.indices.min { MKMapPoint(coords[$0]).distance(to: here) < MKMapPoint(coords[$1]).distance(to: here) } ?? 1) + 1)
+                    planeAt = live.coordinate
+                    heading = live.heading
+                }
+                let flown = LegPolyline(coordinates: Array(coords.prefix(n)), count: n)
+                flown.color = Coordinator.liveColor; flown.width = 1.6; flown.arrow = false
+                map.addOverlay(flown, level: .aboveLabels)
+                map.addAnnotation(PlaneAnnotation(coordinate: planeAt, heading: heading))
+                legs.append(.init(line: whole, from: r.from, to: r.to, rank: r.rank, baseColor: dashedColor))
+                continue
+            }
+            let line = LegPolyline(coordinates: coords, count: coords.count)
+            let base = directionColored ? Coordinator.directionColor(r.from, r.to) : (r.isReturn ? Coordinator.returnColor : Coordinator.routeColor)
+            line.color = isSelected(r.from, r.to, rank: r.rank) ? Coordinator.selectedColor : base
+            line.width = 1.0
+            map.addOverlay(line, level: .aboveLabels)
+            legs.append(.init(line: line, from: r.from, to: r.to, rank: r.rank, baseColor: base))
+        }
+        for t in tracks {
+            let coords = t.points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+            let line = LegPolyline(coordinates: coords, count: coords.count)
+            let base = t.live ? Coordinator.liveColor : Coordinator.routeColor
+            line.color = isSelected(t.from, t.to, rank: 0) ? Coordinator.selectedColor : base
+            line.width = t.live ? 1.6 : 1.2
+            line.arrow = !t.live
+            map.addOverlay(line, level: .aboveLabels)
+            if t.live, coords.count >= 2 {
+                let last = coords[coords.count - 1]
+                map.addAnnotation(PlaneAnnotation(coordinate: last, heading: Self.bearing(coords[coords.count - 2], last)))
+                // The way still to go, dashed, so the map frames the whole flight and not just the bit flown.
+                let rest = Self.arcPath(from: last, to: t.to.coordinate)
+                let ahead = LegPolyline(coordinates: rest, count: rest.count)
+                ahead.color = UIColor.secondaryLabel.withAlphaComponent(0.6); ahead.width = 1.0; ahead.dashed = true; ahead.arrow = false
+                map.addOverlay(ahead, level: .aboveLabels)
+            }
+            legs.append(.init(line: line, from: t.from, to: t.to, rank: 0, baseColor: base))
+        }
+        context.coordinator.legs = legs
+
+        var airports: [String: Airport] = [:]
+        for r in routes { airports[r.from.iata] = r.from; airports[r.to.iata] = r.to }
+        for t in tracks { airports[t.from.iata] = t.from; airports[t.to.iata] = t.to }
+        for h in highlightedAirports { airports[h.airport.iata] = h.airport }
+        let blue = Set(highlightedAirports.filter(\.reachable).map { $0.airport.iata })
+        for a in airports.values {
+            let pin = AirportAnnotation(airport: a, label: cityLabels ? a.city : nil, blue: blue.contains(a.iata))
+            map.addAnnotation(pin)
+        }
     }
 
     /// The bowed line between two airports. The rule: every flight keeps to the
@@ -305,10 +350,15 @@ struct TileMapView: UIViewRepresentable {
             b.latitude >= a.latitude ? routeColor : returnColor
         }
 
-        struct Leg { let line: LegPolyline; let from: Airport; let to: Airport; let rank: Int }
+        struct Leg { let line: LegPolyline; let from: Airport; let to: Airport; let rank: Int; let baseColor: UIColor }
 
         var parent: TileMapView
         var legs: [Leg] = []
+        /// False until the first real `rebuildOverlays` — distinct from
+        /// `map.overlays.isEmpty`, which is also true for a genuinely empty
+        /// network and would otherwise wrongly take the recolour-only path
+        /// and skip ever adding it.
+        var hasBuilt = false
         var framedFor = 0
         var pendingRect: MKMapRect?
         weak var map: MKMapView?
