@@ -38,6 +38,14 @@ from .auth import current_user
 
 router = APIRouter(tags=["billing"])
 
+# Off while the token/paywall is shelved -- every signed-in account gets
+# Premium's limits (none) regardless of any token. Flip back to True -- and
+# bring back Settings' token entry UI on the client, which is what this is
+# paired with -- to restore gating behind sign-in + token, or an Apple/
+# Google IAP flow, later. Airadar/Models/Membership.swift's `paywallEnabled`
+# is the matching switch on the client.
+PAYWALL_ENABLED = False
+
 GRACE_DAYS = 3  # a paid plan keeps working this long after its period ends
 PLANS = {"superior": "Superior", "premium": "Premium"}
 PRICE_CENTS = {"superior": 100, "premium": 500}
@@ -88,6 +96,8 @@ def _membership_of(tok: dict | None) -> Membership:
 
 async def membership(db, user: dict) -> Membership:
     """The tier in force for a signed-in account: its token, if paid and bound to this email."""
+    if not PAYWALL_ENABLED:
+        return Membership(tier="premium", until=None, limits=LIMITS["premium"])
     tok = await db.tokens.find_one({"_id": user["tokenId"]}) if user.get("tokenId") else None
     if tok and (tok.get("lifetime") or tok.get("boundEmail") == user["email"]):
         return _membership_of(tok)

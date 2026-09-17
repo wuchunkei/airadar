@@ -1,26 +1,23 @@
 import SwiftUI
 
-/// Account (token first, then Google), Import, Display, Trips, About.
+/// Account (Google sign-in — no token page while Entitlements.paywallEnabled
+/// is off), Import, Display, Trips, About.
 struct SettingsView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var settings: SettingsModel
     @EnvironmentObject private var store: FlightStore
 
-    @State private var tokenInput = ""
     @State private var busy = false
-    @State private var tokenError: String?
     @State private var authError: String?
     @State private var calendarStatus: String?
     @State private var pickingCalendars = false
-    @State private var showPlans = false
     @State private var nameSheet: NameSheet?
     @State private var confirmDeleteAll = false
-    @Environment(\.openURL) private var openURL
 
     var body: some View {
         List {
             Section("Account") { account }
-            // Importing is for signed-in plan holders; a token alone is still a guest.
+            // Importing needs an account to attach the trips to.
             if auth.isSignedIn {
                 Section("Import") {
                     NavigationLink("Read trips from email") { EmailImportView() }
@@ -61,7 +58,6 @@ struct SettingsView: View {
                            onDone: { ids in pickingCalendars = false; settings.calendarIds = ids; readCalendars() },
                            onCancel: { pickingCalendars = false; if settings.calendarIds.isEmpty { settings.calendarSync = false } })
         }
-        .sheet(isPresented: $showPlans) { MembershipView(current: auth.user?.membership.tier ?? .guest, reason: nil) { showPlans = false } }
         .confirmationDialog("Delete all \(store.flights.count) trips?", isPresented: $confirmDeleteAll, titleVisibility: .visible) {
             Button("Delete All", role: .destructive) { store.deleteAll() }
             Button("Cancel", role: .cancel) {}
@@ -72,76 +68,42 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var account: some View {
-        if let checked = auth.checkedToken {
-            if auth.isSignedIn, let user = auth.user {
-                HStack {
-                    VStack(alignment: .leading) {
-                        // The traveller's name in their own colour — how friends see them.
-                        Text(user.name ?? "Signed in").font(.body.weight(.semibold))
-                            .foregroundStyle(user.color.map { Color(hex: $0) } ?? .primary)
-                        Text(user.email).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Sign out") { Task { await BackendClient.signOut(); store.onSignedOut() } }
+        if auth.isSignedIn, let user = auth.user {
+            HStack {
+                VStack(alignment: .leading) {
+                    // The traveller's name in their own colour — how friends see them.
+                    Text(user.name ?? "Signed in").font(.body.weight(.semibold))
+                        .foregroundStyle(user.color.map { Color(hex: $0) } ?? .primary)
+                    Text(user.email).font(.caption).foregroundStyle(.secondary)
                 }
-                // The plan line, with the token swap on its right — plain text, like Sign out.
-                HStack {
-                    PlanLine(membership: user.membership)
-                    Spacer()
-                    Button("Replace token") { replaceToken() }
+                Spacer()
+                Button("Sign out") { Task { await BackendClient.signOut(); store.onSignedOut() } }
+            }
+            Toggle("Friends can find me by email", isOn: findableBinding(user.findableByEmail))
+            HStack {
+                Text("Name on tickets")
+                Spacer()
+                Button(user.passengerName ?? "Not set") {
+                    let p = PassengerNameSheet.parts(of: user.passengerName ?? user.name ?? "")
+                    nameSheet = NameSheet(fromGoogle: false, given: p.given, middle: p.middle, family: p.family)
                 }
-                if user.membership.tier != .premium {
-                    HStack {
-                        Text("Upgrade to Premium")
-                        Spacer()
-                        Button("Upgrade") { openURL(Plans.payURL) }
-                    }
-                }
-                Toggle("Friends can find me by email", isOn: findableBinding(user.findableByEmail))
-                HStack {
-                    Text("Name on tickets")
-                    Spacer()
-                    Button(user.passengerName ?? "Not set") {
-                        let p = PassengerNameSheet.parts(of: user.passengerName ?? user.name ?? "")
-                        nameSheet = NameSheet(fromGoogle: false, given: p.given, middle: p.middle, family: p.family)
-                    }
-                        .foregroundStyle(user.passengerName == nil ? .secondary : .primary)
-                }
-            } else {
-                // Token accepted for this phone: sign in with Google, or swap the token —
-                // two standalone buttons, no card around them. Nothing about the plan
-                // is shown until the account is signed in.
-                // One row, transparent, so the grouped list draws no card behind the pair.
-                VStack(spacing: 10) {
-                    Button { signIn(checked) } label: {
-                        Group { if busy { ProgressView() } else { Text("Continue with Google").fontWeight(.semibold) } }
-                            .frame(maxWidth: .infinity).padding(.vertical, 8)
-                    }
-                    .buttonStyle(.glassProminent).disabled(busy)
-                    Button { replaceToken() } label: {
-                        Text("Replace token").fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 8)
-                    }
-                    .buttonStyle(.glass).disabled(busy)
-                    if let authError { Text(authError).font(.caption).foregroundStyle(.red) }
-                }
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .foregroundStyle(user.passengerName == nil ? .secondary : .primary)
             }
         } else {
-            // No token yet: the field, and where to get one.
-            TextField("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", text: $tokenInput)
-                .font(.body.monospaced()).autocorrectionDisabled().textInputAutocapitalization(.never)
-                .onChange(of: tokenInput) { tokenInput = String(tokenInput.lowercased().filter { $0.isHexDigit || $0 == "-" }.prefix(36)) }
-            HStack {
-                Button("Get a token") { openURL(Plans.payURL) }.buttonStyle(.glass)
-                Button { checkToken() } label: {
-                    Group { if busy { ProgressView() } else { Text("Check token").fontWeight(.semibold) } }.frame(maxWidth: .infinity)
+            // No token gate right now (Entitlements.paywallEnabled is off) —
+            // signing in is the only step, and it unlocks everything at once.
+            // One row, transparent, so the grouped list draws no card behind it.
+            VStack(spacing: 10) {
+                Button { signIn() } label: {
+                    Group { if busy { ProgressView() } else { Text("Continue with Google").fontWeight(.semibold) } }
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
                 }
-                .buttonStyle(.glassProminent)
-                .disabled(tokenInput.filter(\.isHexDigit).count != 32 || busy)
+                .buttonStyle(.glassProminent).disabled(busy)
+                if let authError { Text(authError).font(.caption).foregroundStyle(.red) }
             }
-            if let tokenError { Text(tokenError).font(.caption).foregroundStyle(.red) }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
         }
     }
 
@@ -149,28 +111,13 @@ struct SettingsView: View {
         Binding(get: { current }, set: { on in Task { try? await BackendClient.updateProfile(findableByEmail: on) } })
     }
 
-    private func checkToken() {
-        busy = true; tokenError = nil
-        Task {
-            defer { busy = false }
-            do { _ = try await BackendClient.checkToken(tokenInput) } catch { tokenError = error.localizedDescription }
-        }
-    }
-
-    private func signIn(_ checked: CheckedToken) {
+    private func signIn() {
         busy = true; authError = nil
         Task {
             defer { busy = false }
             do {
                 let google = try await GoogleAuth.idToken()
                 _ = try await BackendClient.signInWithGoogle(idToken: google.idToken)
-                do {
-                    // The account must be the one the token belongs to (or the first to use it).
-                    _ = try await BackendClient.redeem(checked.token)
-                } catch {
-                    await BackendClient.signOut()
-                    throw error
-                }
                 let me = try? await BackendClient.me()
                 try? await store.syncFromServer()
                 // First sign-in: is the account's name the one on their tickets?
@@ -207,15 +154,6 @@ struct SettingsView: View {
         Task { try? await BackendClient.updateProfile(passengerName: trimmed) }
     }
 
-    /// Back to the token field; a signed-in account is signed out first.
-    private func replaceToken() {
-        Task {
-            if auth.isSignedIn { await BackendClient.signOut(); store.onSignedOut() }
-            auth.saveCheckedToken(nil)
-            tokenError = nil
-        }
-    }
-
     private var calendarBinding: Binding<Bool> {
         Binding(get: { settings.calendarSync }, set: { setCalendar($0) })
     }
@@ -243,6 +181,8 @@ struct SettingsView: View {
 }
 
 /// "Premium · until 2026-10-12", "Superior · grace period", or "No plan".
+/// Not shown anywhere right now — the paywall is shelved (see
+/// Entitlements.paywallEnabled) — kept for when it comes back.
 struct PlanLine: View {
     let membership: Membership
     private var name: String {

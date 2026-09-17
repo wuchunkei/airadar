@@ -64,11 +64,21 @@ struct LimitReached: Error, Identifiable, Sendable {
 /// The client-side gate; signed in, the server enforces the same rules and this just saves a 402.
 @MainActor
 enum Entitlements {
+    /// Off while the token/paywall page is shelved (see SettingsView's
+    /// Account section) — everyone gets Premium's limits, which is to say
+    /// none, signed in or not. Flip this back on — and bring back the
+    /// token entry UI it's paired with — to restore gating behind sign-in
+    /// + token, or an Apple/Google IAP flow, later; billing.py's
+    /// `PAYWALL_ENABLED` is the matching switch on the server.
+    static let paywallEnabled = false
+
     static var membership: Membership {
-        AuthStore.shared.isSignedIn ? (AuthStore.shared.user?.membership ?? .guest) : .guest
+        guard paywallEnabled else { return Membership(tier: .premium, until: nil) }
+        return AuthStore.shared.isSignedIn ? (AuthStore.shared.user?.membership ?? .guest) : .guest
     }
 
     static func checkAdd(_ flight: Flight, existing: [Flight]) throws(LimitReached) {
+        guard paywallEnabled else { return }
         let m = membership
         let lim = m.limits
         let live = existing.filter { $0.deletedAt == nil && $0.sharedBy == nil }
