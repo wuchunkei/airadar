@@ -15,7 +15,9 @@ PAGE = """<!doctype html>
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px}
 h1{font-size:20px;margin:0 0 20px}
-#signin{display:flex;flex-direction:column;align-items:center;gap:16px;padding:80px 0}
+#signin{display:flex;flex-direction:column;align-items:center;gap:16px;padding:80px 0;text-align:center}
+#signin h2{margin:0;font-size:16px}
+#signin p{margin:0;color:var(--mute);font-size:13px;max-width:320px}
 #board{display:none;grid-template-columns:repeat(4,1fr);gap:16px}
 @media (max-width:900px){#board{grid-template-columns:1fr;display:none}#board.open{display:grid}}
 .col h2{font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);margin:0 0 10px}
@@ -35,6 +37,8 @@ button.release{border-color:var(--amber);color:var(--amber)}
 </style>
 <h1>Confirm feed — community review</h1>
 <div id="signin">
+  <h2>Sign in required</h2>
+  <p>You'll need to sign in with your Google account every time you open this page — nothing is remembered between visits.</p>
   <div id="g_id_button"></div>
 </div>
 <p id="denied">Not authorized.</p>
@@ -47,7 +51,10 @@ button.release{border-color:var(--amber);color:var(--amber)}
 <script>
 let token = null;
 
-google.accounts.id.initialize({ client_id: "{{GOOGLE_CLIENT_ID}}", callback: onSignIn });
+// auto_select disabled on purpose: opening this page must always land on
+// the sign-in screen, never silently authenticate from an existing Google
+// browser session — the click on the button below is the only way in.
+google.accounts.id.initialize({ client_id: "{{GOOGLE_CLIENT_ID}}", callback: onSignIn, auto_select: false, cancel_on_tap_outside: true });
 google.accounts.id.renderButton(document.getElementById("g_id_button"), { theme: "outline", size: "large" });
 
 async function onSignIn(response) {
