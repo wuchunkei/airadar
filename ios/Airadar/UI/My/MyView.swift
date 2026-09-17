@@ -9,6 +9,7 @@ import MapKit
 struct MyView: View {
     @EnvironmentObject private var store: FlightStore
     @EnvironmentObject private var settings: SettingsModel
+    @EnvironmentObject private var auth: AuthStore
 
     /// The cards on offer below the map, and which one is on screen — swiping
     /// changes the page, and the page in turn decides the one line lit up above.
@@ -143,7 +144,10 @@ struct MyView: View {
                         .tabViewStyle(.page(indexDisplayMode: .never))
                         .frame(height: 118)
                     } else {
-                        TierProgressCard(standing: .compute(for: history), rainbowRank: store.rainbowRank)
+                        TierProgressCard(standing: .compute(for: history), rainbowRank: store.rainbowRank,
+                                          avatarUrl: auth.user?.avatarUrl, avatarInitial: auth.user?.name?.prefix(1).uppercased() ?? "?",
+                                          avatarTint: auth.user?.color.map { Color(hex: $0) } ?? .accentColor,
+                                          flightsFed: store.flights.filter { $0.isManual }.count)
                             .padding(.horizontal, 12)
                     }
                     StatsPanel(stats: history.travelStats())
@@ -238,7 +242,10 @@ private struct LegCard: View {
 /// The current tier's badge and the next one's, a route line flying between
 /// them — flown so far solid and fading from one tier's colour into the
 /// other's, still to go dashed — with the plane sat wherever that progress
-/// actually is, and "N flights/N km still" written over the line itself.
+/// actually is, "X/Y flights · X/Y km" written over the line itself, and
+/// how many flights this traveller has fed the system written below it.
+/// The left end is the traveller's own photo, not a badge — this is their
+/// card, the tier medallion only marks where the route is headed.
 /// Rainbow, with nothing beyond it, just shows the badge and its tagline.
 private struct TierProgressCard: View {
     let standing: TierStanding
@@ -246,6 +253,12 @@ private struct TierProgressCard: View {
     /// nil the whole time up to and including the moment standing first
     /// reads Rainbow but the claim hasn't come back yet.
     var rainbowRank: Int? = nil
+    var avatarUrl: String? = nil
+    var avatarInitial: String = "?"
+    var avatarTint: Color = .accentColor
+    /// Manually-entered flights no source knew — every one of those is a
+    /// data point fed back into Airadar (see Flight.feedStatus).
+    var flightsFed: Int = 0
     private var tier: MilestoneTier { standing.tier }
     private var next: MilestoneTier? { tier.next }
 
@@ -258,13 +271,17 @@ private struct TierProgressCard: View {
         return min(1, max(legs, km))
     }
 
-    /// "3 flights/4,200 km still" — both counters, since either reaching
-    /// zero first is what actually promotes.
-    private var remainingText: String {
-        guard let legsToNext = standing.legsToNext, let kmToNext = standing.kmToNext else { return tier.tagline }
-        let distance = systemPrefersMetric() ? "\(kmToNext.formatted()) km" : "\(Int(Double(kmToNext) * 0.621371).formatted()) mi"
-        return "\(legsToNext) \(legsToNext == 1 ? "flight" : "flights")/\(distance) still"
+    /// "12/25 flights · 17,685/28,925 km" — progress made so far over the
+    /// current tier's own budget for each counter, not what's left of it.
+    private var progressText: String {
+        guard tier.legsInBand != Int.max else { return tier.tagline }
+        let km = systemPrefersMetric()
+            ? "\(standing.kmIntoTier.formatted())/\(tier.kmBudget.formatted()) km"
+            : "\(Int(Double(standing.kmIntoTier) * 0.621371).formatted())/\(Int(Double(tier.kmBudget) * 0.621371).formatted()) mi"
+        return "\(standing.legsIntoTier)/\(tier.legsInBand) flights · \(km)"
     }
+
+    private var fedText: String { "\(flightsFed) \(flightsFed == 1 ? "flight" : "flights") fed" }
 
     private func label(_ t: MilestoneTier) -> some View {
         VStack(spacing: 3) {
@@ -273,9 +290,16 @@ private struct TierProgressCard: View {
         }
     }
 
+    private var avatar: some View {
+        VStack(spacing: 3) {
+            AvatarView(url: avatarUrl, initial: avatarInitial, tint: avatarTint, size: 36)
+            Text(tier.name).font(.caption2.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+        }
+    }
+
     var body: some View {
         HStack(spacing: 10) {
-            label(tier)
+            avatar
             if let next {
                 GeometryReader { g in
                     let w = g.size.width, midY = g.size.height / 2
@@ -289,14 +313,20 @@ private struct TierProgressCard: View {
                         Image(systemName: "airplane").font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(planeColor)
                             .position(x: min(max(8, flownX), w - 8), y: midY)
-                        Text(remainingText).font(.caption2).foregroundStyle(.secondary)
+                        Text(progressText).font(.caption2).foregroundStyle(.secondary)
                             .padding(.horizontal, 5).padding(.vertical, 1)
                             .background(.background.opacity(0.85), in: .rect(cornerRadius: 4))
                             .fixedSize()
-                            .position(x: w / 2, y: midY - 15)
+                            .position(x: w / 2, y: midY - 16)
+                        // Just the text, no chip behind it — this one isn't
+                        // progress-toward-something, so it doesn't need the
+                        // same visual weight as the fraction above the line.
+                        Text(fedText).font(.caption2).foregroundStyle(.secondary)
+                            .fixedSize()
+                            .position(x: w / 2, y: midY + 16)
                     }
                 }
-                .frame(height: 40)
+                .frame(height: 48)
                 label(next)
             } else {
                 VStack(alignment: .leading, spacing: 2) {
@@ -307,6 +337,7 @@ private struct TierProgressCard: View {
                         if let rainbowRank { Text("#\(rainbowRank)").font(.caption.bold()).foregroundStyle(.secondary) }
                     }
                     Text(tier.tagline).font(.caption).foregroundStyle(.secondary)
+                    Text(fedText).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
@@ -318,6 +349,34 @@ private struct TierProgressCard: View {
         .frame(maxWidth: .infinity, minHeight: 118, maxHeight: 118)
         .padding(.horizontal, 14)
         .glassEffect(.regular, in: .rect(cornerRadius: 16))
+    }
+}
+
+/// The traveller's own Google photo, cached async — an initials circle in
+/// their own colour while it loads, or if there's no photo to show.
+private struct AvatarView: View {
+    let url: String?
+    let initial: String
+    let tint: Color
+    var size: CGFloat = 36
+
+    var body: some View {
+        Group {
+            if let url, let u = URL(string: url) {
+                AsyncImage(url: u) { phase in
+                    if let image = phase.image { image.resizable().scaledToFill() } else { placeholder }
+                }
+            } else {
+                placeholder
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+    }
+
+    private var placeholder: some View {
+        Circle().fill(tint)
+            .overlay(Text(initial).font(.system(size: size * 0.42, weight: .bold)).foregroundStyle(.white))
     }
 }
 
