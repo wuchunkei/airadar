@@ -90,6 +90,34 @@ object FlightDatabase {
 
     fun airlineIcao(iata: String): String? = airlineIcaoByIata[iata.uppercase()]
 
+    /** A terminal's name and whether it is currently out of service — closed for
+     * renovation, superseded, whatever — so nothing points a traveller at it. */
+    data class KnownTerminal(val name: String, val closed: Boolean = false)
+
+    /** Hand-checked corrections for the airports worth double-checking — no
+     * live discovery source is wired up on Android (iOS falls back to Apple's
+     * own map data for anywhere not listed here; Android has nothing
+     * equivalent, so an airport outside this table just gets a free-text
+     * terminal field instead of a picker). */
+    private val knownTerminals: Map<String, List<KnownTerminal>> = mapOf(
+        "HKG" to listOf(KnownTerminal("1"), KnownTerminal("2")),
+        "PEK" to listOf(KnownTerminal("1"), KnownTerminal("2"), KnownTerminal("3")),
+        "SZX" to listOf(KnownTerminal("3")),
+        "CAN" to listOf(KnownTerminal("1", closed = true), KnownTerminal("2"), KnownTerminal("3")),
+        "SIN" to listOf(KnownTerminal("1"), KnownTerminal("2"), KnownTerminal("3"), KnownTerminal("4"))
+    )
+
+    /** What a traveller could actually pick from today — the hand-checked
+     * table's open terminals for a known airport, or empty for anywhere else
+     * (a plain text field is the fallback the caller falls back to). */
+    fun availableTerminals(iata: String): List<String> =
+        knownTerminals[iata.uppercase()]?.filter { !it.closed }?.map { it.name } ?: emptyList()
+
+    /** "Departure"/"Arrival" (a hall, not a numbered terminal) read as
+     * themselves; anything else reads as "Terminal 1", "Terminal 3", … */
+    fun terminalDisplayLabel(terminal: String): String =
+        if (terminal == "Departure" || terminal == "Arrival") terminal else "Terminal $terminal"
+
     // Airports learned at runtime from AirLabs, so any route can be placed on the map.
     private val learned = java.util.concurrent.ConcurrentHashMap<String, Airport>()
 

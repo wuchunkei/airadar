@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.Surface
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -157,6 +158,9 @@ fun TripScreen(
     val swipe = SwipeCoordinator(openSwipeId, { openSwipeId = it }, openSwipeBounds)
     // Held by id: the sheet must see the refreshed Flight once a track is stored on it.
     var selectedId by remember { mutableStateOf<String?>(null) }
+    // A manual trip opened for editing via its swipe action -- kept as the
+    // whole Flight, not just an id, since ManualFlightForm needs its fields.
+    var editingFlight by remember { mutableStateOf<Flight?>(null) }
     val trackStatus by viewModel.trackStatus.observeAsState(emptyMap())
 
     // Oldest first, so scrolling up walks further back in time.
@@ -330,7 +334,7 @@ fun TripScreen(
         ) {
             if (past.isNotEmpty()) {
                 item(key = "past-header") { SectionTitle("Past") }
-                flightItems(past, forceSystemZone, dimmed = true, onDelete = delete, swipe = swipe) { selectedId = it.id }
+                flightItems(past, forceSystemZone, dimmed = true, onDelete = delete, onEdit = { editingFlight = it }, swipe = swipe) { selectedId = it.id }
                 item(key = "past-divider") { TimeDivider() }
             }
 
@@ -339,7 +343,7 @@ fun TripScreen(
             if (airborne.isNotEmpty()) {
                 item(key = "now-header") { SectionTitle("Now") }
                 // Now is today by definition; no heading needed.
-                flightItems(airborne, forceSystemZone, dateHeadings = false, onDelete = delete, swipe = swipe) { selectedId = it.id }
+                flightItems(airborne, forceSystemZone, dateHeadings = false, onDelete = delete, onEdit = { editingFlight = it }, swipe = swipe) { selectedId = it.id }
                 item(key = "coming-divider") { TimeDivider() }
                 item(key = "coming-header") { SectionTitle("Coming") }
             } else {
@@ -353,7 +357,7 @@ fun TripScreen(
                 }
             }
 
-            flightItems(coming, forceSystemZone, onDelete = delete, swipe = swipe) { selectedId = it.id }
+            flightItems(coming, forceSystemZone, onDelete = delete, onEdit = { editingFlight = it }, swipe = swipe) { selectedId = it.id }
 
             if (coming.isEmpty() && airborne.isEmpty()) {
                 item(key = "empty") {
@@ -447,6 +451,20 @@ fun TripScreen(
     }
 
     shareFor?.let { ShareSheet(flight = it, onDismiss = { shareFor = null }) }
+
+    editingFlight?.let { flight ->
+        ManualFlightForm(
+            flightNumber = flight.flightNumber,
+            date = flight.departureTime.toLocalDate(),
+            existing = flight,
+            onAdd = { edited ->
+                viewModel.replacePending(flight, edited)
+                onCommitted(edited)
+                editingFlight = null
+            },
+            onDismiss = { editingFlight = null }
+        )
+    }
 }
 
 /** Accept (green) · Together (yellow) · Reject (red); an accepted trip can still be taken together. */
@@ -492,6 +510,7 @@ private fun LazyListScope.flightItems(
     dimmed: Boolean = false,
     dateHeadings: Boolean = true,
     onDelete: (Flight) -> Unit,
+    onEdit: (Flight) -> Unit,
     swipe: SwipeCoordinator,
     onSelect: (Flight) -> Unit
 ) {
@@ -510,7 +529,10 @@ private fun LazyListScope.flightItems(
                     isOpen = swipe.openId == flight.id,
                     onOpened = { swipe.open(flight.id) },
                     onBounds = { if (swipe.openId == flight.id) swipe.bounds.value = it },
-                    onDelete = { onDelete(flight) }
+                    onDelete = { onDelete(flight) },
+                    // Only a manual trip has facts worth correcting by hand;
+                    // anything else came from a real schedule source.
+                    onEdit = if (flight.isManual) ({ onEdit(flight) }) else null
                 ) {
                     FlightCard(
                         flight = flight,
@@ -536,8 +558,10 @@ private class SwipeCoordinator(
 private val DeleteWidth = 92.dp
 
 /**
- * Drag the card leftwards to uncover a Delete button behind it; the card snaps
- * open or shut, and a tap on the button is what actually deletes.
+ * Drag the card leftwards to uncover a Delete button behind it (an Edit
+ * button too, alongside it, when [onEdit] is given -- only a manual trip
+ * has one); the card snaps open or shut, and a tap on either button is what
+ * actually acts.
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -546,10 +570,12 @@ private fun SwipeToDelete(
     onOpened: () -> Unit,
     onBounds: (Rect) -> Unit,
     onDelete: () -> Unit,
+    onEdit: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
-    val openPx = with(density) { DeleteWidth.toPx() }
+    val revealWidth = if (onEdit != null) DeleteWidth * 2 else DeleteWidth
+    val openPx = with(density) { revealWidth.toPx() }
     val state = remember(openPx) {
         AnchoredDraggableState(
             initialValue = Reveal.CLOSED,
@@ -582,14 +608,38 @@ private fun SwipeToDelete(
             .fillMaxWidth()
             .onGloballyPositioned { onBounds(it.boundsInRoot()) }
     ) {
-        // The button fades in with the drag, so a closed card hides it completely.
-        Box(
+        // The buttons fade in with the drag, so a closed card hides them completely.
+        Row(
             modifier = Modifier
                 .matchParentSize()
                 .padding(start = 8.dp)
                 .graphicsLayer { alpha = (-state.requireOffset() / openPx).coerceIn(0f, 1f) },
-            contentAlignment = Alignment.CenterEnd
+            horizontalArrangement = Arrangement.End
         ) {
+            if (onEdit != null) {
+                Surface(
+                    onClick = {
+                        scope.launch { state.animateTo(Reveal.CLOSED) }
+                        onEdit()
+                    },
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .width(DeleteWidth - 8.dp)
+                        .fillMaxHeight(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Outlined.Edit, contentDescription = null)
+                        Text("Edit", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
             Surface(
                 onClick = {
                     scope.launch { state.animateTo(Reveal.CLOSED) }

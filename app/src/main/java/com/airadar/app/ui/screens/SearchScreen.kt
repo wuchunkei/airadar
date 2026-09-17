@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,6 +57,11 @@ fun SearchScreen(
     val isSearching by viewModel.isSearching.observeAsState(false)
     val error by viewModel.error.observeAsState()
     var preview by remember { mutableStateOf<Flight?>(null) }
+    // Hoisted (rather than kept inside DetailSearchForm) so a failed search's
+    // "Add manually" fallback can hand the same number and date to the form.
+    var flightNumber by remember { mutableStateOf("") }
+    var date by remember { mutableStateOf(LocalDate.now()) }
+    var showManual by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -73,8 +79,12 @@ fun SearchScreen(
         Spacer(Modifier.height(8.dp))
 
         DetailSearchForm(
+            flightNumber = flightNumber,
+            onFlightNumberChange = { flightNumber = it },
+            date = date,
+            onDateChange = { date = it },
             isSearching = isSearching,
-            onSearch = { number, date -> viewModel.searchByFlight(number, date) }
+            onSearch = { viewModel.searchByFlight(flightNumber, date) }
         )
 
         error?.let {
@@ -84,7 +94,25 @@ fun SearchScreen(
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 14.dp)
             )
+            // No source knew it: let the traveller record it by hand -- this is
+            // also the "feed" moment the community-review queue picks up.
+            TextButton(onClick = { showManual = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Add manually", fontWeight = FontWeight.SemiBold)
+            }
         }
+    }
+
+    if (showManual) {
+        ManualFlightForm(
+            flightNumber = flightNumber,
+            date = date,
+            onAdd = { flight ->
+                showManual = false
+                viewModel.clear()
+                onAddFlight(flight)
+            },
+            onDismiss = { showManual = false }
+        )
     }
 
     // Results open straight into the detail sheet, where the flight can be added.
@@ -111,17 +139,19 @@ fun SearchScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DetailSearchForm(
+    flightNumber: String,
+    onFlightNumberChange: (String) -> Unit,
+    date: LocalDate,
+    onDateChange: (LocalDate) -> Unit,
     isSearching: Boolean,
-    onSearch: (String, LocalDate) -> Unit
+    onSearch: () -> Unit
 ) {
-    var flightNumber by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf(LocalDate.now()) }
     var showPicker by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         OutlinedTextField(
             value = flightNumber,
-            onValueChange = { flightNumber = it.uppercase().filter { c -> c.isLetterOrDigit() } },
+            onValueChange = { onFlightNumberChange(it.uppercase().filter { c -> c.isLetterOrDigit() }) },
             label = { Text("Flight number") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
@@ -169,7 +199,7 @@ private fun DetailSearchForm(
         }
 
         Button(
-            onClick = { onSearch(flightNumber, date) },
+            onClick = onSearch,
             enabled = flightNumber.length >= 3 && !isSearching,
             modifier = Modifier
                 .fillMaxWidth()
@@ -192,7 +222,7 @@ private fun DetailSearchForm(
         WheelDatePickerDialog(
             initialDate = date,
             onConfirm = {
-                date = it
+                onDateChange(it)
                 showPicker = false
             },
             onDismiss = { showPicker = false }
