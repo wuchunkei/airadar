@@ -293,6 +293,32 @@ enum BackendClient {
         try decoder.decode(RainbowRank.self, from: try await authed("GET", "tiers/rainbow/mine")).rank
     }
 
+    // MARK: - Community review
+
+    private static func withAirports(_ reviews: [CommunityReview]) async -> [CommunityReview] {
+        for r in reviews { await ensureAirports(r.departure, r.arrival) }
+        return reviews
+    }
+
+    /// Open reviews to vote on — never my own, never one I've already voted
+    /// on, boosted ones first.
+    static func communityQueue() async throws -> [CommunityReview] {
+        await withAirports(try decoder.decode([CommunityReview].self, from: try await authed("GET", "community/queue")))
+    }
+
+    @discardableResult
+    static func voteOnReview(_ id: String, approve: Bool) async throws -> CommunityReview {
+        try decoder.decode(CommunityReview.self, from: try await authed("POST", "community/\(id)/vote", json: ["approve": approve]))
+    }
+
+    static func communityHistoryReviews() async throws -> [CommunityReview] {
+        await withAirports(try decoder.decode([CommunityReview].self, from: try await authed("GET", "community/history/reviews")))
+    }
+
+    static func communityHistorySubmissions() async throws -> [CommunityReview] {
+        await withAirports(try decoder.decode([CommunityReview].self, from: try await authed("GET", "community/history/submissions")))
+    }
+
     // MARK: - Transport
 
     /// A signed-in call: retried once with a fresh access token after a 401.

@@ -431,7 +431,41 @@ enum PassengerName {
 /// the identical flight, before ever storing anything but its own verdict.
 /// See backend/app/feed.py for the actual scoring.
 enum FeedStatus: String, Codable, Hashable, Sendable {
-    case pending, approved, rejected
+    /// Still with the automated scorer (backend/app/feed.py), or with the
+    /// community (backend/app/community.py) if the scorer couldn't settle
+    /// it either way.
+    case pending
+    case approved
+    /// Only ever set by an admin, never by voting alone — see community.py.
+    case rejected
+    /// The community's 7-day review window passed without reaching 70%
+    /// approval, whatever the vote count — not the same as rejected: no
+    /// one decided this was fake, it just ran out of time.
+    case expired
+}
+
+/// One flight in the community's crowd-review queue or in a traveller's
+/// own review history — backend/app/community.py's `ReviewOut`.
+struct CommunityReview: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let flightNumber: String
+    let airlineName: String
+    let departure: String
+    let arrival: String
+    let departureTime: LocalDateTime
+    let arrivalTime: LocalDateTime
+    /// "pending" | "confirmed" | "rejected" | "expired" — not FeedStatus's
+    /// own set of names (a review's own lifecycle, not the trip's).
+    let status: String
+    let approveCount: Int
+    let rejectCount: Int
+    let boosted: Bool
+    /// Populated only where the server actually knows it: the vote just
+    /// cast, or a row from /community/history/reviews.
+    let myVote: Bool?
+
+    var departureAirport: Airport? { AirportDatabase.shared.airport(departure) }
+    var arrivalAirport: Airport? { AirportDatabase.shared.airport(arrival) }
 }
 
 /// A real person can't be on two flights at once — the one integrity check
