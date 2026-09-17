@@ -9,16 +9,26 @@ TRASH_RETENTION_DAYS.
 """
 
 from datetime import date, datetime, timedelta, timezone
+from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from . import airlabs, names
+from . import airlabs, feed, names
 from .auth import current_user
 from .billing import membership
 from .schema import FlightStatus
 
 router = APIRouter(prefix="/trips", tags=["trips"])
+
+
+class FeedStatus(str, Enum):
+    """A manually-entered flight's automated verification outcome — see
+    feed.py. The client only ever sends PENDING for a fresh entry; this is
+    what the server actually resolves it to before it's ever stored."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 
 class TripIn(BaseModel):
@@ -43,6 +53,8 @@ class TripIn(BaseModel):
     isPending: bool = False
     # Entered by hand because no source knew the flight; shown with a warning block.
     isManual: bool = False
+    # Set only on a flight fed this way — see feed.py for how it's resolved.
+    feedStatus: FeedStatus | None = None
     # Names found on the ticket text this trip was imported from; drives automatic sharing.
     passengers: list[str] = []
     track: list[list[float]] | None = None
@@ -166,18 +178,27 @@ async def _enforce_limits(db, user: dict, trip: TripIn, key: str) -> None:
 async def put_trip(trip_id: str, trip: TripIn, request: Request, user: dict = Depends(current_user)):
     if trip.id != trip_id:
         raise HTTPException(status_code=400, detail="Body id does not match the path.")
-    await _enforce_limits(request.app.state.db, user, trip, _key(user, trip_id))
+    db = request.app.state.db
+    key = _key(user, trip_id)
+    await _enforce_limits(db, user, trip, key)
     now = _now()
-    doc = await request.app.state.db.trips.find_one_and_update(
-        {"_id": _key(user, trip_id)},
+    store = _store(trip)
+    # A fresh fed flight — never stored before, still marked pending by the
+    # client — gets scored here first, so the traveller's own Trip card
+    # already carries the resolved outcome, not the client's own guess.
+    if trip.isManual and trip.feedStatus == FeedStatus.PENDING and not await db.trips.find_one({"_id": key}):
+        store["feedStatus"] = await feed.score(request.app.state.http, db, user["_id"], trip.flightNumber,
+                                                trip.departureTime.date(), trip.departure, trip.arrival)
+    doc = await db.trips.find_one_and_update(
+        {"_id": key},
         {
-            "$set": {**_store(trip), "userId": user["_id"], "updatedAt": now, "deletedAt": None},
+            "$set": {**store, "userId": user["_id"], "updatedAt": now, "deletedAt": None},
             "$setOnInsert": {"createdAt": now},
         },
         upsert=True,
         return_document=True,
     )
-    await names.auto_share_for_trip(request.app.state.db, user, doc)
+    await names.auto_share_for_trip(db, user, doc)
     return _out(doc)
 
 
