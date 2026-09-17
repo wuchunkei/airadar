@@ -19,6 +19,10 @@ struct FlightCard: View {
     private var ink: Color { ground?.onColor ?? .primary }
     private var inkMuted: Color { ground != nil ? ink.opacity(0.72) : .secondary }
     private var rejected: Bool { flight.feedStatus == .rejected }
+    /// The community's 7-day review window ran out without reaching 70%
+    /// approval — not the same as rejected: no one decided this was fake,
+    /// it just ran out of time. Milder colour, same "still yours" freedom.
+    private var expired: Bool { flight.feedStatus == .expired }
     /// Another of the traveller's own flights overlapping this one in time —
     /// physically impossible, so a strong sign this one (or the other) was
     /// actually imported from someone else's ticket.
@@ -39,6 +43,9 @@ struct FlightCard: View {
                 if rejected {
                     Label("Blocked — this flight couldn't be confirmed", systemImage: "xmark.octagon.fill")
                         .font(.caption.weight(.semibold)).foregroundStyle(.red)
+                } else if expired {
+                    Label("Unverified — review expired", systemImage: "clock.badge.exclamationmark")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.orange)
                 }
                 if dashed && shared == nil {
                     Text("Imported · needs review").font(.caption.weight(.semibold)).foregroundStyle(.tint)
@@ -58,6 +65,7 @@ struct FlightCard: View {
                     StatusChip(flight: flight)
                     if flight.isManual { NameBlock(name: "Manual", color: Color(red: 0.96, green: 0.65, blue: 0.14), dashed: false) }
                     if rejected { NameBlock(name: "Blocked", color: .red, dashed: false) }
+                    else if expired { NameBlock(name: "Expired", color: .orange, dashed: false) }
                     if let via = flight.importedVia {
                         NameBlock(name: via == "gmail" ? "Email" : "Calendar", color: .secondary, dashed: false)
                     }
@@ -76,6 +84,8 @@ struct FlightCard: View {
                 // flight needs to read as blocked at a glance, dashed or not.
                 if rejected {
                     RoundedRectangle(cornerRadius: 20).strokeBorder(Color.red, lineWidth: 1.5)
+                } else if expired {
+                    RoundedRectangle(cornerRadius: 20).strokeBorder(Color.orange, lineWidth: 1.5)
                 } else if dashed {
                     RoundedRectangle(cornerRadius: 20)
                         .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [8, 6]))
