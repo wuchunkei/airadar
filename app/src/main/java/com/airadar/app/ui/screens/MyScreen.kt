@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.airadar.app.data.HomeRegion
@@ -55,12 +56,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.airadar.app.data.Airport
+import com.airadar.app.data.AuthStore
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightPhase
+import com.airadar.app.data.FlightStore
+import com.airadar.app.data.TierStanding
+import com.airadar.app.data.colorOf
 import com.airadar.app.data.systemPrefersMetric
 import com.airadar.app.ui.components.FlightDetailSheet
 import com.airadar.app.ui.components.MapRoute
 import com.airadar.app.ui.components.MapTrack
+import com.airadar.app.ui.components.TierProgressCard
 import com.airadar.app.ui.components.TileMap
 import com.airadar.app.ui.components.toMapRoutes
 import com.airadar.app.ui.viewmodel.TrackStatus
@@ -81,6 +87,7 @@ fun MyScreen(
     val history = remember(flights) {
         flights.filter { it.phase == FlightPhase.PAST && !it.isPending }
     }
+    val authUser by AuthStore.user.observeAsState()
     // Legs with a downloaded track are drawn as flown; the rest fall back to arcs.
     val tracks: List<MapTrack> = remember(history) {
         history.mapNotNull { flight ->
@@ -257,6 +264,22 @@ fun MyScreen(
                         )
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+            } else {
+                // A route selected takes this slot above; nothing selected, the
+                // tier card is back in it -- same height either way.
+                val standing = remember(history) { TierStanding.compute(history) }
+                val rainbowRank by FlightStore.rainbowRank.observeAsState()
+                LaunchedEffect(history.size) { FlightStore.refreshRainbowRank() }
+                TierProgressCard(
+                    standing = standing,
+                    rainbowRank = rainbowRank,
+                    avatarUrl = authUser?.avatarUrl,
+                    avatarInitial = authUser?.name?.take(1)?.uppercase() ?: "?",
+                    avatarTint = authUser?.color?.let(::colorOf) ?: MaterialTheme.colorScheme.primary,
+                    flightsFed = flights.count { it.isManual },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
                 Spacer(Modifier.height(8.dp))
             }
 

@@ -38,6 +38,33 @@ object FlightStore {
         _limitHit.value = null
     }
 
+    /** Every leg actually flown (or in the air right now) -- what the
+     * milestone tiers count against. The same filter My's own map uses for
+     * its route network, kept in one place so the two never drift apart. */
+    val completedFlights: List<Flight>
+        get() = (_flights.value ?: emptyList()).filter {
+            (it.phase == FlightPhase.PAST || it.phase == FlightPhase.IN_PROGRESS) && !it.isPending
+        }
+
+    /** Where the tier ladder puts this traveller right now. */
+    val tierStanding: TierStanding get() = TierStanding.compute(completedFlights)
+
+    /** Rainbow's sequence number, once claimed -- "the Nth traveller here".
+     * Never set locally: only the backend hands one out, and only once
+     * standing genuinely reads Rainbow. */
+    private val _rainbowRank = MutableLiveData<Int?>(null)
+    val rainbowRank: LiveData<Int?> = _rainbowRank
+
+    /** Safe to call any time standing is checked: an existing claim just
+     * comes back unchanged, so there's no harm calling this opportunistically. */
+    fun refreshRainbowRank() {
+        if (tierStanding.tier != MilestoneTier.RAINBOW || !synced) return
+        scope.launch {
+            val rank = runCatching { BackendClient.claimRainbow() }.getOrNull()
+            withContext(Dispatchers.Main) { _rainbowRank.value = rank }
+        }
+    }
+
     // Server writes go out from here, off the main thread, one after another.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val synced: Boolean get() = AuthStore.isSignedIn

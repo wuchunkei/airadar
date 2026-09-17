@@ -124,6 +124,22 @@ object BackendClient {
         authed("POST", "trips/$id/restore")
     }
 
+    // ---- tiers -------------------------------------------------------------
+
+    /** Idempotent: a traveller who already claimed a rank just gets it back.
+     * Throws (400) if the server's own re-walk of this account's trips
+     * doesn't actually land on Rainbow -- the client's own tier reading is
+     * never trusted for a rank that has to stay unique. */
+    suspend fun claimRainbow(): Int? = withContext(Dispatchers.IO) {
+        rainbowRank(authed("POST", "tiers/rainbow/claim"))
+    }
+
+    suspend fun myRainbowRank(): Int? = withContext(Dispatchers.IO) {
+        rainbowRank(authed("GET", "tiers/rainbow/mine"))
+    }
+
+    private fun rainbowRank(o: JSONObject): Int? = if (o.has("rank") && !o.isNull("rank")) o.getInt("rank") else null
+
     // ---- people and shares -----------------------------------------------------
 
     suspend fun me(): AuthUser = withContext(Dispatchers.IO) { profile(authed("GET", "me")) }

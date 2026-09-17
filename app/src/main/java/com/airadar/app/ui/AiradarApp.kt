@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import com.airadar.app.data.BackendClient
 import com.airadar.app.data.FlightStore
 import com.airadar.app.data.Plans
+import com.airadar.app.data.TierIconManager
 import com.airadar.app.ui.screens.FriendsScreen
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -90,6 +91,12 @@ fun AiradarApp() {
     val remind: (Flight) -> Unit = { FlightReminders.schedule(context, it) }
     val settings by settingsViewModel.settings.observeAsState(UserSettings())
     val snackbar = remember { SnackbarHostState() }
+
+    // The Home Screen icon follows the traveller's tier -- a no-op call
+    // whenever it hasn't actually changed (TierIconManager checks first).
+    LaunchedEffect(flights) {
+        TierIconManager.apply(context, FlightStore.tierStanding.tier)
+    }
     val scope = rememberCoroutineScope()
 
     when (overlay) {
