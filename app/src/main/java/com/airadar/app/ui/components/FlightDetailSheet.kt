@@ -122,10 +122,10 @@ fun FlightDetailSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            flight.status.label(),
+                            flight.displayStatus.label(),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = flight.status.statusColor()
+                            color = flight.displayStatus.statusColor()
                         )
                     }
                 }

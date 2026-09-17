@@ -63,11 +63,23 @@ class LimitReached(val reason: String, val tier: Tier) : Exception(reason)
  */
 object Entitlements {
 
+    /** Off while the token/paywall page is shelved — everyone gets Premium's
+     * limits, which is to say none, signed in or not. Flip this back on —
+     * and bring back the token entry UI it's paired with — to restore
+     * gating behind sign-in + token, or an Apple/Google IAP flow, later;
+     * backend/app/billing.py's PAYWALL_ENABLED and iOS's
+     * Entitlements.paywallEnabled are the matching switches. */
+    const val paywallEnabled = false
+
     val membership: Membership
-        get() = if (AuthStore.isSignedIn) AuthStore.user.value?.membership ?: Membership.GUEST else Membership.GUEST
+        get() {
+            if (!paywallEnabled) return Membership(Tier.PREMIUM, null)
+            return if (AuthStore.isSignedIn) AuthStore.user.value?.membership ?: Membership.GUEST else Membership.GUEST
+        }
 
     /** Throws [LimitReached] when [flight] would exceed the plan, given what is already kept. */
     fun checkAdd(flight: Flight, existing: List<Flight>) {
+        if (!paywallEnabled) return
         val m = membership
         val lim = m.limits
         val live = existing.filter { it.deletedAt == null && it.sharedBy == null }

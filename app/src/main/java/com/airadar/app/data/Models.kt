@@ -43,6 +43,18 @@ data class Flight(
     val typicalDurationMinutes: Int? = null,
     /** Imported from a mailbox and not yet confirmed by the traveller. */
     val isPending: Boolean = false,
+    /** Typed in by hand because no source knew it; shown with a warning block. */
+    val isManual: Boolean = false,
+    /** Set only on a flight fed this way (see FeedStatus) — null for anything
+     * else. Never trust this at face value on its own: the server resolves
+     * it from PENDING to a real verdict (and, if the automated scorer can't
+     * decide, community review) before it's ever stored. */
+    val feedStatus: FeedStatus? = null,
+    /** Where this trip was found: "gmail" or "calendar" — null for one the
+     * backend already knew, one typed by hand, or one pasted as plain text. */
+    val importedVia: String? = null,
+    /** Names found on the ticket text this trip was imported from. */
+    val passengers: List<String> = emptyList(),
     /** ATC callsign (ICAO airline code + number), e.g. CPA392 for CX392. */
     val callsign: String? = null,
     /** Actual flown positions from ADS-B, once fetched; null means great circle only. */
@@ -78,6 +90,16 @@ data class Flight(
             }
         }
 
+    /** What the status should read once the clock alone already knows the
+     * flight is over — a source that never polls again after departure can
+     * leave a real trip stuck reading "Scheduled" long after it landed.
+     * Cancelled and diverted stay as they are; those are real outcomes worth keeping. */
+    val displayStatus: FlightStatus
+        get() {
+            if (phase != FlightPhase.PAST || status == FlightStatus.CANCELLED || status == FlightStatus.DIVERTED) return status
+            return FlightStatus.LANDED
+        }
+
     val durationMinutes: Int
         get() {
             val dep = departureInstant ?: return 0
@@ -109,6 +131,37 @@ enum class FlightStatus {
     DEPARTED,
     IN_FLIGHT,
     LANDED
+}
+
+/** A manually-entered ("fed") flight's automated verification outcome — the
+ * server, never the client, decides which of these it ends up as: it
+ * re-checks a fresh PENDING against AirLabs/AeroDataBox's own schedules,
+ * adsbdb's independent route data, and other travellers' own fed flights
+ * (backend/app/feed.py), and hands anything it can't settle either way to
+ * community review (backend/app/community.py) instead of leaving it stuck. */
+enum class FeedStatus { PENDING, APPROVED, REJECTED, EXPIRED }
+
+/** A real person can't be on two flights at once — the one integrity check
+ * this needs no external source for, just the traveller's own other
+ * flights. An overlap is a strong sign one of the two was actually
+ * imported from someone else's ticket (a shared inbox, a family member's
+ * calendar invite) rather than genuinely this traveller's own. */
+object FlightConflicts {
+    /** Another of the traveller's own flights (never a friend's shared one,
+     * on either side) whose time in the air overlaps this one's, or null. */
+    fun overlapping(flight: Flight, all: List<Flight>): Flight? {
+        if (flight.sharedBy != null || flight.status == FlightStatus.CANCELLED) return null
+        val dep = flight.departureInstant ?: return null
+        val arr = flight.arrivalInstant ?: return null
+        return all.firstOrNull { other ->
+            val otherDep = other.departureInstant
+            val otherArr = other.arrivalInstant
+            other.id != flight.id && other.sharedBy == null && other.deletedAt == null &&
+                other.status != FlightStatus.CANCELLED &&
+                otherDep != null && otherArr != null &&
+                dep.isBefore(otherArr) && otherDep.isBefore(arr)
+        }
+    }
 }
 
 data class TravelStats(

@@ -28,6 +28,10 @@ fun Flight.toJson(): JSONObject = JSONObject().apply {
     put("callsign", callsign ?: JSONObject.NULL)
     put("pnr", pnr ?: JSONObject.NULL)
     put("isPending", isPending)
+    put("isManual", isManual)
+    put("feedStatus", feedStatus?.name?.lowercase() ?: JSONObject.NULL)
+    put("importedVia", importedVia ?: JSONObject.NULL)
+    if (passengers.isNotEmpty()) put("passengers", JSONArray().apply { passengers.forEach { put(it) } })
     put("track", track?.let { points ->
         JSONArray().apply { points.forEach { put(JSONArray().put(it.lat).put(it.lon)) } }
     } ?: JSONObject.NULL)
@@ -53,6 +57,12 @@ fun flightFromJson(o: JSONObject): Flight = Flight(
     callsign = o.text("callsign"),
     pnr = o.text("pnr"),
     isPending = o.optBoolean("isPending", false),
+    isManual = o.optBoolean("isManual", false),
+    feedStatus = o.text("feedStatus")?.let { runCatching { FeedStatus.valueOf(it.uppercase()) }.getOrNull() },
+    importedVia = o.text("importedVia"),
+    passengers = o.optJSONArray("passengers")?.let { arr ->
+        (0 until arr.length()).map { arr.getString(it) }
+    } ?: emptyList(),
     track = o.optJSONArray("track")?.let { arr ->
         (0 until arr.length()).map { i ->
             val p = arr.getJSONArray(i)

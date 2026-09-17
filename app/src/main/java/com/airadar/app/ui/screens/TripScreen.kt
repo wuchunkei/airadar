@@ -832,19 +832,19 @@ fun FlightCard(
                 Box(
                     modifier = Modifier
                         .background(
-                            flight.status.statusColor().copy(alpha = 0.14f),
+                            flight.displayStatus.statusColor().copy(alpha = 0.14f),
                             RoundedCornerShape(6.dp)
                         )
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
                         buildString {
-                            append(flight.status.label())
+                            append(flight.displayStatus.label())
                             if (flight.delayMinutes > 0) append(" ${flight.delayMinutes}m")
                         },
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = flight.status.statusColor()
+                        color = flight.displayStatus.statusColor()
                     )
                 }
 
