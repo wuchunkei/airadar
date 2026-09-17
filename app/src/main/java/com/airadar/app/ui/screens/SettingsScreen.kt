@@ -6,9 +6,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.airadar.app.data.colorOf
-import android.content.Intent
-import android.net.Uri
-import com.airadar.app.data.Plans
 import com.airadar.app.data.Tier
 import java.time.ZoneId
 import androidx.compose.foundation.background
@@ -42,7 +39,6 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,11 +69,6 @@ fun SettingsScreen(
     val authError by viewModel.authError.observeAsState()
     val signingIn by viewModel.signingIn.observeAsState(false)
     val activity = LocalContext.current
-    val membership = settings.membership
-    val checkedToken by viewModel.checkedToken.observeAsState()
-    val tokenError by viewModel.tokenError.observeAsState()
-    val checkingToken by viewModel.checkingToken.observeAsState(false)
-    var tokenInput by remember { mutableStateOf("") }
     val calendarStatus by viewModel.calendarStatus.observeAsState()
     val askCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) viewModel.setCalendarSync(true)
@@ -111,135 +102,56 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
+                // No token gate while Entitlements.paywallEnabled is off --
+                // signing in is the only step, and it unlocks everything at
+                // once, the same way SettingsView.swift's own Account section works.
                 SettingsSection("Account") {
-                    val checked = checkedToken
-                    when {
-                        // 1. No token yet: the field, and where to get one.
-                        checked == null -> {
-                            OutlinedTextField(
-                                value = tokenInput,
-                                onValueChange = { tokenInput = it.lowercase().filter { c -> c.isLetterOrDigit() || c == '-' }.take(36) },
-                                label = { Text("Token") },
-                                placeholder = { Text("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx") },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Plans.payUrl))) },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) { Text("Get a token") }
-                                Button(
-                                    onClick = { viewModel.checkToken(tokenInput) },
-                                    enabled = tokenInput.count { it.isLetterOrDigit() } == 32 && !checkingToken,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    if (checkingToken) CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp), strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    ) else Text("Check token", fontWeight = FontWeight.SemiBold)
-                                }
-                            }
-                            tokenError?.let {
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.padding(top = 8.dp))
-                            }
+                    if (!settings.isLoggedIn) {
+                        Button(
+                            onClick = { viewModel.signIn(activity) },
+                            enabled = !signingIn,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (signingIn) CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp), strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            ) else Text("Continue with Google", fontWeight = FontWeight.SemiBold)
                         }
-
-                        // 2. Token accepted for this phone: sign in with Google, or swap the token.
-                        // Nothing about the plan is shown until the account is signed in.
-                        !settings.isLoggedIn -> {
-                            Button(
-                                onClick = { viewModel.signIn(activity) },
-                                enabled = !signingIn,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                if (signingIn) CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp), strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                ) else Text("Continue with Google", fontWeight = FontWeight.SemiBold)
-                            }
-                            OutlinedButton(
-                                onClick = viewModel::replaceToken,
-                                enabled = !signingIn,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp)
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) { Text("Replace token") }
-                            authError?.let {
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.padding(top = 8.dp))
-                            }
+                        authError?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 8.dp))
                         }
-
-                        // 3. Signed in.
-                        else -> {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    // The traveller's name in their own colour — how friends see them.
-                                    Text(
-                                        settings.userName ?: "Signed in",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = settings.color?.let(::colorOf) ?: MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        settings.userEmail ?: "",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                TextButton(onClick = viewModel::signOut) { Text("Sign out") }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                // The traveller's name in their own colour — how friends see them.
+                                Text(
+                                    settings.userName ?: "Signed in",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = settings.color?.let(::colorOf) ?: MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    settings.userEmail ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                            PlanLine(tier = membership.tier, until = membership.until, grace = membership.grace, note = null)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = viewModel::replaceToken,
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) { Text("Replace token") }
-                                if (membership.tier != Tier.PREMIUM) {
-                                    OutlinedButton(
-                                        onClick = { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Plans.payUrl))) },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) { Text("Upgrade") }
-                                }
-                            }
-                            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                            ToggleRow(
-                                title = "Friends can find me by email",
-                                checked = settings.findableByEmail,
-                                onCheckedChange = viewModel::setFindableByEmail
-                            )
+                            TextButton(onClick = viewModel::signOut) { Text("Sign out") }
                         }
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                        ToggleRow(
+                            title = "Friends can find me by email",
+                            checked = settings.findableByEmail,
+                            onCheckedChange = viewModel::setFindableByEmail
+                        )
                     }
                 }
             }

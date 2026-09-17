@@ -11,7 +11,6 @@ import androidx.lifecycle.Observer
 import com.airadar.app.data.CalendarImporter
 import com.airadar.app.data.TripImporter
 import com.airadar.app.data.Membership
-import com.airadar.app.data.CheckedToken
 import com.airadar.app.data.AuthStore
 import com.airadar.app.data.AuthUser
 import com.airadar.app.data.GoogleSignIn
@@ -177,40 +176,6 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private val _tokenError = MutableLiveData<String?>(null)
-    val tokenError: LiveData<String?> = _tokenError
-
-    private val _checkingToken = MutableLiveData(false)
-    val checkingToken: LiveData<Boolean> = _checkingToken
-
-    val checkedToken: LiveData<CheckedToken?> = AuthStore.checkedToken
-
-    /** The token from the web page: checked with the server and bound to this phone. */
-    fun checkToken(token: String) {
-        viewModelScope.launch {
-            _checkingToken.value = true
-            _tokenError.value = null
-            try {
-                BackendClient.checkToken(token)
-            } catch (e: IOException) {
-                _tokenError.value = e.message
-            }
-            _checkingToken.value = false
-        }
-    }
-
-    /** Back to the token field; a signed-in account is signed out first. */
-    fun replaceToken() {
-        viewModelScope.launch {
-            if (AuthStore.isSignedIn) {
-                BackendClient.signOut()
-                FlightStore.onSignedOut()
-            }
-            AuthStore.saveCheckedToken(null)
-            _tokenError.value = null
-        }
-    }
-
     fun refreshMembership() {
         viewModelScope.launch { runCatching { BackendClient.me() } }
     }
@@ -227,24 +192,17 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         AuthStore.user.removeObserver(accountObserver)
     }
 
-    /** [activity] is the Activity showing Settings; Google's picker is a sheet over it. */
+    /** [activity] is the Activity showing Settings; Google's picker is a sheet
+     * over it. No token gate: signing in is the only step, and it unlocks
+     * everything at once (Entitlements.paywallEnabled is off). */
     fun signIn(activity: Context) {
         if (_signingIn.value == true) return
         viewModelScope.launch {
             _signingIn.value = true
             _authError.value = null
             try {
-                val token = AuthStore.checkedToken.value?.token
-                    ?: throw IOException("Enter your token first.")
                 val idToken = GoogleSignIn.idToken(activity)
                 BackendClient.signInWithGoogle(idToken)
-                try {
-                    // The account must be the one the token belongs to (or the first to use it).
-                    BackendClient.redeem(token)
-                } catch (e: IOException) {
-                    BackendClient.signOut()
-                    throw e
-                }
                 runCatching { BackendClient.me() }
                 FlightStore.syncFromServer()
             } catch (_: GoogleSignIn.Cancelled) {
