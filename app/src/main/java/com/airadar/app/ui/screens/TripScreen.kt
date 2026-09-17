@@ -164,7 +164,6 @@ fun TripScreen(
     // A manual trip opened for editing via its swipe action -- kept as the
     // whole Flight, not just an id, since ManualFlightForm needs its fields.
     var editingFlight by remember { mutableStateOf<Flight?>(null) }
-    val trackStatus by viewModel.trackStatus.observeAsState(emptyMap())
 
     // Oldest first, so scrolling up walks further back in time.
     val past = remember(flights) {
@@ -441,7 +440,6 @@ fun TripScreen(
             FlightDetailSheet(
                 flight = flight,
                 forceSystemZone = forceSystemZone,
-                trackStatus = trackStatus[flight.id],
                 onLoadTrack = { viewModel.loadTrack(flight) },
                 onDismiss = { selectedId = null },
                 extraActions = when {

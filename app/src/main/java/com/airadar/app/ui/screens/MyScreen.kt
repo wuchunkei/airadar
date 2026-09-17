@@ -69,7 +69,6 @@ import com.airadar.app.ui.components.MapTrack
 import com.airadar.app.ui.components.TierProgressCard
 import com.airadar.app.ui.components.TileMap
 import com.airadar.app.ui.components.toMapRoutes
-import com.airadar.app.ui.viewmodel.TrackStatus
 import com.airadar.app.ui.viewmodel.travelStats
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -79,7 +78,6 @@ import java.util.Locale
 fun MyScreen(
     flights: List<Flight>,
     forceSystemZone: Boolean,
-    trackStatus: Map<String, TrackStatus>,
     onLoadTrack: (Flight) -> Unit,
     onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -319,7 +317,6 @@ fun MyScreen(
         FlightDetailSheet(
             flight = flight,
             forceSystemZone = forceSystemZone,
-            trackStatus = trackStatus[flight.id],
             onLoadTrack = { onLoadTrack(flight) },
             onDismiss = { openId = null }
         )

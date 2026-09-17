@@ -89,7 +89,6 @@ fun AiradarApp() {
     var overlay by remember { mutableStateOf<Overlay?>(null) }
 
     val flights by tripViewModel.flights.observeAsState(emptyList())
-    val trackStatus by tripViewModel.trackStatus.observeAsState(emptyMap())
     val context = LocalContext.current
     // Any flight the traveller commits to gets its reminder chain.
     val remind: (Flight) -> Unit = { FlightReminders.schedule(context, it) }
@@ -278,7 +277,6 @@ fun AiradarApp() {
             Tab.MY -> MyScreen(
                 flights = flights,
                 forceSystemZone = settings.forceSystemZone,
-                trackStatus = trackStatus,
                 onLoadTrack = tripViewModel::loadTrack,
                 onSettingsClick = { overlay = Overlay.SETTINGS },
                 modifier = Modifier.padding(bottom = padding.calculateBottomPadding())

@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,8 +36,6 @@ import com.airadar.app.data.FlightPhase
 import com.airadar.app.data.FlightStatus
 import com.airadar.app.data.formatDistance
 import com.airadar.app.ui.theme.statusColor
-import com.airadar.app.ui.viewmodel.TrackStatus
-import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -46,7 +45,6 @@ fun FlightDetailSheet(
     flight: Flight,
     onDismiss: () -> Unit,
     forceSystemZone: Boolean = false,
-    trackStatus: TrackStatus? = null,
     onLoadTrack: (() -> Unit)? = null,
     primaryAction: Pair<String, () -> Unit>? = null,
     /** Extra buttons under the itinerary — share, accept, together, and so on. */
@@ -81,20 +79,17 @@ fun FlightDetailSheet(
                         .padding(horizontal = 16.dp)
                         .clip(RoundedCornerShape(16.dp))
                 )
+            }
 
-                // Only a leg that has flown (or is flying) has a track to fetch; a
-                // future one is drawn as a great circle without comment.
-                if (onLoadTrack != null && flight.callsign != null && flight.phase != FlightPhase.UPCOMING) {
-                    TrackLoader(
-                        phase = flight.phase,
-                        flownOn = flight.trackFlownOn,
-                        status = trackStatus,
-                        onLoad = onLoadTrack,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
+            // OpenSky gets the first shot at a real track -- quietly, the same
+            // way it always has, no button and no caption: this fires exactly
+            // once per flight (LaunchedEffect only restarts when flight.id
+            // changes), and flight.trackFlownOn turning non-null on success is
+            // what stops it from ever asking twice.
+            if (onLoadTrack != null && flight.callsign != null && flight.trackFlownOn == null &&
+                flight.phase != FlightPhase.UPCOMING
+            ) {
+                LaunchedEffect(flight.id) { onLoadTrack() }
             }
 
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
@@ -244,54 +239,6 @@ fun FlightDetailSheet(
     }
 }
 
-@Composable
-private fun TrackLoader(
-    phase: FlightPhase,
-    flownOn: LocalDate?,
-    status: TrackStatus?,
-    onLoad: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val hasTrack = flownOn != null
-    Column(modifier = modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                when {
-                    status is TrackStatus.Loading -> "Fetching ADS-B track"
-                    flownOn == null -> "Route shown as a great circle"
-                    phase == FlightPhase.IN_PROGRESS -> "Showing the path flown so far"
-                    else -> "Showing the path actually flown"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-            when (status) {
-                TrackStatus.Loading -> CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp
-                )
-                else -> TextButton(onClick = onLoad, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Text(
-                        if (hasTrack) "Reload" else "Load flown track"
-                    )
-                }
-            }
-        }
-        (status as? TrackStatus.Failed)?.let {
-            Text(
-                it.reason,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-    }
-}
 
 @Composable
 private fun DetailRow(
