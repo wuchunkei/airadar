@@ -14,7 +14,7 @@ click is the only way in, every time."""
 PAGE = """<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Airadar · Confirm feed</title>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://accounts.google.com/gsi/client" async defer onload="onGsiReady()" onerror="onGsiFailed()"></script>
 <style>
 :root{--bg:#0f1115;--fg:#eee;--mute:#9aa3b2;--card:#181b21;--line:#2a2f3a;--green:#2fbf71;--red:#e5484d;--amber:#e0a63c}
 @media (prefers-color-scheme: light){:root{--bg:#f4f5f7;--fg:#111;--mute:#5b6270;--card:#fff;--line:#d9dde3}}
@@ -24,7 +24,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-
 h1{font-size:20px;margin:0 0 20px}
 #signin{display:flex;min-height:100vh;align-items:center;justify-content:center}
 #app{display:none;padding:24px}
-#denied{display:none;min-height:100vh;align-items:center;justify-content:center;color:var(--red);font-size:15px}
+#denied,#loaderror{display:none;min-height:100vh;align-items:center;justify-content:center;color:var(--red);font-size:15px;text-align:center;padding:24px}
 #board{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
 @media (max-width:900px){#board{grid-template-columns:1fr}}
 .col h2{font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);margin:0 0 10px}
@@ -43,6 +43,7 @@ button.release{border-color:var(--amber);color:var(--amber)}
 </style>
 <div id="signin"><div id="g_id_button"></div></div>
 <div id="denied">Not authorized.</div>
+<div id="loaderror">Couldn't reach Google's sign-in service — check that this device/network can load accounts.google.com (it's blocked on some networks without a VPN).</div>
 <div id="app">
   <h1>Confirm feed — community review</h1>
   <div id="board">
@@ -54,12 +55,32 @@ button.release{border-color:var(--amber);color:var(--amber)}
 </div>
 <script>
 let token = null;
+let gsiReady = false;
 
-// auto_select disabled on purpose: opening this page must always land on
-// the sign-in button, never silently authenticate from an existing Google
-// browser session — a fresh click is the only way in, every time.
-google.accounts.id.initialize({ client_id: "{{GOOGLE_CLIENT_ID}}", callback: onSignIn, auto_select: false, cancel_on_tap_outside: true });
-google.accounts.id.renderButton(document.getElementById("g_id_button"), { theme: "filled_black", size: "large", text: "continue_with" });
+// The library tag is async/defer -- it can genuinely still be loading by
+// the time this script block runs, so initializing here directly raced it
+// and, on a slow or blocked connection, lost: `google` was undefined,
+// the one call threw, and the whole rest of this script silently never
+// ran -- a plain dark page with nothing on it and no visible error at all.
+// Waiting for the library's own onload (below) fixes the ordering; the
+// timeout below covers the other real case, where the network genuinely
+// can't reach accounts.google.com at all (common without a VPN in some
+// regions) and onload never fires.
+function onGsiReady() {
+  gsiReady = true;
+  // auto_select disabled on purpose: opening this page must always land
+  // on the sign-in button, never silently authenticate from an existing
+  // Google browser session — a fresh click is the only way in, every time.
+  google.accounts.id.initialize({ client_id: "{{GOOGLE_CLIENT_ID}}", callback: onSignIn, auto_select: false, cancel_on_tap_outside: true });
+  google.accounts.id.renderButton(document.getElementById("g_id_button"), { theme: "filled_black", size: "large", text: "continue_with" });
+}
+
+function onGsiFailed() {
+  document.getElementById("signin").style.display = "none";
+  document.getElementById("loaderror").style.display = "flex";
+}
+
+setTimeout(() => { if (!gsiReady) onGsiFailed(); }, 6000);
 
 function showDenied() {
   document.getElementById("signin").style.display = "none";
