@@ -3,7 +3,13 @@ ADMIN_EMAIL by every API call it makes (community.py's require_admin) —
 this page itself has no server-side gate, the JSON calls behind it do.
 {{GOOGLE_CLIENT_ID}} is filled in at request time in main.py, the same
 existing Web OAuth client the phone app's own sign-in already verifies
-against."""
+against.
+
+Opening the page shows nothing but a centred "Continue with Google"
+button — no heading, no board, not even a peek at it — until the signed-in
+account is actually verified as ADMIN_EMAIL. auto_select is off, so this
+never happens silently from an existing Google browser session; a fresh
+click is the only way in, every time."""
 
 PAGE = """<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -13,13 +19,14 @@ PAGE = """<!doctype html>
 :root{--bg:#0f1115;--fg:#eee;--mute:#9aa3b2;--card:#181b21;--line:#2a2f3a;--green:#2fbf71;--red:#e5484d;--amber:#e0a63c}
 @media (prefers-color-scheme: light){:root{--bg:#f4f5f7;--fg:#111;--mute:#5b6270;--card:#fff;--line:#d9dde3}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 h1{font-size:20px;margin:0 0 20px}
-#signin{display:flex;flex-direction:column;align-items:center;gap:16px;padding:80px 0;text-align:center}
-#signin h2{margin:0;font-size:16px}
-#signin p{margin:0;color:var(--mute);font-size:13px;max-width:320px}
-#board{display:none;grid-template-columns:repeat(4,1fr);gap:16px}
-@media (max-width:900px){#board{grid-template-columns:1fr;display:none}#board.open{display:grid}}
+#signin{display:flex;min-height:100vh;align-items:center;justify-content:center}
+#app{display:none;padding:24px}
+#denied{display:none;min-height:100vh;align-items:center;justify-content:center;color:var(--red);font-size:15px}
+#board{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+@media (max-width:900px){#board{grid-template-columns:1fr}}
 .col h2{font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);margin:0 0 10px}
 .col{min-width:0}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;font-size:13px}
@@ -32,51 +39,54 @@ button{border:1px solid var(--line);background:transparent;color:var(--fg);borde
 button.confirm{border-color:var(--green);color:var(--green)}
 button.reject{border-color:var(--red);color:var(--red)}
 button.release{border-color:var(--amber);color:var(--amber)}
-#denied{display:none;color:var(--red);padding:40px 0;text-align:center}
 .empty{color:var(--mute);font-size:12px}
 </style>
-<h1>Confirm feed — community review</h1>
-<div id="signin">
-  <h2>Sign in required</h2>
-  <p>You'll need to sign in with your Google account every time you open this page — nothing is remembered between visits.</p>
-  <div id="g_id_button"></div>
-</div>
-<p id="denied">Not authorized.</p>
-<div id="board">
-  <div class="col"><h2>Pending</h2><div id="col-pending"></div></div>
-  <div class="col"><h2>Confirmed</h2><div id="col-confirmed"></div></div>
-  <div class="col"><h2>Rejected</h2><div id="col-rejected"></div></div>
-  <div class="col"><h2>Expired</h2><div id="col-expired"></div></div>
+<div id="signin"><div id="g_id_button"></div></div>
+<div id="denied">Not authorized.</div>
+<div id="app">
+  <h1>Confirm feed — community review</h1>
+  <div id="board">
+    <div class="col"><h2>Pending</h2><div id="col-pending"></div></div>
+    <div class="col"><h2>Confirmed</h2><div id="col-confirmed"></div></div>
+    <div class="col"><h2>Rejected</h2><div id="col-rejected"></div></div>
+    <div class="col"><h2>Expired</h2><div id="col-expired"></div></div>
+  </div>
 </div>
 <script>
 let token = null;
 
 // auto_select disabled on purpose: opening this page must always land on
-// the sign-in screen, never silently authenticate from an existing Google
-// browser session — the click on the button below is the only way in.
+// the sign-in button, never silently authenticate from an existing Google
+// browser session — a fresh click is the only way in, every time.
 google.accounts.id.initialize({ client_id: "{{GOOGLE_CLIENT_ID}}", callback: onSignIn, auto_select: false, cancel_on_tap_outside: true });
-google.accounts.id.renderButton(document.getElementById("g_id_button"), { theme: "outline", size: "large" });
+google.accounts.id.renderButton(document.getElementById("g_id_button"), { theme: "filled_black", size: "large", text: "continue_with" });
+
+function showDenied() {
+  document.getElementById("signin").style.display = "none";
+  document.getElementById("denied").style.display = "flex";
+}
 
 async function onSignIn(response) {
   const r = await fetch("/auth/google", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ idToken: response.credential, device: "confirm_feed_web" }),
   });
-  if (!r.ok) { document.getElementById("denied").style.display = "block"; return; }
+  if (!r.ok) { showDenied(); return; }
   const data = await r.json();
   token = data.accessToken;
+  // The email has to check out as ADMIN_EMAIL before anything past the
+  // sign-in button is ever shown — this call exists purely to verify that.
+  const check = await fetch("/community/admin/queue?column=pending", { headers: { Authorization: "Bearer " + token } });
+  if (!check.ok) { showDenied(); return; }
   document.getElementById("signin").style.display = "none";
-  document.getElementById("board").style.display = "grid";
-  loadAll();
+  document.getElementById("app").style.display = "block";
+  renderColumn("pending", await check.json());
+  loadColumn("confirmed"); loadColumn("rejected"); loadColumn("expired");
 }
 
 async function api(path, options = {}) {
   const r = await fetch(path, { ...options, headers: { ...(options.headers || {}), Authorization: "Bearer " + token } });
-  if (r.status === 403) {
-    document.getElementById("board").style.display = "none";
-    document.getElementById("denied").style.display = "block";
-    throw new Error("not authorized");
-  }
+  if (r.status === 403) { showDenied(); throw new Error("not authorized"); }
   return r.json();
 }
 
@@ -101,10 +111,13 @@ function card(item, column) {
   </div>`;
 }
 
-async function loadColumn(name) {
-  const items = await api(`/community/admin/queue?column=${name}`);
+function renderColumn(name, items) {
   const el = document.getElementById("col-" + name);
   el.innerHTML = items.length ? items.map(i => card(i, name)).join("") : '<p class="empty">Nothing here.</p>';
+}
+
+async function loadColumn(name) {
+  renderColumn(name, await api(`/community/admin/queue?column=${name}`));
 }
 
 function loadAll() {
