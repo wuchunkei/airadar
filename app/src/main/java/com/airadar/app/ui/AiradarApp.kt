@@ -23,6 +23,7 @@ import java.time.format.DateTimeFormatter
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FlightTakeoff
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
@@ -31,6 +32,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.rememberCoroutineScope
+import com.airadar.app.ui.screens.CommunityHistoryScreen
+import com.airadar.app.ui.screens.CommunityScreen
 import com.airadar.app.ui.screens.RecycleBinScreen
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
@@ -65,10 +68,11 @@ import com.airadar.app.ui.viewmodel.TripViewModel
 private enum class Tab(val label: String) {
     TRIP("Trip"),
     SEARCH("Search"),
+    COMMUNITY("Community"),
     MY("My")
 }
 
-private enum class Overlay { SETTINGS, EMAIL_IMPORT, RECYCLE_BIN, FRIENDS }
+private enum class Overlay { SETTINGS, EMAIL_IMPORT, RECYCLE_BIN, FRIENDS, COMMUNITY_HISTORY }
 
 /** A trip link opened from outside (airadar://s/<token>); the Activity sets it. */
 object DeepLinks {
@@ -127,6 +131,11 @@ fun AiradarApp() {
                 onRestored = remind,
                 onBack = { overlay = Overlay.SETTINGS }
             )
+            return
+        }
+
+        Overlay.COMMUNITY_HISTORY -> {
+            CommunityHistoryScreen(onBack = { overlay = null })
             return
         }
 
@@ -212,6 +221,7 @@ fun AiradarApp() {
                                 when (entry) {
                                     Tab.TRIP -> Icons.Outlined.FlightTakeoff
                                     Tab.SEARCH -> Icons.Outlined.Search
+                                    Tab.COMMUNITY -> Icons.Outlined.Groups
                                     Tab.MY -> Icons.Outlined.Map
                                 },
                                 contentDescription = entry.label
@@ -256,6 +266,11 @@ fun AiradarApp() {
                     }
                 },
                 // Each screen applies the status bar inset itself; only the nav bar is shared.
+                modifier = Modifier.padding(bottom = padding.calculateBottomPadding())
+            )
+
+            Tab.COMMUNITY -> CommunityScreen(
+                onHistoryClick = { overlay = Overlay.COMMUNITY_HISTORY },
                 modifier = Modifier.padding(bottom = padding.calculateBottomPadding())
             )
 

@@ -39,6 +39,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.foundation.border
+import com.airadar.app.data.FeedStatus
+import com.airadar.app.data.FlightConflicts
 import com.airadar.app.data.ShareStatus
 import com.airadar.app.data.onColor
 import com.airadar.app.data.sortedForDisplay
@@ -334,7 +337,7 @@ fun TripScreen(
         ) {
             if (past.isNotEmpty()) {
                 item(key = "past-header") { SectionTitle("Past") }
-                flightItems(past, forceSystemZone, dimmed = true, onDelete = delete, onEdit = { editingFlight = it }, swipe = swipe) { selectedId = it.id }
+                flightItems(past, forceSystemZone, dimmed = true, onDelete = delete, onEdit = { editingFlight = it }, swipe = swipe, allFlights = flights) { selectedId = it.id }
                 item(key = "past-divider") { TimeDivider() }
             }
 
@@ -343,7 +346,7 @@ fun TripScreen(
             if (airborne.isNotEmpty()) {
                 item(key = "now-header") { SectionTitle("Now") }
                 // Now is today by definition; no heading needed.
-                flightItems(airborne, forceSystemZone, dateHeadings = false, onDelete = delete, onEdit = { editingFlight = it }, swipe = swipe) { selectedId = it.id }
+                flightItems(airborne, forceSystemZone, dateHeadings = false, onDelete = delete, onEdit = { editingFlight = it }, swipe = swipe, allFlights = flights) { selectedId = it.id }
                 item(key = "coming-divider") { TimeDivider() }
                 item(key = "coming-header") { SectionTitle("Coming") }
             } else {
@@ -357,7 +360,7 @@ fun TripScreen(
                 }
             }
 
-            flightItems(coming, forceSystemZone, onDelete = delete, onEdit = { editingFlight = it }, swipe = swipe) { selectedId = it.id }
+            flightItems(coming, forceSystemZone, onDelete = delete, onEdit = { editingFlight = it }, swipe = swipe, allFlights = flights) { selectedId = it.id }
 
             if (coming.isEmpty() && airborne.isEmpty()) {
                 item(key = "empty") {
@@ -512,6 +515,9 @@ private fun LazyListScope.flightItems(
     onDelete: (Flight) -> Unit,
     onEdit: (Flight) -> Unit,
     swipe: SwipeCoordinator,
+    // The full, unfiltered list -- this section is only ever one slice of
+    // it (past/now/coming), but a time-conflict can span any two of them.
+    allFlights: List<Flight> = flights,
     onSelect: (Flight) -> Unit
 ) {
     // The date heading lives inside the first card's item of each day rather than
@@ -538,6 +544,7 @@ private fun LazyListScope.flightItems(
                         flight = flight,
                         forceSystemZone = forceSystemZone,
                         dimmed = dimmed,
+                        conflict = remember(flight, allFlights) { FlightConflicts.overlapping(flight, allFlights) },
                         onClick = { onSelect(flight) }
                     )
                 }
@@ -771,6 +778,10 @@ fun FlightCard(
     forceSystemZone: Boolean,
     onClick: () -> Unit,
     dimmed: Boolean = false,
+    /** Another of the traveller's own flights overlapping this one in time --
+     * physically impossible, so a strong sign this one (or the other) was
+     * actually imported from someone else's ticket. */
+    conflict: Flight? = null,
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(20.dp)
@@ -779,6 +790,11 @@ fun FlightCard(
     // Once taken together it is my own trip again, and only the name block remains.
     val dashed = flight.isPending || shared?.status == ShareStatus.PENDING
     val ground = shared?.takeIf { it.status != ShareStatus.TOGETHER }?.person?.tint
+    val rejected = flight.feedStatus == FeedStatus.REJECTED
+    // The community's 7-day review window ran out without reaching 70%
+    // approval -- not the same as rejected: no one decided this was fake,
+    // it just ran out of time. Milder colour, same "still yours" freedom.
+    val expired = flight.feedStatus == FeedStatus.EXPIRED
     val ink = ground?.onColor()
     val baseScheme = MaterialTheme.colorScheme
     val scheme = if (ground == null || ink == null) baseScheme else baseScheme.copy(
@@ -796,11 +812,18 @@ fun FlightCard(
         modifier = modifier
             .fillMaxWidth()
             .then(
-                // An imported trip stays dashed until the traveller confirms it.
-                if (dashed) Modifier.dashedBorder(
-                    color = if (ground != null) ground else MaterialTheme.colorScheme.primary,
-                    shape = shape
-                ) else Modifier
+                // Rejected wins over every other border style -- a blocked
+                // flight needs to read as blocked at a glance, dashed or not.
+                when {
+                    rejected -> Modifier.border(1.5.dp, Color(0xFFE53935), shape)
+                    expired -> Modifier.border(1.5.dp, Color(0xFFFF9800), shape)
+                    // An imported trip stays dashed until the traveller confirms it.
+                    dashed -> Modifier.dashedBorder(
+                        color = if (ground != null) ground else MaterialTheme.colorScheme.primary,
+                        shape = shape
+                    )
+                    else -> Modifier
+                }
             ),
         colors = CardDefaults.cardColors(
             containerColor = when {
@@ -821,6 +844,32 @@ fun FlightCard(
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
 
+            if (conflict != null) {
+                Text(
+                    "Overlaps with ${conflict.flightNumber} — you can't be on two flights at once",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFE53935),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+            }
+            if (rejected) {
+                Text(
+                    "Blocked — this flight couldn't be confirmed",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFE53935),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+            } else if (expired) {
+                Text(
+                    "Unverified — review expired",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFFF9800),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+            }
             if (dashed && shared == null) {
                 Text(
                     "Imported · needs review",
@@ -879,23 +928,31 @@ fun FlightCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .background(
-                            flight.displayStatus.statusColor().copy(alpha = 0.14f),
-                            RoundedCornerShape(6.dp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                flight.displayStatus.statusColor().copy(alpha = 0.14f),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            buildString {
+                                append(flight.displayStatus.label())
+                                if (flight.delayMinutes > 0) append(" ${flight.delayMinutes}m")
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = flight.displayStatus.statusColor()
                         )
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        buildString {
-                            append(flight.displayStatus.label())
-                            if (flight.delayMinutes > 0) append(" ${flight.delayMinutes}m")
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = flight.displayStatus.statusColor()
-                    )
+                    }
+                    if (flight.isManual) NameBlock("Manual", Color(0xFFF5A623))
+                    if (rejected) NameBlock("Blocked", Color(0xFFE53935))
+                    else if (expired) NameBlock("Expired", Color(0xFFFF9800))
+                    flight.importedVia?.let { via ->
+                        NameBlock(if (via == "gmail") "Email" else "Calendar", MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
 
                 // Who this is shared with (mine) or who shared it (theirs).

@@ -140,6 +140,36 @@ object BackendClient {
 
     private fun rainbowRank(o: JSONObject): Int? = if (o.has("rank") && !o.isNull("rank")) o.getInt("rank") else null
 
+    // ---- community crowd-review ---------------------------------------------
+
+    private suspend fun reviewsWithAirports(o: JSONObject): List<CommunityReview> {
+        val arr = o.getJSONArray("items")
+        val list = (0 until arr.length()).map { communityReviewFromJson(arr.getJSONObject(it)) }
+        list.forEach { ensureAirports(it.departure, it.arrival) }
+        return list
+    }
+
+    /** Open reviews, oldest first except anything boosted, which jumps to
+     * the front -- never my own submissions, never one I already voted on. */
+    suspend fun communityQueue(): List<CommunityReview> = withContext(Dispatchers.IO) {
+        reviewsWithAirports(authed("GET", "community/queue"))
+    }
+
+    suspend fun voteOnReview(id: String, approve: Boolean): CommunityReview = withContext(Dispatchers.IO) {
+        val o = authed("POST", "community/$id/vote", JSONObject().put("approve", approve))
+        communityReviewFromJson(o).also { ensureAirports(it.departure, it.arrival) }
+    }
+
+    /** Every review I've cast a vote on, most recently voted first. */
+    suspend fun communityHistoryReviews(): List<CommunityReview> = withContext(Dispatchers.IO) {
+        reviewsWithAirports(authed("GET", "community/history/reviews"))
+    }
+
+    /** Every flight I've fed that went to community review. */
+    suspend fun communityHistorySubmissions(): List<CommunityReview> = withContext(Dispatchers.IO) {
+        reviewsWithAirports(authed("GET", "community/history/submissions"))
+    }
+
     // ---- people and shares -----------------------------------------------------
 
     suspend fun me(): AuthUser = withContext(Dispatchers.IO) { profile(authed("GET", "me")) }
