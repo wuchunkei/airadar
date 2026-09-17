@@ -9,6 +9,7 @@ import android.view.MotionEvent
 import java.io.File
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,35 +38,103 @@ import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.milestones.MilestoneManager
 import org.osmdroid.views.overlay.milestones.MilestoneMeterDistanceLister
 import org.osmdroid.views.overlay.milestones.MilestonePathDisplayer
+import java.time.Instant
+import kotlin.math.PI
+import kotlin.math.atan
 import kotlin.math.ceil
+import kotlin.math.exp
 import kotlin.math.hypot
+import kotlin.math.ln
 import kotlin.math.log2
+import kotlin.math.tan
 
+/**
+ * One flight's leg. [rank] counts earlier legs in the same direction between
+ * the same two airports: each repeat bows a little further out, so none
+ * overlap and a tap can always tell exactly which one it landed on. [isReturn]
+ * marks the direction opposite to the pair's first flight; it bows to the
+ * other side of the line between the two, mirroring the outbound arcs.
+ */
 data class MapRoute(
     val from: Airport,
     val to: Airport,
-    val weight: Int = 1
+    val rank: Int = 0,
+    val isReturn: Boolean = false
 )
 
-/** A leg drawn along the positions it actually reported, instead of a great circle. */
+/** A leg drawn along the positions it actually reported, instead of a bowed arc. */
 data class MapTrack(
     val from: Airport,
     val to: Airport,
     val points: List<TrackPoint>
 )
 
-/** Collapses a trip list into unique routes, weighted by how often each was flown. */
-fun List<Flight>.toMapRoutes(): List<MapRoute> =
-    mapNotNull { flight ->
-        val from = FlightDatabase.airport(flight.departure) ?: return@mapNotNull null
-        val to = FlightDatabase.airport(flight.arrival) ?: return@mapNotNull null
-        Pair(from, to)
+/** A leg per flight, oldest first, ranked among its repeats. */
+fun List<Flight>.toMapRoutes(): List<MapRoute> {
+    val seen = mutableMapOf<String, Int>()
+    val firstFrom = mutableMapOf<String, String>()
+    val out = mutableListOf<MapRoute>()
+    for (flight in sortedBy { it.departureInstant ?: Instant.MIN }) {
+        val from = flight.departureAirport ?: continue
+        val to = flight.arrivalAirport ?: continue
+        val pair = listOf(from.iata, to.iata).sorted().joinToString("-")
+        val way = "${from.iata}>${to.iata}"
+        val rank = seen.getOrDefault(way, 0)
+        seen[way] = rank + 1
+        if (firstFrom[pair] == null) firstFrom[pair] = from.iata
+        out += MapRoute(from, to, rank, isReturn = firstFrom[pair] != from.iata)
     }
-        .groupingBy { it }
-        .eachCount()
-        .map { (pair, count) -> MapRoute(pair.first, pair.second, count) }
+    return out
+}
 
-/** OpenStreetMap tile map with great-circle routes and flown tracks drawn on top. */
+// Spherical Web Mercator, y increasing north (the standard math convention) --
+// the sign flips against MapKit's own MKMapPoint, which runs y increasing
+// south (screen-like); arcPath below is derived fresh for this convention,
+// not a blind port of the iOS formula.
+private const val EARTH_RADIUS = 6378137.0
+
+private fun mercatorX(lon: Double): Double = Math.toRadians(lon) * EARTH_RADIUS
+
+private fun mercatorY(lat: Double): Double {
+    val rad = Math.toRadians(lat.coerceIn(-85.05, 85.05))
+    return EARTH_RADIUS * ln(tan(PI / 4 + rad / 2))
+}
+
+private fun inverseMercator(x: Double, y: Double): OsmGeoPoint {
+    val lon = Math.toDegrees(x / EARTH_RADIUS)
+    val lat = Math.toDegrees(2 * atan(exp(y / EARTH_RADIUS)) - PI / 2)
+    return OsmGeoPoint(lat, lon)
+}
+
+/**
+ * The bowed line between two airports. The rule: every flight keeps to the
+ * RIGHT of its direction of travel — northbound bows east, southbound west,
+ * eastbound south, westbound north — so the way out and the way back sit on
+ * opposite sides of the line between the two airports, and every repeat in
+ * one direction steps a fixed amount further out on its own side.
+ */
+fun arcPath(from: Airport, to: Airport, rank: Int = 0): List<OsmGeoPoint> {
+    val p0x = mercatorX(from.longitude); val p0y = mercatorY(from.latitude)
+    val p2x = mercatorX(to.longitude); val p2y = mercatorY(to.latitude)
+    val dx = p2x - p0x; val dy = p2y - p0y
+    val length = hypot(dx, dy)
+    if (length == 0.0) return listOf(OsmGeoPoint(from.latitude, from.longitude), OsmGeoPoint(to.latitude, to.longitude))
+    val bulge = minOf(0.14 + 0.09 * rank, 0.7)
+    // "Right of travel" in a y-north-positive system is the (dy, -dx)
+    // rotation of the direction vector (verified against due-east and
+    // due-north test cases against the rule stated above).
+    val cx = (p0x + p2x) / 2 + dy * bulge
+    val cy = (p0y + p2y) / 2 - dx * bulge
+    val steps = 48
+    return (0..steps).map { i ->
+        val t = i.toDouble() / steps; val u = 1 - t
+        val x = u * u * p0x + 2 * u * t * cx + t * t * p2x
+        val y = u * u * p0y + 2 * u * t * cy + t * t * p2y
+        inverseMercator(x, y)
+    }
+}
+
+/** OpenStreetMap tile map with bowed arc routes and flown tracks drawn on top. */
 @Composable
 fun TileMap(
     routes: List<MapRoute>,
@@ -73,27 +142,68 @@ fun TileMap(
     tracks: List<MapTrack> = emptyList(),
     /** False for a thumbnail: touches fall through so the sheet around it still scrolls. */
     interactive: Boolean = true,
-    /** Legs drawn in the accent colour, matched by airport codes. */
-    selected: List<Pair<Airport, Airport>> = emptyList(),
-    /**
-     * A tap on or near legs, as their endpoints. Where several legs run together the
-     * list has all of them; a tap on an airport dot lists every leg touching it.
-     */
-    onLegsClick: ((List<Pair<Airport, Airport>>) -> Unit)? = null,
+    /** Colour by compass direction (north blue, south green) instead of
+     * outbound/return — for the My overview, where one line per leg reads
+     * better by which way it points than by which trip it belonged to. */
+    directionColored: Boolean = false,
+    /** The one leg to highlight — (from, to, rank), naming the exact repeat
+     * of that pair a line tap picked out — or null for none. */
+    selected: Triple<Airport, Airport, Int>? = null,
+    /** A tap on one line: which leg, exactly (never more than one, even
+     * where several repeats of the same pair run together). */
+    onLegClick: ((Airport, Airport, Int) -> Unit)? = null,
+    /** A tap on an airport's dot: every (from, to) pair actually touching
+     * it — an airport can sit on several different routes at once, which
+     * is a different case from the same-pair-repeated one [selected] and
+     * [onLegClick] exist for, so this stays a plain aggregate list. */
+    onAirportClick: ((List<Pair<Airport, Airport>>) -> Unit)? = null,
     /** A tap on the map away from any leg. */
     onMapTap: (() -> Unit)? = null,
     /** Where to look while there are no legs at all — roughly where the traveller is. */
-    emptyFocus: Region? = null
+    emptyFocus: Region? = null,
+    /** The dot — off by default. On, [followUser] decides whether the
+     * camera actually follows it too. */
+    showsUserLocation: Boolean = false,
+    /** The latest fix to show the dot at; null hides it even if
+     * [showsUserLocation] is true (no fix yet, or permission not granted). */
+    userLocation: android.location.Location? = null,
+    /** True re-centres the camera on [userLocation] each time it changes —
+     * a plain pan (MapView.controller.animateTo), never a zoom change, so
+     * whatever zoom is already showing the route network survives. */
+    followUser: Boolean = false,
+    /** A manual drag or pinch while [followUser] is true: the caller
+     * should let go of it, the same way it would with any other "follow
+     * me" map button. Never fired for the pan this composable makes
+     * itself when centring on a new fix. */
+    onUserPanned: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     // The tiles are OSM's standard style whatever the app theme, so the line
     // colours are picked once, against that light ground.
     val routeColor = Color(0xFF0B6FD4).toArgb()
+    val returnColor = Color(0xFF009688).toArgb()
+    val directionNorthColor = Color(0xFF0A70D4).toArgb()
+    val directionSouthColor = Color(0xFF00994D).toArgb()
     val selectedColor = Color(0xFFE8590C).toArgb()
     val nodeColor = Color(0xFF0A4F96).toArgb()
 
     val framedFor = remember(interactive) { intArrayOf(0) }
+    // Set only while this composable's own animateTo (in the location
+    // LaunchedEffect below) is moving the camera, so that pan isn't
+    // mistaken for the traveller taking hold of the map themselves.
+    val programmaticPan = remember(interactive) { booleanArrayOf(false) }
+    // Every overlay the route/track-drawing pass below owns, so its own
+    // redraw can clear just those and never touch the location marker,
+    // which lives on the map independently of route changes.
+    val ownedOverlays = remember(interactive) { mutableListOf<org.osmdroid.views.overlay.Overlay>() }
+    // The map view's own MapListener is set up once (below, inside the
+    // remember block that builds it) and would otherwise close over
+    // whichever onUserPanned instance existed at that first composition —
+    // this indirection cell is updated on every recomposition instead, so
+    // the listener always calls the current one.
+    val onUserPannedRef = remember(interactive) { arrayOfNulls<() -> Unit>(1) }
+    onUserPannedRef[0] = onUserPanned
 
     val mapView = remember(interactive) {
         Configuration.getInstance().apply {
@@ -125,8 +235,23 @@ fun TileMap(
                 setMinZoomLevel(worldFits)
                 if (zoomLevelDouble < worldFits) controller.setZoom(worldFits)
             }
+            // A manual drag or pinch while the camera is following the
+            // traveller's own position: let go, the same way any other
+            // "follow me" map button would -- but only for a scroll this
+            // composable didn't itself just start via animateTo below.
+            addMapListener(object : org.osmdroid.events.MapListener {
+                override fun onScroll(event: org.osmdroid.events.ScrollEvent?): Boolean {
+                    if (!programmaticPan[0]) onUserPannedRef[0]?.invoke()
+                    return false
+                }
+                override fun onZoom(event: org.osmdroid.events.ZoomEvent?): Boolean = false
+            })
         }
     }
+
+    // The traveller's own position: outside the route-redraw pass below, so
+    // its two overlays (dot + burst ring) are never touched by a route update.
+    val locationMarker = remember(interactive) { LocationMarker(mapView) }
 
     DisposableEffect(lifecycleOwner, mapView) {
         val observer = LifecycleEventObserver { _, event ->
@@ -137,7 +262,28 @@ fun TileMap(
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            locationMarker.hide()
+        }
+    }
+
+    LaunchedEffect(showsUserLocation, userLocation?.latitude, userLocation?.longitude, followUser) {
+        val fix = userLocation
+        if (showsUserLocation && fix != null) {
+            val point = OsmGeoPoint(fix.latitude, fix.longitude)
+            locationMarker.show(point)
+            if (followUser) {
+                // Flagged so the MapListener above doesn't mistake this
+                // self-initiated pan for the traveller taking hold of the map.
+                programmaticPan[0] = true
+                mapView.controller.animateTo(point)
+                kotlinx.coroutines.delay(400)
+                programmaticPan[0] = false
+            }
+        } else {
+            locationMarker.hide()
+        }
     }
 
     AndroidView(
@@ -147,26 +293,38 @@ fun TileMap(
         // map down here cannot race a final draw the way onDispose can.
         onRelease = { it.onDetach() },
         update = { map ->
-            map.overlays.clear()
+            // Clears only what the previous run of this block itself added --
+            // never the location marker's overlays, which live outside it.
+            ownedOverlays.forEach { map.overlays.remove(it) }
+            ownedOverlays.clear()
+            fun addOwned(overlay: org.osmdroid.views.overlay.Overlay) {
+                map.overlays.add(overlay)
+                ownedOverlays.add(overlay)
+            }
 
-            val legs = mutableListOf<Triple<Polyline, Airport, Airport>>()
+            data class Leg(val line: Polyline, val from: Airport, val to: Airport, val rank: Int)
+            val legs = mutableListOf<Leg>()
             val density = map.resources.displayMetrics.density
+
+            fun isSelected(from: Airport, to: Airport, rank: Int) =
+                selected != null && selected.first.iata == from.iata && selected.second.iata == to.iata && selected.third == rank
 
             // Taps are resolved here rather than per line: osmdroid's own hit test is
             // only as wide as the stroke and hands the tap to whichever line is on top,
             // which makes a bundle of legs out of one hub impossible to pick apart.
             // Every leg's distance to the finger is measured in pixels and exactly one
-            // — the nearest, if it is within reach — is reported.
-            map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
+            // — the nearest, if it is within reach — is reported, rank included, so a
+            // tap on one repeat of a pair never lights up every repeat of it.
+            addOwned(MapEventsOverlay(object : MapEventsReceiver {
                 override fun singleTapConfirmedHelper(p: OsmGeoPoint?): Boolean {
                     if (p == null) return false
                     val tap = map.projection.toPixels(p, null)
                     val nearest = legs
-                        .map { it to it.first.pixelDistanceTo(tap, map) }
+                        .map { it to it.line.pixelDistanceTo(tap, map) }
                         .minByOrNull { it.second }
                         ?.takeIf { it.second <= 28f * density }
                         ?.first
-                    if (nearest != null) onLegsClick?.invoke(listOf(nearest.second to nearest.third))
+                    if (nearest != null) onLegClick?.invoke(nearest.from, nearest.to, nearest.rank)
                     else onMapTap?.invoke()
                     return true
                 }
@@ -174,42 +332,43 @@ fun TileMap(
                 override fun longPressHelper(p: OsmGeoPoint?): Boolean = false
             }))
 
-            fun isSelected(from: Airport, to: Airport) =
-                selected.any { it.first.iata == from.iata && it.second.iata == to.iata }
-
-            fun Polyline.leg(from: Airport, to: Airport, width: Float) {
-                val color = if (isSelected(from, to)) selectedColor else routeColor
-                outlinePaint.color = color
-                outlinePaint.strokeWidth = width
-                outlinePaint.isAntiAlias = true
-                // osmdroid clears this list on detach, so it must be a mutable one.
-                setMilestoneManagers(arrayListOf(midpointArrow(distance, color)))
-                // No bubble, and no claim on the tap: the events overlay below decides.
-                infoWindow = null
-                setOnClickListener { _, _, _ -> false }
-                legs += Triple(this, from, to)
-            }
+            fun directionColor(from: Airport, to: Airport) =
+                if (to.latitude >= from.latitude) directionNorthColor else directionSouthColor
 
             // Selected leg last, so it paints over the others where they cross.
-            routes.sortedBy { isSelected(it.from, it.to) }.forEach { route ->
-                map.overlays.add(
+            routes.sortedBy { isSelected(it.from, it.to, it.rank) }.forEach { route ->
+                addOwned(
                     Polyline(map).apply {
-                        setPoints(
-                            greatCirclePath(
-                                GeoPoint(route.from.latitude, route.from.longitude),
-                                GeoPoint(route.to.latitude, route.to.longitude)
-                            ).map { OsmGeoPoint(it.lat, it.lon) }
-                        )
-                        leg(route.from, route.to, (3f + route.weight).coerceAtMost(9f))
+                        setPoints(arcPath(route.from, route.to, route.rank))
+                        val base = if (directionColored) directionColor(route.from, route.to)
+                        else if (route.isReturn) returnColor else routeColor
+                        val color = if (isSelected(route.from, route.to, route.rank)) selectedColor else base
+                        outlinePaint.color = color
+                        outlinePaint.strokeWidth = 4f
+                        outlinePaint.isAntiAlias = true
+                        // osmdroid clears this list on detach, so it must be a mutable one.
+                        setMilestoneManagers(arrayListOf(midpointArrow(distance, color)))
+                        // No bubble, and no claim on the tap: the events overlay above decides.
+                        infoWindow = null
+                        setOnClickListener { _, _, _ -> false }
+                        legs += Leg(this, route.from, route.to, route.rank)
                     }
                 )
             }
 
-            tracks.sortedBy { isSelected(it.from, it.to) }.forEach { track ->
-                map.overlays.add(
+            tracks.forEach { track ->
+                val isSel = isSelected(track.from, track.to, 0)
+                addOwned(
                     Polyline(map).apply {
                         setPoints(track.points.map { OsmGeoPoint(it.lat, it.lon) })
-                        leg(track.from, track.to, 4f)
+                        val color = if (isSel) selectedColor else routeColor
+                        outlinePaint.color = color
+                        outlinePaint.strokeWidth = 4f
+                        outlinePaint.isAntiAlias = true
+                        setMilestoneManagers(arrayListOf(midpointArrow(distance, color)))
+                        infoWindow = null
+                        setOnClickListener { _, _, _ -> false }
+                        legs += Leg(this, track.from, track.to, 0)
                     }
                 )
             }
@@ -217,7 +376,7 @@ fun TileMap(
             (routes.flatMap { listOf(it.from, it.to) } + tracks.flatMap { listOf(it.from, it.to) })
                 .distinctBy { it.iata }
                 .forEach { airport ->
-                    map.overlays.add(
+                    addOwned(
                         Marker(map).apply {
                             position = OsmGeoPoint(airport.latitude, airport.longitude)
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
@@ -225,9 +384,10 @@ fun TileMap(
                             infoWindow = null
                             setOnMarkerClickListener { _, _ ->
                                 val touching = legs
-                                    .filter { it.second.iata == airport.iata || it.third.iata == airport.iata }
-                                    .map { it.second to it.third }
-                                if (touching.isNotEmpty()) onLegsClick?.invoke(touching)
+                                    .filter { it.from.iata == airport.iata || it.to.iata == airport.iata }
+                                    .map { it.from to it.to }
+                                    .distinct()
+                                if (touching.isNotEmpty()) onAirportClick?.invoke(touching)
                                 true
                             }
                         }
@@ -253,12 +413,8 @@ fun TileMap(
                 }
             } else if (framedFor[0] != key) {
                 framedFor[0] = key
-                val corners = routes.flatMap {
-                    listOf(
-                        OsmGeoPoint(it.from.latitude, it.from.longitude),
-                        OsmGeoPoint(it.to.latitude, it.to.longitude)
-                    )
-                } + tracks.flatMap { track -> track.points.map { OsmGeoPoint(it.lat, it.lon) } }
+                val corners = routes.flatMap { arcPath(it.from, it.to, it.rank) } +
+                    tracks.flatMap { track -> track.points.map { OsmGeoPoint(it.lat, it.lon) } }
                 val box = BoundingBox.fromGeoPointsSafe(corners)
                 val frame = { m: MapView -> m.zoomToBoundingBox(box, false, minOf(m.width, m.height) / 7) }
                 if (map.width > 0) frame(map)
@@ -323,4 +479,96 @@ private fun dotDrawable(color: Int) = GradientDrawable().apply {
     setColor(color)
     setStroke(3, AndroidColor.WHITE)
     setSize(22, 22)
+}
+
+private val userLocationColor = AndroidColor.rgb(46, 204, 113)
+
+/** A ring of [radiusPx], stroked at [alpha] -- transparent inside, so the
+ * solid dot underneath still shows through while it expands and fades. */
+private fun ringDrawable(radiusPx: Int, alpha: Int) = GradientDrawable().apply {
+    shape = GradientDrawable.OVAL
+    setColor(AndroidColor.TRANSPARENT)
+    setStroke((radiusPx / 8).coerceAtLeast(2), AndroidColor.argb(alpha, 46, 204, 113))
+    setSize(radiusPx * 2, radiusPx * 2)
+}
+
+/**
+ * The traveller's own position on the map: a small solid green dot that
+ * stays put, plus a ring that expands and fades once every ten seconds --
+ * a burst, like the equivalent view on iOS, not a continuous pulse, so it
+ * doesn't compete for attention with the route lines. Both overlays live
+ * outside [TileMap]'s route-redraw pass, added directly to the [map] here
+ * and never touched by that pass's own overlay bookkeeping.
+ */
+private class LocationMarker(private val map: MapView) {
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var attached = false
+    private var burstRunnable: Runnable? = null
+    private var stepRunnable: Runnable? = null
+
+    private val dot = Marker(map).apply {
+        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        icon = dotDrawable(userLocationColor)
+        infoWindow = null
+    }
+    private val ring = Marker(map).apply {
+        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        infoWindow = null
+    }
+
+    fun show(point: OsmGeoPoint) {
+        dot.position = point
+        ring.position = point
+        if (!attached) {
+            map.overlays.add(ring)
+            map.overlays.add(dot)
+            attached = true
+            scheduleBurst()
+        }
+        map.invalidate()
+    }
+
+    fun hide() {
+        if (attached) {
+            map.overlays.remove(dot)
+            map.overlays.remove(ring)
+            attached = false
+        }
+        burstRunnable?.let(handler::removeCallbacks)
+        stepRunnable?.let(handler::removeCallbacks)
+        burstRunnable = null
+        stepRunnable = null
+    }
+
+    private fun scheduleBurst() {
+        val runnable = object : Runnable {
+            override fun run() {
+                if (!attached) return
+                animateBurst()
+                handler.postDelayed(this, 10_000)
+            }
+        }
+        burstRunnable = runnable
+        handler.post(runnable)
+    }
+
+    private fun animateBurst() {
+        val density = map.resources.displayMetrics.density
+        val steps = 12
+        var i = 0
+        val step = object : Runnable {
+            override fun run() {
+                if (!attached) return
+                val t = i / steps.toFloat()
+                val radiusPx = ((10 + 26 * t) * density).toInt().coerceAtLeast(1)
+                val alpha = (255 * (1f - t)).toInt().coerceIn(0, 255)
+                ring.icon = ringDrawable(radiusPx, alpha)
+                map.invalidate()
+                i++
+                if (i <= steps) handler.postDelayed(this, 45L) else ring.icon = null
+            }
+        }
+        stepRunnable = step
+        handler.post(step)
+    }
 }

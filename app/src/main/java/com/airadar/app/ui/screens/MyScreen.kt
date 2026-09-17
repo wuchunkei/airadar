@@ -4,11 +4,17 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.airadar.app.data.HomeRegion
 import com.airadar.app.data.Region
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +33,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -87,11 +94,21 @@ fun MyScreen(
     }
     val stats = remember(history) { history.travelStats() }
 
-    // The legs under the traveller's tap, and the flights that flew them, newest first.
-    var selectedLegs by remember { mutableStateOf<List<Pair<Airport, Airport>>>(emptyList()) }
-    val legFlights = remember(selectedLegs, history) {
-        history
-            .filter { f -> selectedLegs.any { (from, to) -> f.departure == from.iata && f.arrival == to.iata } }
+    // A line tapped: which exact repeat of that pair, oldest-first-ranked
+    // the same way toMapRoutes() ranked it when it bowed the arc — never
+    // more than one flight, so tapping one repeat can't highlight them all.
+    var selectedLeg by remember { mutableStateOf<Triple<Airport, Airport, Int>?>(null) }
+    // An airport dot tapped instead: every pair actually touching it, newest first.
+    var selectedPairs by remember { mutableStateOf<List<Pair<Airport, Airport>>>(emptyList()) }
+    val legFlights = remember(selectedLeg, selectedPairs, history) {
+        selectedLeg?.let { (from, to, rank) ->
+            history.filter { it.departure == from.iata && it.arrival == to.iata }
+                .sortedBy { it.departureInstant ?: java.time.Instant.MIN }
+                .getOrNull(rank)
+                ?.let { listOf(it) }
+                ?: emptyList()
+        } ?: history
+            .filter { f -> selectedPairs.any { (from, to) -> f.departure == from.iata && f.arrival == to.iata } }
             .sortedByDescending { it.departureInstant }
     }
     var openId by remember { mutableStateOf<String?>(null) }
@@ -109,35 +126,112 @@ fun MyScreen(
         homeRegion = HomeRegion.find(context)
     }
 
+    // The location button's own two states: off, or on and following the
+    // traveller's live fix. There is no third "shown but not following"
+    // state — a tap while following turns it fully off, same as a manual
+    // drag does (reported back via TileMap's onUserPanned).
+    var locationFollowing by remember { mutableStateOf(false) }
+    var userFix by remember { mutableStateOf<android.location.Location?>(null) }
+    val askPreciseLocation = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (!granted) locationFollowing = false }
+
+    DisposableEffect(locationFollowing) {
+        if (!locationFollowing) {
+            userFix = null
+            return@DisposableEffect onDispose { }
+        }
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            askPreciseLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            return@DisposableEffect onDispose { }
+        }
+        val client = LocationServices.getFusedLocationProviderClient(context)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5_000L).build()
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                result.lastLocation?.let { userFix = it }
+            }
+        }
+        try {
+            client.requestLocationUpdates(request, callback, android.os.Looper.getMainLooper())
+        } catch (_: SecurityException) {
+            locationFollowing = false
+        }
+        onDispose { client.removeLocationUpdates(callback) }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
 
-        // Full-bleed map; pinch to zoom, drag to pan.
+        // Full-bleed map; pinch to zoom, drag to pan. Direction tells the
+        // colour here — blue heading north, green heading south — so the
+        // web of past legs reads at a glance, the way My's overview should.
         TileMap(
             routes = routes,
             tracks = tracks,
-            selected = selectedLegs,
-            onLegsClick = { selectedLegs = it },
-            onMapTap = { selectedLegs = emptyList() },
+            directionColored = true,
+            selected = selectedLeg,
+            onLegClick = { from, to, rank ->
+                selectedPairs = emptyList()
+                selectedLeg = Triple(from, to, rank)
+            },
+            onAirportClick = { pairs ->
+                selectedLeg = null
+                selectedPairs = pairs
+            },
+            onMapTap = {
+                selectedLeg = null
+                selectedPairs = emptyList()
+            },
             emptyFocus = homeRegion,
+            showsUserLocation = locationFollowing,
+            userLocation = userFix,
+            followUser = locationFollowing,
+            // A manual drag while following: let go, exactly like tapping
+            // the button again would.
+            onUserPanned = { locationFollowing = false },
             modifier = Modifier.fillMaxSize()
         )
 
-        Surface(
+        Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(16.dp)
-                .size(44.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-            tonalElevation = 3.dp
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            IconButton(onClick = onSettingsClick) {
-                Icon(
-                    Icons.Outlined.Settings,
-                    contentDescription = "Settings",
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
+            Surface(
+                modifier = Modifier.size(44.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                tonalElevation = 3.dp
+            ) {
+                IconButton(onClick = { locationFollowing = !locationFollowing }) {
+                    Icon(
+                        Icons.Outlined.MyLocation,
+                        contentDescription = "My location",
+                        tint = if (locationFollowing) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            Surface(
+                modifier = Modifier.size(44.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                tonalElevation = 3.dp
+            ) {
+                IconButton(onClick = onSettingsClick) {
+                    Icon(
+                        Icons.Outlined.Settings,
+                        contentDescription = "Settings",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         }
 
