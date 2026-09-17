@@ -61,3 +61,11 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     # The community-fed schedule (app/feed.py) — looked up by flight number
     # alone when a search's own official sources have nothing.
     await db.feed_schedules.create_index("flightNumber")
+
+    # Community review (app/community.py) — a fed flight the automated
+    # scorer left "pending" waits here for other travellers to vote on.
+    await db.feed_reviews.create_index("ownerId")
+    await db.feed_reviews.create_index("status")
+    # One vote per person per review — a duplicate is a clean 409, not a
+    # race to reason about in the vote-counting code itself.
+    await db.feed_votes.create_index([("reviewId", 1), ("userId", 1)], unique=True)

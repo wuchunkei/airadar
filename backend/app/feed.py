@@ -19,9 +19,10 @@ backend already talks to or already holds:
 
 >=70 auto-approves; <20 auto-rejects (the trip is then shown blocked on
 the traveller's own Trip card — a red outline, still editable or
-deletable, never silently discarded); anything between is left pending,
-neither verified nor blocked, until a later corroborating traveller or a
-real source closes the gap.
+deletable, never silently discarded); anything between is left pending —
+and now goes to community.py's crowd review (a feed_reviews document,
+created by trips.py the moment score() returns "pending") rather than
+just sitting there forever.
 
 None of this proves a *specific* person flew — only a real trip fed
 elsewhere would let it corroborate at all — it establishes that the
@@ -57,11 +58,9 @@ flight — matching a submission's own stated time against a feed_schedules
 entry allows TIME_TOLERANCE_MINUTES of slack either way, in both
 directions across midnight.
 
-Not implemented yet, both deliberately out of scope for a first pass:
-requiring a photo of the boarding pass/ticket for anything under the
-reject line instead of just rejecting outright, and re-scoring a trip
-already sitting at "pending" when a later traveller's submission would
-have corroborated it.
+Not implemented yet, deliberately out of scope for a first pass: requiring
+a photo of the boarding pass/ticket for anything under the reject line
+instead of just rejecting outright.
 """
 
 from datetime import date, datetime, timedelta, timezone
@@ -110,7 +109,11 @@ async def known_schedule(db, number: str, dep: str, arr: str,
     return doc
 
 
-async def _remember(db, number: str, airline_name: str, dep: str, arr: str, dep_time: datetime, arr_time: datetime) -> None:
+async def remember_schedule(db, number: str, airline_name: str, dep: str, arr: str, dep_time: datetime, arr_time: datetime) -> None:
+    """Teaches this exact number+route to the community schedule — called
+    both from this module's own automated approval below, and from
+    community.py once a community vote (not the automated scorer) confirms
+    a flight: either kind of approval is equally trustworthy evidence."""
     now = datetime.now(timezone.utc)
     await db.feed_schedules.update_one(
         {"_id": _schedule_key(number, dep, arr)},
@@ -229,7 +232,7 @@ async def score(http: httpx.AsyncClient, db, user_id, number: str, day: date, de
         total += 30
     if total >= APPROVE_AT:
         if dep_time is not None and arr_time is not None:
-            await _remember(db, number, airline_name, dep, arr, dep_time, arr_time)
+            await remember_schedule(db, number, airline_name, dep, arr, dep_time, arr_time)
         return "approved"
     if total < REJECT_BELOW:
         return "rejected"

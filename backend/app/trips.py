@@ -23,12 +23,14 @@ router = APIRouter(prefix="/trips", tags=["trips"])
 
 
 class FeedStatus(str, Enum):
-    """A manually-entered flight's automated verification outcome — see
-    feed.py. The client only ever sends PENDING for a fresh entry; this is
-    what the server actually resolves it to before it's ever stored."""
+    """A manually-entered flight's verification outcome — see feed.py for
+    the automated scoring and community.py for the crowd review a
+    "pending" result then goes to. The client only ever sends PENDING for
+    a fresh entry; this is what the server actually resolves it to."""
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    EXPIRED = "expired"
 
 
 class TripIn(BaseModel):
@@ -87,6 +89,19 @@ def _store(trip: TripIn) -> dict:
     if doc.get("trackFlownOn") is not None:
         doc["trackFlownOn"] = datetime.combine(doc["trackFlownOn"], datetime.min.time())
     return doc
+
+
+REVIEW_WINDOW = timedelta(days=7)
+REVIEW_FIRST_TARGET = 10
+
+
+async def apply_feed_status(db, trip_key: str, status: str) -> None:
+    """Pushes a community review's resolved verdict onto the matching trip
+    document — called from community.py once voting or an admin override
+    resolves a review. The automated feed.py path doesn't need this: it
+    writes feedStatus directly into `store` before the trip is ever
+    inserted, in put_trip below."""
+    await db.trips.update_one({"_id": trip_key}, {"$set": {"feedStatus": status, "updatedAt": _now()}})
 
 
 # What a live look-up may change on a stored trip; the rest is the traveller's.
@@ -187,10 +202,28 @@ async def put_trip(trip_id: str, trip: TripIn, request: Request, user: dict = De
     # client — gets scored here first, so the traveller's own Trip card
     # already carries the resolved outcome, not the client's own guess.
     if trip.isManual and trip.feedStatus == FeedStatus.PENDING and not await db.trips.find_one({"_id": key}):
-        store["feedStatus"] = await feed.score(request.app.state.http, db, user["_id"], trip.flightNumber,
-                                                trip.departureTime.date(), trip.departure, trip.arrival,
-                                                dep_time=trip.departureTime, arr_time=trip.arrivalTime,
-                                                airline_name=trip.airlineName)
+        resolved = await feed.score(request.app.state.http, db, user["_id"], trip.flightNumber,
+                                     trip.departureTime.date(), trip.departure, trip.arrival,
+                                     dep_time=trip.departureTime, arr_time=trip.arrivalTime,
+                                     airline_name=trip.airlineName)
+        store["feedStatus"] = resolved
+        # The automated scorer couldn't settle it either way — hand it to
+        # the community instead of leaving it stuck at "pending" forever.
+        # upsert + $setOnInsert: idempotent if this ever ran twice for the
+        # same still-nonexistent trip.
+        if resolved == "pending":
+            await db.feed_reviews.update_one(
+                {"_id": key},
+                {"$setOnInsert": {
+                    "ownerId": user["_id"],
+                    "flightNumber": trip.flightNumber, "airlineName": trip.airlineName,
+                    "departure": trip.departure, "arrival": trip.arrival,
+                    "departureTime": trip.departureTime, "arrivalTime": trip.arrivalTime,
+                    "status": "pending", "targetVotes": REVIEW_FIRST_TARGET, "noThreshold": False, "boosted": False,
+                    "deadline": now + REVIEW_WINDOW, "createdAt": now, "resolvedAt": None, "adminOverride": False,
+                }},
+                upsert=True,
+            )
     doc = await db.trips.find_one_and_update(
         {"_id": key},
         {

@@ -13,8 +13,9 @@ import httpx
 import airportsdata
 import pycountry
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import HTMLResponse
 
-from . import aerodatabox, airlabs, auth, billing, db, feed, social, tiers, trips
+from . import aerodatabox, airlabs, auth, billing, community, confirmfeedpage, db, feed, social, tiers, trips
 from .schema import Airport, Flight
 
 _AIRPORTS_TABLE = airportsdata.load("IATA")
@@ -25,6 +26,7 @@ app.include_router(trips.router)
 app.include_router(social.router)
 app.include_router(billing.router)
 app.include_router(tiers.router)
+app.include_router(community.router)
 
 
 def _http() -> httpx.AsyncClient:
@@ -65,7 +67,16 @@ async def health():
         "google": bool(os.environ.get("GOOGLE_CLIENT_ID")),
         "jwt": bool(os.environ.get("JWT_SECRET")),
         "stripe": bool(os.environ.get("STRIPE_SECRET_KEY")),
+        "adminEmail": bool(os.environ.get("ADMIN_EMAIL")),
     }
+
+
+@app.get("/confirm_feed", response_class=HTMLResponse)
+async def confirm_feed_page():
+    """The community-review admin console — see community.py's require_admin
+    for the actual gate; this just serves the page shell."""
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    return confirmfeedpage.PAGE.replace("{{GOOGLE_CLIENT_ID}}", client_id)
 
 
 @app.get("/flights/{number}/{day}", response_model=Flight, dependencies=[Depends(require_token)])
