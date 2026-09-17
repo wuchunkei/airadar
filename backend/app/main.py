@@ -14,7 +14,7 @@ import airportsdata
 import pycountry
 from fastapi import Depends, FastAPI, Header, HTTPException
 
-from . import aerodatabox, airlabs, auth, billing, db, social, tiers, trips
+from . import aerodatabox, airlabs, auth, billing, db, feed, social, tiers, trips
 from .schema import Airport, Flight
 
 _AIRPORTS_TABLE = airportsdata.load("IATA")
@@ -29,6 +29,10 @@ app.include_router(tiers.router)
 
 def _http() -> httpx.AsyncClient:
     return app.state.http
+
+
+def _db():
+    return app.state.db
 
 
 @app.on_event("startup")
@@ -73,11 +77,16 @@ async def flight(number: str, day: date):
             raise HTTPException(status_code=429, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
         # AirLabs has nothing at all — a real, common coverage gap, not always
         # a dead flight number (see airlabs.schedule). AeroDataBox, a second
-        # paid-adjacent source, gets one shot at a real schedule before this
-        # gives up and reports AirLabs' own (adsbdb-enriched) error instead.
+        # paid-adjacent source, gets one shot at a real schedule next; failing
+        # that, a fellow traveller may already have fed this exact one in
+        # (app/feed.py) — only then does this give up and report AirLabs'
+        # own (adsbdb-enriched) error.
         try:
             return await aerodatabox.flight(_http(), number, day)
         except aerodatabox.AeroDataBoxError:
+            fed = await feed.schedule_for_search(_db(), number, day)
+            if fed:
+                return fed
             raise HTTPException(status_code=502, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
 
 
@@ -99,6 +108,9 @@ async def flight_candidates(number: str, day: date):
         try:
             return await aerodatabox.flights(_http(), number, day)
         except aerodatabox.AeroDataBoxError:
+            fed = await feed.schedule_for_search(_db(), number, day)
+            if fed:
+                return [fed]
             raise HTTPException(status_code=502, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
 
 

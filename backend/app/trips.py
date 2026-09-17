@@ -188,7 +188,9 @@ async def put_trip(trip_id: str, trip: TripIn, request: Request, user: dict = De
     # already carries the resolved outcome, not the client's own guess.
     if trip.isManual and trip.feedStatus == FeedStatus.PENDING and not await db.trips.find_one({"_id": key}):
         store["feedStatus"] = await feed.score(request.app.state.http, db, user["_id"], trip.flightNumber,
-                                                trip.departureTime.date(), trip.departure, trip.arrival)
+                                                trip.departureTime.date(), trip.departure, trip.arrival,
+                                                dep_time=trip.departureTime, arr_time=trip.arrivalTime,
+                                                airline_name=trip.airlineName)
     doc = await db.trips.find_one_and_update(
         {"_id": key},
         {

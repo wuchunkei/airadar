@@ -57,3 +57,7 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await db.tokens.create_index("order", unique=True)
     await db.tokens.create_index("sessionId", unique=True, sparse=True)
     await db.tokens.create_index("subscriptionId", sparse=True)
+
+    # The community-fed schedule (app/feed.py) — looked up by flight number
+    # alone when a search's own official sources have nothing.
+    await db.feed_schedules.create_index("flightNumber")
