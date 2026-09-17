@@ -145,7 +145,15 @@ final class FlightStore: ObservableObject {
         SiriSuggestions.donate(flight)
         if synced {
             Task { [weak self] in
-                do { try await BackendClient.putTrip(flight) } catch let e as BackendClient.BackendError where e.code == 402 {
+                do {
+                    let stored = try await BackendClient.putTrip(flight)
+                    // A fresh fed flight (see Flight.feedStatus) gets its real
+                    // review outcome back in this same response — reflect it
+                    // at once, rather than leaving the card reading "pending"
+                    // until whatever's next syncs from the server.
+                    guard let self, stored.feedStatus != flight.feedStatus else { return }
+                    self.publish(self.all.map { $0.id == stored.id ? stored : $0 })
+                } catch let e as BackendClient.BackendError where e.code == 402 {
                     // The server's count is the truth; take the trip back out.
                     guard let self else { return }
                     self.publish(self.all.filter { $0.id != flight.id })

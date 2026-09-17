@@ -10,6 +10,7 @@ struct FlightCard: View {
 
     @State private var expandedShares = false
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var store: FlightStore
 
     private var shared: TripShare? { flight.sharedBy }
     /// Once taken together it is my own trip again, and only the name block remains.
@@ -17,6 +18,11 @@ struct FlightCard: View {
     private var dashed: Bool { flight.isPending || shared?.status == .pending }
     private var ink: Color { ground?.onColor ?? .primary }
     private var inkMuted: Color { ground != nil ? ink.opacity(0.72) : .secondary }
+    private var rejected: Bool { flight.feedStatus == .rejected }
+    /// Another of the traveller's own flights overlapping this one in time —
+    /// physically impossible, so a strong sign this one (or the other) was
+    /// actually imported from someone else's ticket.
+    private var conflict: Flight? { FlightConflicts.overlapping(flight, in: store.flights) }
 
     var body: some View {
         Button(action: onTap) {
@@ -24,6 +30,15 @@ struct FlightCard: View {
                 if PassengerName.looksLikeSomeoneElse(flight, mine: auth.user?.passengerName) {
                     Label("This may not be your trip — the ticket names someone else", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption.weight(.semibold)).foregroundStyle(Color(red: 0.96, green: 0.65, blue: 0.14))
+                }
+                if let conflict {
+                    Label("Overlaps with \(conflict.flightNumber) — you can't be on two flights at once; this may not be your trip",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.red)
+                }
+                if rejected {
+                    Label("Blocked — this flight couldn't be confirmed", systemImage: "xmark.octagon.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.red)
                 }
                 if dashed && shared == nil {
                     Text("Imported · needs review").font(.caption.weight(.semibold)).foregroundStyle(.tint)
@@ -42,6 +57,7 @@ struct FlightCard: View {
                 HStack(spacing: 8) {
                     StatusChip(flight: flight)
                     if flight.isManual { NameBlock(name: "Manual", color: Color(red: 0.96, green: 0.65, blue: 0.14), dashed: false) }
+                    if rejected { NameBlock(name: "Blocked", color: .red, dashed: false) }
                     if let via = flight.importedVia {
                         NameBlock(name: via == "gmail" ? "Email" : "Calendar", color: .secondary, dashed: false)
                     }
@@ -56,16 +72,17 @@ struct FlightCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(cardBackground, in: .rect(cornerRadius: 20))
             .overlay {
-                // A hairline so the card still separates from the page when the fill is faint.
-                if !dashed {
-                    RoundedRectangle(cornerRadius: 20).strokeBorder(Color(.separator).opacity(0.5), lineWidth: 0.5)
-                }
-            }
-            .overlay {
-                if dashed {
+                // Rejected wins over every other border style — a blocked
+                // flight needs to read as blocked at a glance, dashed or not.
+                if rejected {
+                    RoundedRectangle(cornerRadius: 20).strokeBorder(Color.red, lineWidth: 1.5)
+                } else if dashed {
                     RoundedRectangle(cornerRadius: 20)
                         .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [8, 6]))
                         .foregroundStyle(ground ?? Color.accentColor)
+                } else {
+                    // A hairline so the card still separates from the page when the fill is faint.
+                    RoundedRectangle(cornerRadius: 20).strokeBorder(Color(.separator).opacity(0.5), lineWidth: 0.5)
                 }
             }
         }

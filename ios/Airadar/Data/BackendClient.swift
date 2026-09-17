@@ -184,11 +184,19 @@ enum BackendClient {
         return list
     }
 
-    static func putTrip(_ flight: Flight) async throws {
+    /// Returns what the server actually stored — for a fresh fed flight
+    /// (see Flight.feedStatus) that's the resolved verdict, not just the
+    /// "pending" the client sent, so a caller that cares can reflect it at
+    /// once rather than waiting for the next full sync.
+    @discardableResult
+    static func putTrip(_ flight: Flight) async throws -> Flight {
         // The server takes the trip's own facts only; bindings and bin state are its business.
         var wire = flight
         wire.sharedBy = nil; wire.shares = []; wire.deletedAt = nil; wire.typicalDurationMinutes = nil
-        _ = try await authed("PUT", "trips/\(flight.id)", body: try encoder.encode(wire))
+        let data = try await authed("PUT", "trips/\(flight.id)", body: try encoder.encode(wire))
+        let stored = try decoder.decode(Flight.self, from: data)
+        await ensureAirports(stored.departure, stored.arrival)
+        return stored
     }
 
     static func deleteTrip(_ id: String) async throws { _ = try await authed("DELETE", "trips/\(id)") }

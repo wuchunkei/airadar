@@ -131,6 +131,11 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     var isPending: Bool = false
     /// Typed in by hand because no source knew it; shown with a warning block.
     var isManual: Bool = false
+    /// Set only on a flight fed this way (see FeedStatus) — nil for anything
+    /// else (a real source's own record, or a manual trip edited before this
+    /// existed). Never trust this at face value on its own: the server
+    /// resolves it from "pending" to a real verdict before it's ever stored.
+    var feedStatus: FeedStatus?
     /// Where this trip was found: "gmail" or "calendar" — nil for one the
     /// backend already knew, one typed by hand, or one pasted as plain text.
     var importedVia: String?
@@ -147,7 +152,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, flightNumber, airlineName, departure, arrival, departureTerminal, arrivalTerminal, departureGate, arrivalGate
         case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, callsign, pnr, isPending, isManual, passengers
-        case track, trackFlownOn, deletedAt, sharedBy, shares, importedVia
+        case track, trackFlownOn, deletedAt, sharedBy, shares, importedVia, feedStatus
     }
 
     init(id: String, flightNumber: String, airlineName: String, departure: String, arrival: String,
@@ -182,6 +187,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         pnr = try c.decodeIfPresent(String.self, forKey: .pnr)
         isPending = try c.decodeIfPresent(Bool.self, forKey: .isPending) ?? false
         isManual = try c.decodeIfPresent(Bool.self, forKey: .isManual) ?? false
+        feedStatus = try c.decodeIfPresent(FeedStatus.self, forKey: .feedStatus)
         importedVia = try c.decodeIfPresent(String.self, forKey: .importedVia)
         passengers = try c.decodeIfPresent([String].self, forKey: .passengers) ?? []
         track = try c.decodeIfPresent([[Double]].self, forKey: .track)?.compactMap { $0.count >= 2 ? TrackPoint(lat: $0[0], lon: $0[1]) : nil }
@@ -212,6 +218,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         try c.encodeIfPresent(pnr, forKey: .pnr)
         try c.encode(isPending, forKey: .isPending)
         try c.encode(isManual, forKey: .isManual)
+        try c.encodeIfPresent(feedStatus, forKey: .feedStatus)
         try c.encodeIfPresent(importedVia, forKey: .importedVia)
         if !passengers.isEmpty { try c.encode(passengers, forKey: .passengers) }
         try c.encodeIfPresent(track?.map { [$0.lat, $0.lon] }, forKey: .track)
@@ -414,6 +421,35 @@ enum PassengerName {
     static func looksLikeSomeoneElse(_ flight: Flight, mine: String?) -> Bool {
         guard let mine, !mine.isEmpty, !flight.passengers.isEmpty else { return false }
         return !flight.passengers.contains { samePerson(mine: mine, candidate: $0) }
+    }
+}
+
+/// A manually-entered ("fed") flight's automated verification outcome —
+/// the server, never the client, decides which of these it ends up as: it
+/// re-checks a fresh "pending" against AirLabs/AeroDataBox's own schedules,
+/// adsbdb's independent route data, and whether another traveller has fed
+/// the identical flight, before ever storing anything but its own verdict.
+/// See backend/app/feed.py for the actual scoring.
+enum FeedStatus: String, Codable, Hashable, Sendable {
+    case pending, approved, rejected
+}
+
+/// A real person can't be on two flights at once — the one integrity check
+/// this needs no external source for, just the traveller's own other
+/// flights. An overlap is a strong sign one of the two was actually
+/// imported from someone else's ticket (a shared inbox, a family member's
+/// calendar invite) rather than genuinely this traveller's own.
+enum FlightConflicts {
+    /// Another of the traveller's own flights (never a friend's shared one,
+    /// on either side) whose time in the air overlaps this one's, or nil.
+    static func overlapping(_ flight: Flight, in all: [Flight]) -> Flight? {
+        guard flight.sharedBy == nil, flight.status != .cancelled,
+              let dep = flight.departureInstant, let arr = flight.arrivalInstant else { return nil }
+        return all.first { other in
+            guard other.id != flight.id, other.sharedBy == nil, other.deletedAt == nil, other.status != .cancelled,
+                  let oDep = other.departureInstant, let oArr = other.arrivalInstant else { return false }
+            return dep < oArr && oDep < arr
+        }
     }
 }
 

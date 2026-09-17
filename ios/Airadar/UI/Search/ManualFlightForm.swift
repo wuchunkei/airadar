@@ -198,6 +198,12 @@ struct ManualFlightForm: View {
             f.departureTime = depLocal; f.arrivalTime = arrLocal
             f.status = depLocal.date(in: a.zone) < Date() ? .completed : .scheduled
             f.isManual = true
+            // A brand-new manual entry is the "feed" moment itself — the
+            // traveller searched, nothing knew this flight, and they typed
+            // it in. Only ever set here, on the very first save: editing an
+            // existing manual trip (`existing != nil`) leaves whatever
+            // verdict it already carries untouched.
+            if existing == nil { f.feedStatus = .pending }
             f.callsign = f.callsign ?? AirportDatabase.shared.airlineIcao(String(code.prefix(2))).map { $0 + code.dropFirst(2) }
             onAdd(f)
             dismiss()
