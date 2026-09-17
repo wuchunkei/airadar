@@ -290,16 +290,14 @@ private struct TierProgressCard: View {
         }
     }
 
-    private var avatar: some View {
-        VStack(spacing: 3) {
-            AvatarView(url: avatarUrl, initial: avatarInitial, tint: avatarTint, size: 36)
-            Text(tier.name).font(.caption2.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
-        }
-    }
-
     var body: some View {
-        HStack(spacing: 10) {
-            avatar
+        HStack(spacing: 8) {
+            // The traveller's own photo — who's on this card — separate
+            // from the tier badge right next to it, which is where in the
+            // ladder they actually stand; the avatar was never meant to
+            // stand in for that, just to sit beside it.
+            AvatarView(url: avatarUrl, initial: avatarInitial, tint: avatarTint, size: 30)
+            label(tier)
             if let next {
                 GeometryReader { g in
                     let w = g.size.width, midY = g.size.height / 2
@@ -329,13 +327,12 @@ private struct TierProgressCard: View {
                 .frame(height: 48)
                 label(next)
             } else {
+                // label(tier) above already shows the name — just the
+                // extras here, no need to repeat it.
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(tier.name).font(.subheadline.bold())
-                        // Hidden tier, hidden bragging right: which-numbered
-                        // traveller ever to get here, once the backend confirms it.
-                        if let rainbowRank { Text("#\(rainbowRank)").font(.caption.bold()).foregroundStyle(.secondary) }
-                    }
+                    // Hidden tier, hidden bragging right: which-numbered
+                    // traveller ever to get here, once the backend confirms it.
+                    if let rainbowRank { Text("#\(rainbowRank)").font(.caption.bold()).foregroundStyle(.secondary) }
                     Text(tier.tagline).font(.caption).foregroundStyle(.secondary)
                     Text(fedText).font(.caption2).foregroundStyle(.secondary)
                 }
