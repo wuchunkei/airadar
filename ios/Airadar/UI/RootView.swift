@@ -1,9 +1,9 @@
 import SwiftUI
 
-enum AppTab: Hashable { case trip, past, search, my }
+enum AppTab: Hashable { case trip, search, community, my }
 
-/// Trip / Search / My. On iOS 26 the tab bar is Liquid Glass by itself; the
-/// per-screen floating controls use `.glassEffect` to match.
+/// Trip / Search / Community / My. On iOS 26 the tab bar is Liquid Glass by
+/// itself; the per-screen floating controls use `.glassEffect` to match.
 struct RootView: View {
     @EnvironmentObject private var store: FlightStore
     @EnvironmentObject private var auth: AuthStore
@@ -12,11 +12,10 @@ struct RootView: View {
 
     @State private var tab: AppTab = .trip
     @State private var tripResetSignal = 0
-    @State private var pastResetSignal = 0
 
-    /// Imported trips still waiting to be confirmed — the dashed cards — per tab.
-    private var pendingPresent: Int { store.flights.filter { $0.isPending && $0.phase != .past }.count }
-    private var pendingPast: Int { store.flights.filter { $0.isPending && $0.phase == .past }.count }
+    /// Imported trips still waiting to be confirmed — the dashed cards,
+    /// Coming and Past together now that they share one tab.
+    private var pendingTrips: Int { store.flights.filter(\.isPending).count }
     @State private var linked: BackendClient.LinkedTrip?
     @State private var toast: String?
 
@@ -47,17 +46,12 @@ struct RootView: View {
     var body: some View {
         TabView(selection: Binding(get: { tab }, set: { new in
             if new == .trip && tab == .trip { tripResetSignal += 1 }
-            if new == .past && tab == .past { pastResetSignal += 1 }
             tab = new
         })) {
             Tab("Trip", systemImage: "airplane.departure", value: .trip) {
-                TripView(scope: .present, resetSignal: tripResetSignal, canShare: canShare, onDeleted: deleted)
+                TripView(resetSignal: tripResetSignal, canShare: canShare, onDeleted: deleted)
             }
-            .badge(pendingPresent)
-            Tab("Past", systemImage: "clock.arrow.circlepath", value: .past) {
-                TripView(scope: .past, resetSignal: pastResetSignal, canShare: canShare, onDeleted: deleted)
-            }
-            .badge(pendingPast)
+            .badge(pendingTrips)
             Tab("Search", systemImage: "magnifyingglass", value: .search) {
                 SearchView(onAdd: { flight in
                     // A refusal opens the plans dialog by itself; stay on Search then.
@@ -66,6 +60,9 @@ struct RootView: View {
                         tab = .trip
                     }
                 })
+            }
+            Tab("Community", systemImage: "person.3", value: .community) {
+                CommunityView()
             }
             Tab("My", systemImage: "map", value: .my) {
                 MyView()

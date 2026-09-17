@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// The trip list, one of two: the present (Now and Coming) under the Trip tab,
-/// the past under its own. Pull to refresh; tapping the tab again scrolls to the top.
+/// The trip list — a switch at the top flips between Coming (Now and
+/// Coming, what used to be its own Trip tab) and Past (what used to be its
+/// own tab), sharing this one screen and Friends button now that Past no
+/// longer needs a tab slot of its own. Pull to refresh; tapping the tab
+/// again scrolls whichever half is showing back to the top.
 struct TripView: View {
-    enum Scope { case present, past }
-
-    var scope: Scope = .present
     let resetSignal: Int
     let canShare: Bool
     let onDeleted: (Flight) -> Void
@@ -14,6 +14,7 @@ struct TripView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var settings: SettingsModel
 
+    @State private var showingPast = false
     @State private var selectedId: String?
     /// Ticks every minute so the "Coming 22H" headings count down.
     @State private var clock = Date()
@@ -37,7 +38,7 @@ struct TripView: View {
                     Group {
                         Color.clear.frame(height: 1).id("top")
 
-                        if scope == .past {
+                        if showingPast {
                             SectionTitle("Past")
                             cards(past, dimmed: true, headings: true)
                             if past.isEmpty {
@@ -65,8 +66,6 @@ struct TripView: View {
                                 SectionTitle("Coming")
                                 cards(later, dimmed: false, headings: true)
                             }
-                        }
-                        if scope == .present {
                             if coming.isEmpty && airborne.isEmpty {
                                 if past.isEmpty {
                                     // Nothing at all yet: one line, mid-screen, that opens Search.
@@ -98,6 +97,14 @@ struct TripView: View {
             .toolbarTitleDisplayMode(.inline)
             .toolbar(.visible, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("", selection: $showingPast) {
+                        Text("Coming").tag(false)
+                        Text("Past").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 200)
+                }
                 // Friends, where My keeps Settings: top right — plan holders only.
                 if canShare {
                     ToolbarItem(placement: .topBarTrailing) {
