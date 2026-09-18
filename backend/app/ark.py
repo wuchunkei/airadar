@@ -75,12 +75,22 @@ async def _chat(client: httpx.AsyncClient, prompt: str) -> str:
     """One call to Ark's OpenAI-compatible chat completions endpoint.
     Raises ArkError with the raw response text on anything unexpected --
     deliberately not swallowed, since this integration is still being
-    verified against the real API's actual shape."""
+    verified against the real API's actual shape.
+
+    A Bot's own id (the console's 应用广场, model + plugins bundled
+    together -- this is what actually has web search) is called through a
+    distinct route, /bots/chat/completions, not the plain one a bare model
+    id uses -- confirmed live: a bare model id on the bots route gets
+    MissingParameter/InvalidParameter, not the plain route's own
+    InvalidEndpointOrModel.NotFound. Real bot ids are expected to start
+    with "bot-"; detected here rather than needing a second env var."""
+    model = _model()
+    path = "bots/chat/completions" if model.startswith("bot-") else "chat/completions"
     resp = await client.post(
-        f"{ARK_BASE_URL}/chat/completions",
+        f"{ARK_BASE_URL}/{path}",
         headers={"Authorization": f"Bearer {_key()}", "Content-Type": "application/json"},
         json={
-            "model": _model(),
+            "model": model,
             "messages": [
                 {
                     "role": "system",
