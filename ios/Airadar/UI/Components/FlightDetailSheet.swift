@@ -11,6 +11,13 @@ struct FlightDetailSheet<Actions: View>: View {
     var onLoadTrack: (() -> Void)? = nil
     /// The aircraft's real position while it flies, asked for every minute the sheet is open.
     @State private var live: LivePosition?
+    /// Every live fix collected this way since the sheet opened -- a real,
+    /// if short, breadcrumb trail for a flight OpenSky's own track fetch
+    /// hasn't (yet, or ever) answered for. Genuinely reported positions,
+    /// never the schedule's own estimate -- that's what the plain arc with
+    /// a progress cut is for, and only shown while this stays too short to
+    /// draw on its own.
+    @State private var liveTrail: [TrackPoint] = []
     /// The backend's own answer for this exact flight (AirLabs, AeroDataBox
     /// behind it), asked once and cached on device from then on — fills in a
     /// terminal, gate or aircraft type this trip didn't already have; never
@@ -42,7 +49,7 @@ struct FlightDetailSheet<Actions: View>: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                TileMapView(routes: routes, tracks: [], interactive: false, cityLabels: true, livePlane: live)
+                TileMapView(routes: routes, tracks: mapTracks, interactive: false, cityLabels: true, livePlane: live)
                     .frame(height: 180)
                     .clipShape(.rect(cornerRadius: 16))
 
@@ -96,7 +103,11 @@ struct FlightDetailSheet<Actions: View>: View {
         .task(id: "\(flight.id)|\(callsign ?? "")") {
             guard let callsign else { return }
             while !Task.isCancelled, flight.phase == .inProgress {
-                if let p = await LivePositionClient.shared.position(callsign: callsign) { live = p }
+                if let p = await LivePositionClient.shared.position(callsign: callsign) {
+                    live = p
+                    let point = TrackPoint(lat: p.coordinate.latitude, lon: p.coordinate.longitude, time: p.seenAt)
+                    if liveTrail.last?.lat != point.lat || liveTrail.last?.lon != point.lon { liveTrail.append(point) }
+                }
                 try? await Task.sleep(for: .seconds(60))
             }
         }
@@ -225,8 +236,26 @@ struct FlightDetailSheet<Actions: View>: View {
         return "Landed from \(from) " + ago.localizedString(for: p.landedAt, relativeTo: Date())
     }
 
-    private var routes: [MapRoute] {
+    /// The actual reported points to draw, if there are any yet -- the
+    /// downloaded historical track once OpenSky has answered, or (until
+    /// then, or if it never does) this session's own live-polled breadcrumb
+    /// trail, real fixes rather than the schedule's own estimate. Empty
+    /// while neither exists, which is when `routes`' plain arc takes over.
+    private var mapTracks: [MapTrack] {
         guard let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
+        if let track = flight.track, track.count >= 2 {
+            return [MapTrack(from: a, to: b, points: track, live: flight.phase == .inProgress)]
+        }
+        if liveTrail.count >= 2 {
+            return [MapTrack(from: a, to: b, points: liveTrail, live: true)]
+        }
+        return []
+    }
+
+    /// The plain bowed arc, with a progress cut for an in-progress flight --
+    /// only shown at all while `mapTracks` has nothing real to draw instead.
+    private var routes: [MapRoute] {
+        guard mapTracks.isEmpty, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
         let progress: Double? = flight.phase == .inProgress ? flight.fractionFlown : nil
         return [MapRoute(from: a, to: b, rank: 0, isReturn: false, progress: progress)]
     }

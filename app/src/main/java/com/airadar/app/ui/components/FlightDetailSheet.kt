@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -42,6 +43,7 @@ import com.airadar.app.data.FlightPhase
 import com.airadar.app.data.FlightStatus
 import com.airadar.app.data.LivePosition
 import com.airadar.app.data.LivePositionClient
+import com.airadar.app.data.TrackPoint
 import com.airadar.app.data.OpenSkyClient
 import com.airadar.app.data.formatDistance
 import com.airadar.app.ui.theme.statusColor
@@ -78,10 +80,23 @@ fun FlightDetailSheet(
             // minute while the flight is in the air -- the same cadence and
             // source (adsb.lol) the pulsing dot on My's own map uses.
             var live by remember(flight.id) { mutableStateOf<LivePosition?>(null) }
+            // Every live fix collected this way since the sheet opened -- a
+            // real, if short, breadcrumb trail for a flight OpenSky's own
+            // track fetch hasn't (yet, or ever) answered for. Genuinely
+            // reported positions, never the schedule's own estimate --
+            // that's what the plain arc with a progress cut is for, and
+            // only shown while this stays too short to draw on its own.
+            val liveTrail = remember(flight.id) { mutableStateListOf<TrackPoint>() }
             if (flight.phase == FlightPhase.IN_PROGRESS && flight.callsign != null) {
                 LaunchedEffect(flight.id, flight.callsign) {
                     while (isActive) {
-                        LivePositionClient.position(flight.callsign)?.let { live = it }
+                        LivePositionClient.position(flight.callsign)?.let { fix ->
+                            live = fix
+                            val last = liveTrail.lastOrNull()
+                            if (last == null || last.lat != fix.lat || last.lon != fix.lon) {
+                                liveTrail.add(TrackPoint(fix.lat, fix.lon, fix.seenAt))
+                            }
+                        }
                         delay(60_000)
                     }
                 }
@@ -90,12 +105,22 @@ fun FlightDetailSheet(
             val from = flight.departureAirport
             val to = flight.arrivalAirport
             if (from != null && to != null) {
-                val track = flight.track
-                val progress = if (track == null && flight.phase == FlightPhase.IN_PROGRESS) flight.fractionFlown else null
+                // The actual reported points to draw, if there are any yet --
+                // the downloaded historical track once OpenSky has answered,
+                // or (until then, or if it never does) this session's own
+                // live-polled breadcrumb trail. Only when neither exists does
+                // the plain arc with a progress cut take over.
+                val storedTrack = flight.track
+                val realTrack = when {
+                    storedTrack != null && storedTrack.size >= 2 -> storedTrack
+                    liveTrail.size >= 2 -> liveTrail.toList()
+                    else -> null
+                }
+                val progress = if (realTrack == null && flight.phase == FlightPhase.IN_PROGRESS) flight.fractionFlown else null
                 TileMap(
-                    routes = if (track == null) listOf(MapRoute(from, to, progress = progress)) else emptyList(),
-                    tracks = if (track == null) emptyList()
-                    else listOf(MapTrack(from, to, track, live = flight.phase == FlightPhase.IN_PROGRESS)),
+                    routes = if (realTrack == null) listOf(MapRoute(from, to, progress = progress)) else emptyList(),
+                    tracks = if (realTrack == null) emptyList()
+                    else listOf(MapTrack(from, to, realTrack, live = flight.phase == FlightPhase.IN_PROGRESS)),
                     interactive = false,
                     livePlane = live,
                     modifier = Modifier
