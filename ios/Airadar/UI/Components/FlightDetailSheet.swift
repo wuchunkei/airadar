@@ -244,7 +244,19 @@ struct FlightDetailSheet<Actions: View>: View {
     private var mapTracks: [MapTrack] {
         guard let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
         if let track = flight.track, track.count >= 2 {
-            return [MapTrack(from: a, to: b, points: track, live: flight.phase == .inProgress)]
+            // The one-time historical fetch on its own goes stale the moment
+            // it lands (trackFlownOn turning non-null stops it from ever
+            // being asked for again) -- so for a flight still in the air,
+            // whatever this session's own live poll has collected SINCE the
+            // stored track's own last point is appended, keeping the line
+            // itself growing all the way from departure to right now,
+            // not just the plane marker (which livePlane already refreshes
+            // on its own regardless).
+            var points = track
+            if flight.phase == .inProgress, let lastStored = track.compactMap(\.time).max() {
+                points += liveTrail.filter { ($0.time ?? .distantPast) > lastStored }
+            }
+            return [MapTrack(from: a, to: b, points: points, live: flight.phase == .inProgress)]
         }
         if liveTrail.count >= 2 {
             return [MapTrack(from: a, to: b, points: liveTrail, live: true)]

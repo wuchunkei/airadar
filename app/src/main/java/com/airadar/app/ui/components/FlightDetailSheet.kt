@@ -112,7 +112,22 @@ fun FlightDetailSheet(
                 // the plain arc with a progress cut take over.
                 val storedTrack = flight.track
                 val realTrack = when {
-                    storedTrack != null && storedTrack.size >= 2 -> storedTrack
+                    storedTrack != null && storedTrack.size >= 2 -> {
+                        // The one-time historical fetch on its own goes stale
+                        // the moment it lands (trackFlownOn turning non-null
+                        // stops it from ever being asked for again) -- so for
+                        // a flight still in the air, whatever this session's
+                        // own live poll has collected SINCE the stored
+                        // track's own last point is appended, keeping the
+                        // line itself growing all the way from departure to
+                        // right now, not just the plane marker (which
+                        // livePlane already refreshes on its own regardless).
+                        val lastStored = if (flight.phase == FlightPhase.IN_PROGRESS)
+                            storedTrack.mapNotNull { it.time }.maxOrNull() else null
+                        if (lastStored != null) {
+                            storedTrack + liveTrail.filter { (it.time ?: java.time.Instant.MIN).isAfter(lastStored) }
+                        } else storedTrack
+                    }
                     liveTrail.size >= 2 -> liveTrail.toList()
                     else -> null
                 }
