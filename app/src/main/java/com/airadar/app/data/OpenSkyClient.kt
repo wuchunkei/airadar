@@ -160,6 +160,66 @@ object OpenSkyClient {
         return null
     }
 
+    /** The current live state for one already-known airframe -- cheap (a
+     * single icao24 filter), meant to run alongside adsb.lol every poll:
+     * each source misses a real fraction of the time (confirmed live -- an
+     * aircraft adsb.lol was seeing seconds earlier came back `states: null`
+     * here), so whichever one answers on a given cycle covers for the
+     * other. null for any failure (network, auth, or genuinely no coverage
+     * right now) -- always best-effort, never thrown, since a missed poll
+     * from one source is routine, not an error. */
+    suspend fun liveState(icao24: String): LivePosition? = withContext(Dispatchers.IO) {
+        val bearer = runCatching { accessToken() }.getOrNull() ?: return@withContext null
+        val body = runCatching { getJson("$API/states/all?icao24=${icao24.lowercase()}", bearer) }.getOrNull()
+            ?: return@withContext null
+        val states = runCatching { JSONObject(body).optJSONArray("states") }.getOrNull() ?: return@withContext null
+        if (states.length() == 0) return@withContext null
+        val v = states.getJSONArray(0)
+        if (v.length() <= 10 || v.isNull(5) || v.isNull(6)) return@withContext null
+        val heading = if (v.isNull(10)) 0.0 else v.getDouble(10)
+        val altMeters = if (v.isNull(7)) null else v.getDouble(7)
+        val lastContact = if (v.isNull(4)) null else v.getLong(4)
+        LivePosition(
+            lat = v.getDouble(6), lon = v.getDouble(5), heading = heading,
+            altitudeFeet = altMeters?.let { (it * 3.28084).toInt() }, hex = icao24,
+            seenAt = lastContact?.let { Instant.ofEpochSecond(it) } ?: Instant.now()
+        )
+    }
+
+    /** A first fix for a callsign whose hex isn't known yet -- OpenSky's own
+     * live state scanned inside the route's bounding box, the same way the
+     * old (removed) bounding-box scan used to work for every poll. More
+     * expensive than the icao24-filtered lookup above, so only meant to run
+     * once, to learn the hex -- adsb.lol's own direct callsign lookup gets
+     * first try, this is only the fallback when that one comes up empty. */
+    suspend fun liveState(callsign: String, origin: Airport, destination: Airport): LivePosition? =
+        withContext(Dispatchers.IO) {
+            val bearer = runCatching { accessToken() }.getOrNull() ?: return@withContext null
+            val pad = 4.0
+            val lamin = minOf(origin.latitude, destination.latitude) - pad
+            val lamax = maxOf(origin.latitude, destination.latitude) + pad
+            val lomin = minOf(origin.longitude, destination.longitude) - pad
+            val lomax = maxOf(origin.longitude, destination.longitude) + pad
+            val body = runCatching {
+                getJson("$API/states/all?lamin=$lamin&lomin=$lomin&lamax=$lamax&lomax=$lomax", bearer)
+            }.getOrNull() ?: return@withContext null
+            val states = runCatching { JSONObject(body).optJSONArray("states") }.getOrNull() ?: return@withContext null
+            for (i in 0 until states.length()) {
+                val v = states.getJSONArray(i)
+                if (v.length() <= 10 || v.isNull(0) || v.isNull(1) || v.isNull(5) || v.isNull(6)) continue
+                if (!sameCallsign(v.getString(1), callsign)) continue
+                val heading = if (v.isNull(10)) 0.0 else v.getDouble(10)
+                val altMeters = if (v.isNull(7)) null else v.getDouble(7)
+                val lastContact = if (v.isNull(4)) null else v.getLong(4)
+                return@withContext LivePosition(
+                    lat = v.getDouble(6), lon = v.getDouble(5), heading = heading,
+                    altitudeFeet = altMeters?.let { (it * 3.28084).toInt() }, hex = v.getString(0),
+                    seenAt = lastContact?.let { Instant.ofEpochSecond(it) } ?: Instant.now()
+                )
+            }
+            null
+        }
+
     /** OpenSky pads callsigns to eight characters and some carriers zero-pad the number. */
     private fun sameCallsign(seen: String, wanted: String): Boolean {
         fun norm(s: String): String {

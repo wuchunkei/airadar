@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 /// Positions an aircraft actually reported over ADS-B, so a flown leg is drawn as
 /// the path it took. OpenSky keys everything by the airframe's ICAO24 hex, so a leg
@@ -107,6 +108,57 @@ actor OpenSkyClient {
         for offset in [-1, 1] {
             let b = Int(around.timeIntervalSince1970) + offset * 3600
             if let r = pick(try await getJSON("\(Self.api)/flights/all?begin=\(b)&end=\(b + 2 * 3600)", bearer)) { return r }
+        }
+        return nil
+    }
+
+    /// The current live state for one already-known airframe -- cheap (a
+    /// single icao24 filter), meant to run alongside adsb.lol every poll:
+    /// each source misses a real fraction of the time (confirmed live --
+    /// an aircraft adsb.lol was seeing seconds earlier came back
+    /// `states: null` here), so whichever one answers on a given cycle
+    /// covers for the other. nil for any failure (network, auth, or
+    /// genuinely no coverage right now) -- always best-effort, never
+    /// thrown, since a missed poll from one source is routine, not an error.
+    func liveState(icao24: String) async -> LivePosition? {
+        guard let bearer = try? await accessToken() else { return nil }
+        guard let body = (try? await getJSON("\(Self.api)/states/all?icao24=\(icao24.lowercased())", bearer)) ?? nil,
+              let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let states = obj["states"] as? [[Any]], let v = states.first, v.count > 10,
+              let lon = v[5] as? Double, let lat = v[6] as? Double else { return nil }
+        let heading = v[10] as? Double ?? 0
+        let altMeters = v[7] as? Double
+        let lastContact = v[4] as? Int
+        return LivePosition(coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon), heading: heading,
+                            altitudeFeet: altMeters.map { Int($0 * 3.28084) }, hex: icao24,
+                            seenAt: lastContact.map { Date(timeIntervalSince1970: TimeInterval($0)) } ?? Date())
+    }
+
+    /// A first fix for a callsign whose hex isn't known yet -- OpenSky's own
+    /// live state scanned inside the route's bounding box, the same way the
+    /// old (removed) bounding-box scan used to work for every poll. More
+    /// expensive than the icao24-filtered lookup above, so only meant to run
+    /// once, to learn the hex -- adsb.lol's own direct callsign lookup gets
+    /// first try, this is only the fallback when that one comes up empty.
+    func liveState(callsign: String, origin: Airport, destination: Airport) async -> LivePosition? {
+        guard let bearer = try? await accessToken() else { return nil }
+        let pad = 4.0
+        let lamin = min(origin.latitude, destination.latitude) - pad
+        let lamax = max(origin.latitude, destination.latitude) + pad
+        let lomin = min(origin.longitude, destination.longitude) - pad
+        let lomax = max(origin.longitude, destination.longitude) + pad
+        guard let body = (try? await getJSON("\(Self.api)/states/all?lamin=\(lamin)&lomin=\(lomin)&lamax=\(lamax)&lomax=\(lomax)", bearer)) ?? nil,
+              let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let states = obj["states"] as? [[Any]] else { return nil }
+        for v in states where v.count > 10 {
+            guard Self.sameCallsign(v[1] as? String ?? "", callsign),
+                  let lon = v[5] as? Double, let lat = v[6] as? Double, let icao24 = v[0] as? String else { continue }
+            let heading = v[10] as? Double ?? 0
+            let altMeters = v[7] as? Double
+            let lastContact = v[4] as? Int
+            return LivePosition(coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon), heading: heading,
+                                altitudeFeet: altMeters.map { Int($0 * 3.28084) }, hex: icao24,
+                                seenAt: lastContact.map { Date(timeIntervalSince1970: TimeInterval($0)) } ?? Date())
         }
         return nil
     }

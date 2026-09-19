@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 /// The bottom sheet for one flight: a map thumbnail, airline and status, the big
 /// airport codes, times (a delay shows the original struck through), the facts,
@@ -18,6 +19,11 @@ struct FlightDetailSheet<Actions: View>: View {
     /// a progress cut is for, and only shown while this stays too short to
     /// draw on its own.
     @State private var liveTrail: [TrackPoint] = []
+    /// Learned once (from whichever of adsb.lol/OpenSky answers first) and
+    /// kept for the rest of this session, so OpenSky's own live lookup can
+    /// use its cheap icao24 filter on every later poll instead of the
+    /// bounding-box scan finding it the first time needs.
+    @State private var knownHex: String?
     /// The backend's own answer for this exact flight (AirLabs, AeroDataBox
     /// behind it), asked once and cached on device from then on — fills in a
     /// terminal, gate or aircraft type this trip didn't already have; never
@@ -99,13 +105,31 @@ struct FlightDetailSheet<Actions: View>: View {
                 store.applyCallsign(flight.id, callsign: found)
             }
         }
-        // In the air: where the aircraft really is, from ADS-B, refreshed every minute.
+        // In the air: where the aircraft really is, refreshed every minute --
+        // adsb.lol and OpenSky polled together once the hex is known (each
+        // misses a real fraction of the time; whichever answers on a given
+        // cycle covers for the other), adsb.lol alone tried first while it
+        // isn't, OpenSky's own bounding-box scan only as the fallback to
+        // learn it at all.
         .task(id: "\(flight.id)|\(callsign ?? "")") {
             guard let callsign else { return }
             while !Task.isCancelled, flight.phase == .inProgress {
-                if let p = await LivePositionClient.shared.position(callsign: callsign) {
-                    live = p
-                    let point = TrackPoint(lat: p.coordinate.latitude, lon: p.coordinate.longitude, time: p.seenAt)
+                var fix: LivePosition?
+                if let hex = knownHex {
+                    async let fromAdsbLol = LivePositionClient.shared.position(callsign: callsign)
+                    async let fromOpenSky = OpenSkyClient.shared.liveState(icao24: hex)
+                    let (a, b) = await (fromAdsbLol, fromOpenSky)
+                    fix = a ?? b
+                } else {
+                    fix = await LivePositionClient.shared.position(callsign: callsign)
+                    if fix == nil, let origin = flight.departureAirport, let destination = flight.arrivalAirport {
+                        fix = await OpenSkyClient.shared.liveState(callsign: callsign, origin: origin, destination: destination)
+                    }
+                }
+                if let fix {
+                    live = fix
+                    if knownHex == nil { knownHex = fix.hex }
+                    let point = TrackPoint(lat: fix.coordinate.latitude, lon: fix.coordinate.longitude, time: fix.seenAt)
                     if liveTrail.last?.lat != point.lat || liveTrail.last?.lon != point.lon { liveTrail.append(point) }
                 }
                 try? await Task.sleep(for: .seconds(60))
@@ -256,12 +280,35 @@ struct FlightDetailSheet<Actions: View>: View {
             if flight.phase == .inProgress, let lastStored = track.compactMap(\.time).max() {
                 points += liveTrail.filter { ($0.time ?? .distantPast) > lastStored }
             }
-            return [MapTrack(from: a, to: b, points: points, live: flight.phase == .inProgress)]
+            return [MapTrack(from: a, to: b, points: Self.gapFilled(points), live: flight.phase == .inProgress)]
         }
         if liveTrail.count >= 2 {
-            return [MapTrack(from: a, to: b, points: liveTrail, live: true)]
+            return [MapTrack(from: a, to: b, points: Self.gapFilled(liveTrail), live: true)]
         }
         return []
+    }
+
+    /// Bridges a gap between two consecutive real points with a bowed arc
+    /// instead of a straight line -- confirmed a real, not hypothetical,
+    /// need: OpenSky's own historical track for a genuinely airborne
+    /// aircraft, tested live, had a 9.7-minute hole where every position
+    /// call came back empty. A gap wider than 2.5x the 60-second poll
+    /// interval means neither live source answered for at least one whole
+    /// cycle -- the interpolated points carry no time of their own, so
+    /// they're never mistaken for another real fix by anything reading them.
+    private static func gapFilled(_ points: [TrackPoint]) -> [TrackPoint] {
+        guard points.count >= 2 else { return points }
+        var out: [TrackPoint] = [points[0]]
+        for i in 1..<points.count {
+            let prev = points[i - 1], next = points[i]
+            if let t1 = prev.time, let t2 = next.time, t2.timeIntervalSince(t1) > 150 {
+                let bridge = TileMapView.arcPath(from: CLLocationCoordinate2D(latitude: prev.lat, longitude: prev.lon),
+                                                 to: CLLocationCoordinate2D(latitude: next.lat, longitude: next.lon), rank: 0)
+                out += bridge.dropFirst().dropLast().map { TrackPoint(lat: $0.latitude, lon: $0.longitude) }
+            }
+            out.append(next)
+        }
+        return out
     }
 
     /// The plain bowed arc, with a progress cut for an in-progress flight --

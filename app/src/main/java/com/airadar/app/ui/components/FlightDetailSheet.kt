@@ -23,6 +23,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import androidx.compose.runtime.getValue
@@ -87,11 +89,40 @@ fun FlightDetailSheet(
             // that's what the plain arc with a progress cut is for, and
             // only shown while this stays too short to draw on its own.
             val liveTrail = remember(flight.id) { mutableStateListOf<TrackPoint>() }
+            // Learned once (from whichever of adsb.lol/OpenSky answers
+            // first) and kept for the rest of this session, so OpenSky's own
+            // live lookup can use its cheap icao24 filter on every later
+            // poll instead of the bounding-box scan finding it the first
+            // time needs.
+            var knownHex by remember(flight.id) { mutableStateOf<String?>(null) }
             if (flight.phase == FlightPhase.IN_PROGRESS && flight.callsign != null) {
                 LaunchedEffect(flight.id, flight.callsign) {
                     while (isActive) {
-                        LivePositionClient.position(flight.callsign)?.let { fix ->
+                        // adsb.lol and OpenSky polled together once the hex is
+                        // known (each misses a real fraction of the time;
+                        // whichever answers on a given cycle covers for the
+                        // other), adsb.lol alone tried first while it isn't,
+                        // OpenSky's own bounding-box scan only as the
+                        // fallback to learn it at all.
+                        val hex = knownHex
+                        val fix = if (hex != null) {
+                            coroutineScope {
+                                val fromAdsbLol = async { LivePositionClient.position(flight.callsign) }
+                                val fromOpenSky = async { OpenSkyClient.liveState(hex) }
+                                fromAdsbLol.await() ?: fromOpenSky.await()
+                            }
+                        } else {
+                            LivePositionClient.position(flight.callsign) ?: run {
+                                val origin = flight.departureAirport
+                                val destination = flight.arrivalAirport
+                                if (origin != null && destination != null) {
+                                    OpenSkyClient.liveState(flight.callsign, origin, destination)
+                                } else null
+                            }
+                        }
+                        if (fix != null) {
                             live = fix
+                            if (knownHex == null) knownHex = fix.hex
                             val last = liveTrail.lastOrNull()
                             if (last == null || last.lat != fix.lat || last.lon != fix.lon) {
                                 liveTrail.add(TrackPoint(fix.lat, fix.lon, fix.seenAt))
@@ -130,7 +161,7 @@ fun FlightDetailSheet(
                     }
                     liveTrail.size >= 2 -> liveTrail.toList()
                     else -> null
-                }
+                }?.let { gapFilled(it) }
                 val progress = if (realTrack == null && flight.phase == FlightPhase.IN_PROGRESS) flight.fractionFlown else null
                 TileMap(
                     routes = if (realTrack == null) listOf(MapRoute(from, to, progress = progress)) else emptyList(),
@@ -379,6 +410,31 @@ private fun DetailRow(
 private val dateFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.ENGLISH)
 
 /** "3h ago", "12m ago" -- coarse on purpose, this is a courtesy note, not a clock. */
+/** Bridges a gap between two consecutive real points with a bowed arc
+ * instead of a straight line -- confirmed a real, not hypothetical, need:
+ * OpenSky's own historical track for a genuinely airborne aircraft, tested
+ * live, had a 9.7-minute hole where every position call came back empty. A
+ * gap wider than 2.5x the 60-second poll interval means neither live source
+ * answered for at least one whole cycle -- the interpolated points carry no
+ * time of their own, so they're never mistaken for another real fix by
+ * anything reading them. */
+private fun gapFilled(points: List<TrackPoint>): List<TrackPoint> {
+    if (points.size < 2) return points
+    val out = mutableListOf(points[0])
+    for (i in 1 until points.size) {
+        val prev = points[i - 1]
+        val next = points[i]
+        val t1 = prev.time
+        val t2 = next.time
+        if (t1 != null && t2 != null && java.time.Duration.between(t1, t2).seconds > 150) {
+            val bridge = arcPath(prev.lat, prev.lon, next.lat, next.lon)
+            bridge.drop(1).dropLast(1).forEach { out += TrackPoint(it.latitude, it.longitude) }
+        }
+        out += next
+    }
+    return out
+}
+
 fun relativeAgo(instant: java.time.Instant): String {
     val minutes = java.time.Duration.between(instant, java.time.Instant.now()).toMinutes().coerceAtLeast(0)
     return when {
