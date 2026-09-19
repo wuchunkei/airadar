@@ -23,6 +23,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightPhase
 import com.airadar.app.data.FlightStatus
+import com.airadar.app.data.LivePosition
 import com.airadar.app.data.LivePositionClient
 import com.airadar.app.data.OpenSkyClient
 import com.airadar.app.data.formatDistance
@@ -71,14 +74,30 @@ fun FlightDetailSheet(
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
         ) {
+            // Where the aircraft actually is right now (ADS-B), asked every
+            // minute while the flight is in the air -- the same cadence and
+            // source (adsb.lol) the pulsing dot on My's own map uses.
+            var live by remember(flight.id) { mutableStateOf<LivePosition?>(null) }
+            if (flight.phase == FlightPhase.IN_PROGRESS && flight.callsign != null) {
+                LaunchedEffect(flight.id, flight.callsign) {
+                    while (isActive) {
+                        LivePositionClient.position(flight.callsign)?.let { live = it }
+                        delay(60_000)
+                    }
+                }
+            }
+
             val from = flight.departureAirport
             val to = flight.arrivalAirport
             if (from != null && to != null) {
                 val track = flight.track
+                val progress = if (track == null && flight.phase == FlightPhase.IN_PROGRESS) flight.fractionFlown else null
                 TileMap(
-                    routes = if (track == null) listOf(MapRoute(from, to)) else emptyList(),
-                    tracks = if (track == null) emptyList() else listOf(MapTrack(from, to, track)),
+                    routes = if (track == null) listOf(MapRoute(from, to, progress = progress)) else emptyList(),
+                    tracks = if (track == null) emptyList()
+                    else listOf(MapTrack(from, to, track, live = flight.phase == FlightPhase.IN_PROGRESS)),
                     interactive = false,
+                    livePlane = live,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(mapHeight)
@@ -100,16 +119,14 @@ fun FlightDetailSheet(
 
             // Where this same airframe flew in from, if OpenSky's own
             // per-aircraft history has anything recent -- a courtesy note,
-            // not a fact this trip itself carries. Only attempted for an
-            // in-progress flight, the only time a live hex is resolvable.
+            // not a fact this trip itself carries. Only attempted once a
+            // live hex is actually known.
             var previousFlight by remember(flight.id) { mutableStateOf<OpenSkyClient.PreviousFlight?>(null) }
-            if (flight.phase == FlightPhase.IN_PROGRESS && flight.callsign != null) {
-                LaunchedEffect(flight.id) {
-                    val hex = LivePositionClient.position(flight.callsign)?.hex ?: return@LaunchedEffect
-                    previousFlight = runCatching {
-                        OpenSkyClient.previousFlight(hex, flight.departureInstant ?: java.time.Instant.now())
-                    }.getOrNull()
-                }
+            LaunchedEffect(live?.hex) {
+                val hex = live?.hex ?: return@LaunchedEffect
+                previousFlight = runCatching {
+                    OpenSkyClient.previousFlight(hex, flight.departureInstant ?: java.time.Instant.now())
+                }.getOrNull()
             }
 
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {

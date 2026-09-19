@@ -23,6 +23,8 @@ import com.airadar.app.BuildConfig
 import com.airadar.app.data.Airport
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightDatabase
+import com.airadar.app.data.FlightPhase
+import com.airadar.app.data.LivePosition
 import com.airadar.app.data.Region
 import com.airadar.app.data.TrackPoint
 import org.osmdroid.config.Configuration
@@ -59,14 +61,23 @@ data class MapRoute(
     val from: Airport,
     val to: Airport,
     val rank: Int = 0,
-    val isReturn: Boolean = false
+    val isReturn: Boolean = false,
+    /** Set while the flight is in the air with no real track yet: the share
+     * of the way flown by the clock. The arc is then dashed, the flown part
+     * solid, a plane at the point -- the real ADS-B point when [TileMap]'s
+     * own livePlane has one (the arc is cut where it comes nearest), the
+     * timetable's estimate otherwise. */
+    val progress: Double? = null
 )
 
 /** A leg drawn along the positions it actually reported, instead of a bowed arc. */
 data class MapTrack(
     val from: Airport,
     val to: Airport,
-    val points: List<TrackPoint>
+    val points: List<TrackPoint>,
+    /** Still flying: the track is drawn solid with a plane at its end, and
+     * the remaining way to the destination is drawn dashed past it. */
+    val live: Boolean = false
 )
 
 /** A leg per flight, oldest first, ranked among its repeats. */
@@ -82,7 +93,10 @@ fun List<Flight>.toMapRoutes(): List<MapRoute> {
         val rank = seen.getOrDefault(way, 0)
         seen[way] = rank + 1
         if (firstFrom[pair] == null) firstFrom[pair] = from.iata
-        out += MapRoute(from, to, rank, isReturn = firstFrom[pair] != from.iata)
+        out += MapRoute(
+            from, to, rank, isReturn = firstFrom[pair] != from.iata,
+            progress = if (flight.phase == FlightPhase.IN_PROGRESS) flight.fractionFlown else null
+        )
     }
     return out
 }
@@ -113,12 +127,18 @@ private fun inverseMercator(x: Double, y: Double): OsmGeoPoint {
  * opposite sides of the line between the two airports, and every repeat in
  * one direction steps a fixed amount further out on its own side.
  */
-fun arcPath(from: Airport, to: Airport, rank: Int = 0): List<OsmGeoPoint> {
-    val p0x = mercatorX(from.longitude); val p0y = mercatorY(from.latitude)
-    val p2x = mercatorX(to.longitude); val p2y = mercatorY(to.latitude)
+fun arcPath(from: Airport, to: Airport, rank: Int = 0): List<OsmGeoPoint> =
+    arcPath(from.latitude, from.longitude, to.latitude, to.longitude, rank)
+
+/** The coordinate-only core [arcPath] delegates to -- also used to draw the
+ * remaining way from a live in-flight position (not an airport) onward to
+ * the destination. */
+fun arcPath(fromLat: Double, fromLon: Double, toLat: Double, toLon: Double, rank: Int = 0): List<OsmGeoPoint> {
+    val p0x = mercatorX(fromLon); val p0y = mercatorY(fromLat)
+    val p2x = mercatorX(toLon); val p2y = mercatorY(toLat)
     val dx = p2x - p0x; val dy = p2y - p0y
     val length = hypot(dx, dy)
-    if (length == 0.0) return listOf(OsmGeoPoint(from.latitude, from.longitude), OsmGeoPoint(to.latitude, to.longitude))
+    if (length == 0.0) return listOf(OsmGeoPoint(fromLat, fromLon), OsmGeoPoint(toLat, toLon))
     val bulge = minOf(0.14 + 0.09 * rank, 0.7)
     // "Right of travel" in a y-north-positive system is the (dy, -dx)
     // rotation of the direction vector (verified against due-east and
@@ -132,6 +152,32 @@ fun arcPath(from: Airport, to: Airport, rank: Int = 0): List<OsmGeoPoint> {
         val y = u * u * p0y + 2 * u * t * cy + t * t * p2y
         inverseMercator(x, y)
     }
+}
+
+/** Initial great-circle bearing from [a] to [b], degrees clockwise from north. */
+private fun bearing(a: OsmGeoPoint, b: OsmGeoPoint): Double {
+    val rad = PI / 180
+    val dLon = (b.longitude - a.longitude) * rad
+    val y = kotlin.math.sin(dLon) * kotlin.math.cos(b.latitude * rad)
+    val x = kotlin.math.cos(a.latitude * rad) * kotlin.math.sin(b.latitude * rad) -
+        kotlin.math.sin(a.latitude * rad) * kotlin.math.cos(b.latitude * rad) * kotlin.math.cos(dLon)
+    return ((kotlin.math.atan2(y, x) / rad) + 360) % 360
+}
+
+/** Index of the arc point nearest a live fix, in planar (Mercator) distance --
+ * where the flown/still-to-go split actually falls once a real ADS-B point
+ * is in hand, rather than the schedule's own estimate. */
+private fun nearestIndex(coords: List<OsmGeoPoint>, lat: Double, lon: Double): Int {
+    val px = mercatorX(lon); val py = mercatorY(lat)
+    var bestIndex = 0
+    var bestDist = Double.MAX_VALUE
+    coords.forEachIndexed { i, p ->
+        val dx = mercatorX(p.longitude) - px
+        val dy = mercatorY(p.latitude) - py
+        val d = dx * dx + dy * dy
+        if (d < bestDist) { bestDist = d; bestIndex = i }
+    }
+    return bestIndex
 }
 
 /** OpenStreetMap tile map with bowed arc routes and flown tracks drawn on top. */
@@ -161,6 +207,11 @@ fun TileMap(
     onMapTap: (() -> Unit)? = null,
     /** Where to look while there are no legs at all — roughly where the traveller is. */
     emptyFocus: Region? = null,
+    /** Where the aircraft actually is (ADS-B); with it, a route's own plane
+     * (see [MapRoute.progress]) leaves the schedule's estimate for the real
+     * point. Never drawn on its own -- only ever refines a route or track
+     * that's already asking for a plane. */
+    livePlane: LivePosition? = null,
     /** The dot — off by default. On, [followUser] decides whether the
      * camera actually follows it too. */
     showsUserLocation: Boolean = false,
@@ -187,6 +238,8 @@ fun TileMap(
     val directionSouthColor = Color(0xFF00994D).toArgb()
     val selectedColor = Color(0xFFE8590C).toArgb()
     val nodeColor = Color(0xFF0A4F96).toArgb()
+    val liveColor = Color(0xFF2ECC71).toArgb()
+    val dashedColor = AndroidColor.argb(153, 128, 128, 128)
 
     val framedFor = remember(interactive) { intArrayOf(0) }
     // Set only while this composable's own animateTo (in the location
@@ -337,6 +390,54 @@ fun TileMap(
 
             // Selected leg last, so it paints over the others where they cross.
             routes.sortedBy { isSelected(it.from, it.to, it.rank) }.forEach { route ->
+                val progress = route.progress
+                if (progress != null) {
+                    val coords = arcPath(route.from, route.to, route.rank)
+                    // Whole way dashed; the part flown solid; the plane at
+                    // the point reached -- the real ADS-B point when
+                    // livePlane has one (the arc is cut where it comes
+                    // nearest), the timetable's own estimate otherwise.
+                    val whole = Polyline(map).apply {
+                        setPoints(coords)
+                        outlinePaint.color = dashedColor
+                        outlinePaint.strokeWidth = 2.5f
+                        outlinePaint.isAntiAlias = true
+                        outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 10f), 0f)
+                        infoWindow = null
+                        setOnClickListener { _, _, _ -> false }
+                    }
+                    addOwned(whole)
+                    legs += Leg(whole, route.from, route.to, route.rank)
+
+                    var cut = (((coords.size - 1) * progress).toInt() + 1).coerceIn(2, coords.size)
+                    var planeAt = coords[cut - 1]
+                    var heading = bearing(coords[maxOf(0, cut - 2)], coords[cut - 1])
+                    if (livePlane != null) {
+                        cut = (nearestIndex(coords, livePlane.lat, livePlane.lon) + 1).coerceIn(2, coords.size)
+                        planeAt = OsmGeoPoint(livePlane.lat, livePlane.lon)
+                        heading = livePlane.heading
+                    }
+                    addOwned(
+                        Polyline(map).apply {
+                            setPoints(coords.take(cut))
+                            outlinePaint.color = liveColor
+                            outlinePaint.strokeWidth = 4f
+                            outlinePaint.isAntiAlias = true
+                            infoWindow = null
+                            setOnClickListener { _, _, _ -> false }
+                        }
+                    )
+                    addOwned(
+                        Marker(map).apply {
+                            position = planeAt
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            icon = planeDrawable(liveColor, density)
+                            rotation = heading.toFloat()
+                            infoWindow = null
+                        }
+                    )
+                    return@forEach
+                }
                 addOwned(
                     Polyline(map).apply {
                         setPoints(arcPath(route.from, route.to, route.rank))
@@ -358,19 +459,48 @@ fun TileMap(
 
             tracks.forEach { track ->
                 val isSel = isSelected(track.from, track.to, 0)
+                val coords = track.points.map { OsmGeoPoint(it.lat, it.lon) }
+                val color = if (isSel) selectedColor else if (track.live) liveColor else routeColor
                 addOwned(
                     Polyline(map).apply {
-                        setPoints(track.points.map { OsmGeoPoint(it.lat, it.lon) })
-                        val color = if (isSel) selectedColor else routeColor
+                        setPoints(coords)
                         outlinePaint.color = color
                         outlinePaint.strokeWidth = 4f
                         outlinePaint.isAntiAlias = true
-                        setMilestoneManagers(arrayListOf(midpointArrow(distance, color)))
+                        // A still-flying track ends mid-air; the midpoint
+                        // arrow only makes sense once the whole leg is known.
+                        if (!track.live) setMilestoneManagers(arrayListOf(midpointArrow(distance, color)))
                         infoWindow = null
                         setOnClickListener { _, _, _ -> false }
                         legs += Leg(this, track.from, track.to, 0)
                     }
                 )
+                if (track.live && coords.size >= 2) {
+                    val last = coords.last()
+                    addOwned(
+                        Marker(map).apply {
+                            position = last
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            icon = planeDrawable(liveColor, density)
+                            rotation = bearing(coords[coords.size - 2], last).toFloat()
+                            infoWindow = null
+                        }
+                    )
+                    // The way still to go, dashed, so the map frames the
+                    // whole flight and not just the bit already flown.
+                    val rest = arcPath(last.latitude, last.longitude, track.to.latitude, track.to.longitude)
+                    addOwned(
+                        Polyline(map).apply {
+                            setPoints(rest)
+                            outlinePaint.color = dashedColor
+                            outlinePaint.strokeWidth = 2.5f
+                            outlinePaint.isAntiAlias = true
+                            outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 10f), 0f)
+                            infoWindow = null
+                            setOnClickListener { _, _, _ -> false }
+                        }
+                    )
+                }
             }
 
             (routes.flatMap { listOf(it.from, it.to) } + tracks.flatMap { listOf(it.from, it.to) })
@@ -414,7 +544,12 @@ fun TileMap(
             } else if (framedFor[0] != key) {
                 framedFor[0] = key
                 val corners = routes.flatMap { arcPath(it.from, it.to, it.rank) } +
-                    tracks.flatMap { track -> track.points.map { OsmGeoPoint(it.lat, it.lon) } }
+                    tracks.flatMap { track ->
+                        // A still-flying track's own points end mid-air; the destination is
+                        // included too, so the frame doesn't crop the way still to go.
+                        track.points.map { OsmGeoPoint(it.lat, it.lon) } +
+                            if (track.live) listOf(OsmGeoPoint(track.to.latitude, track.to.longitude)) else emptyList()
+                    }
                 val box = BoundingBox.fromGeoPointsSafe(corners)
                 val frame = { m: MapView -> m.zoomToBoundingBox(box, false, minOf(m.width, m.height) / 7) }
                 if (map.width > 0) frame(map)
@@ -479,6 +614,26 @@ private fun dotDrawable(color: Int) = GradientDrawable().apply {
     setColor(color)
     setStroke(3, AndroidColor.WHITE)
     setSize(22, 22)
+}
+
+/** A plane glyph pointing north at rotation 0 -- [Marker.rotation] turns it
+ * to the actual heading from there, the same way iOS turns its own "airplane"
+ * SF Symbol to match. */
+private fun planeDrawable(color: Int, density: Float): android.graphics.drawable.BitmapDrawable {
+    val size = (26 * density).toInt().coerceAtLeast(18)
+    val bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+    val paint = Paint().apply { this.color = color; style = Paint.Style.FILL; isAntiAlias = true }
+    val c = size / 2f
+    val path = Path().apply {
+        moveTo(c, c - size * 0.44f)
+        lineTo(c + size * 0.32f, c + size * 0.34f)
+        lineTo(c, c + size * 0.14f)
+        lineTo(c - size * 0.32f, c + size * 0.34f)
+        close()
+    }
+    canvas.drawPath(path, paint)
+    return android.graphics.drawable.BitmapDrawable(android.content.res.Resources.getSystem(), bitmap)
 }
 
 private val userLocationColor = AndroidColor.rgb(46, 204, 113)

@@ -107,6 +107,19 @@ data class Flight(
             return ((arr.toEpochMilli() - dep.toEpochMilli()) / 60000).toInt()
         }
 
+    /** Share of the way flown by the clock -- used to place a schedule-
+     * estimated plane along the arc when there's no real ADS-B fix yet. */
+    val fractionFlown: Double
+        get() {
+            val dep = departureInstant ?: return 0.0
+            val arr = arrivalInstant ?: return 0.0
+            val delayed = dep.plusSeconds(delayMinutes * 60L)
+            val total = arr.toEpochMilli() - dep.toEpochMilli()
+            if (total <= 0) return 0.0
+            val elapsed = java.time.Instant.now().toEpochMilli() - delayed.toEpochMilli()
+            return (elapsed.toDouble() / total).coerceIn(0.0, 1.0)
+        }
+
     val distanceKm: Int
         get() {
             val dep = departureAirport ?: return 0
