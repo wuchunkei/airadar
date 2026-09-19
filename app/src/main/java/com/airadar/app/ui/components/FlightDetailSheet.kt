@@ -23,6 +23,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,6 +38,8 @@ import androidx.compose.ui.unit.sp
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightPhase
 import com.airadar.app.data.FlightStatus
+import com.airadar.app.data.LivePositionClient
+import com.airadar.app.data.OpenSkyClient
 import com.airadar.app.data.formatDistance
 import com.airadar.app.ui.theme.statusColor
 import java.time.format.DateTimeFormatter
@@ -92,7 +98,29 @@ fun FlightDetailSheet(
                 LaunchedEffect(flight.id) { onLoadTrack() }
             }
 
+            // Where this same airframe flew in from, if OpenSky's own
+            // per-aircraft history has anything recent -- a courtesy note,
+            // not a fact this trip itself carries. Only attempted for an
+            // in-progress flight, the only time a live hex is resolvable.
+            var previousFlight by remember(flight.id) { mutableStateOf<OpenSkyClient.PreviousFlight?>(null) }
+            if (flight.phase == FlightPhase.IN_PROGRESS && flight.callsign != null) {
+                LaunchedEffect(flight.id) {
+                    val hex = LivePositionClient.position(flight.callsign)?.hex ?: return@LaunchedEffect
+                    previousFlight = runCatching {
+                        OpenSkyClient.previousFlight(hex, flight.departureInstant ?: java.time.Instant.now())
+                    }.getOrNull()
+                }
+            }
+
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+                previousFlight?.fromICAO?.let { from ->
+                    Text(
+                        "Landed from $from ${relativeAgo(previousFlight!!.landedAt)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -292,6 +320,16 @@ private fun DetailRow(
 }
 
 private val dateFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.ENGLISH)
+
+/** "3h ago", "12m ago" -- coarse on purpose, this is a courtesy note, not a clock. */
+fun relativeAgo(instant: java.time.Instant): String {
+    val minutes = java.time.Duration.between(instant, java.time.Instant.now()).toMinutes().coerceAtLeast(0)
+    return when {
+        minutes < 1 -> "just now"
+        minutes < 60 -> "${minutes}m ago"
+        else -> "${minutes / 60}h ago"
+    }
+}
 
 fun formatDuration(minutes: Int): String {
     if (minutes <= 0) return "—"

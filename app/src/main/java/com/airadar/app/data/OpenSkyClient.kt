@@ -55,16 +55,18 @@ object OpenSkyClient {
         val bearer = accessToken()
 
         when (flight.phase) {
-            // Airborne now: the flights endpoints only list finished flights, so look
-            // at live state vectors inside the route's bounding box instead.
+            // Airborne now: the flights endpoints only list finished flights, and
+            // adsb.lol's live lookup (LivePositionClient) resolves the callsign to
+            // its hex far more simply than OpenSky's own bounding-box scan of every
+            // live state vector did.
             FlightPhase.IN_PROGRESS -> {
-                val icao24 = findAirborne(bearer, callsign, origin, destination)
+                val hex = LivePositionClient.position(callsign)?.hex
                     ?: throw OpenSkyException(
-                        "$callsign is not in OpenSky's live picture right now. Either no " +
+                        "$callsign is not in the live picture right now. Either no " +
                                 "receiver can hear it, or it is not actually in the air."
                     )
                 return@withContext FetchedTrack(
-                    fetchPath(bearer, icao24, at = 0),
+                    fetchPath(bearer, hex, at = 0),
                     Instant.now().atZone(origin.zone).toLocalDate()
                 )
             }
@@ -158,32 +160,6 @@ object OpenSkyClient {
         return null
     }
 
-    /** The airframe currently squawking this callsign inside the route's box, if any. */
-    private fun findAirborne(
-        bearer: String,
-        callsign: String,
-        origin: Airport,
-        destination: Airport
-    ): String? {
-        val pad = 4.0
-        val lamin = minOf(origin.latitude, destination.latitude) - pad
-        val lamax = maxOf(origin.latitude, destination.latitude) + pad
-        val lomin = minOf(origin.longitude, destination.longitude) - pad
-        val lomax = maxOf(origin.longitude, destination.longitude) + pad
-
-        val body = getJson(
-            "$API/states/all?lamin=$lamin&lomin=$lomin&lamax=$lamax&lomax=$lomax", bearer
-        ) ?: return null
-        val states = JSONObject(body).optJSONArray("states") ?: return null
-
-        // Each state vector is a positional array: [0] icao24, [1] callsign.
-        for (i in 0 until states.length()) {
-            val vector = states.getJSONArray(i)
-            if (sameCallsign(vector.optString(1), callsign)) return vector.getString(0)
-        }
-        return null
-    }
-
     /** OpenSky pads callsigns to eight characters and some carriers zero-pad the number. */
     private fun sameCallsign(seen: String, wanted: String): Boolean {
         fun norm(s: String): String {
@@ -207,8 +183,36 @@ object OpenSkyClient {
         return (0 until path.length())
             .map { path.getJSONArray(it) }
             .filter { !it.isNull(1) && !it.isNull(2) }
-            .map { TrackPoint(lat = it.getDouble(1), lon = it.getDouble(2)) }
+            .map {
+                // path[0] is the point's own Unix time.
+                val time = if (!it.isNull(0)) Instant.ofEpochSecond(it.getDouble(0).toLong()) else null
+                TrackPoint(lat = it.getDouble(1), lon = it.getDouble(2), time = time)
+            }
             .also { if (it.size < 2) throw OpenSkyException("Track too short to draw.") }
+    }
+
+    /** The same airframe's most recently completed flight before some point in
+     * time -- "this plane flew in from X about N hours ago" material. Purely a
+     * courtesy note: never treated as a source of truth the way a real flight's
+     * own facts are, and it's fine for this to come back null (no ADS-B
+     * history, or it was already on the ground for a while beforehand). */
+    data class PreviousFlight(val fromICAO: String?, val toICAO: String?, val landedAt: Instant)
+
+    suspend fun previousFlight(icao24: String, before: Instant): PreviousFlight? = withContext(Dispatchers.IO) {
+        val bearer = accessToken()
+        val begin = before.epochSecond - 18 * 3600
+        val end = before.epochSecond
+        val body = getJson("$API/flights/aircraft/$icao24?begin=$begin&end=$end", bearer) ?: return@withContext null
+        val entries = runCatching { JSONArray(body).asObjects() }.getOrNull() ?: return@withContext null
+        if (entries.isEmpty()) return@withContext null
+        val last = entries.filter { it.has("lastSeen") && !it.isNull("lastSeen") }
+            .maxByOrNull { it.getLong("lastSeen") } ?: return@withContext null
+        fun icao(key: String) = last.optString(key).takeIf { last.has(key) && !last.isNull(key) && it.isNotBlank() }
+        PreviousFlight(
+            fromICAO = icao("estDepartureAirport"),
+            toICAO = icao("estArrivalAirport"),
+            landedAt = Instant.ofEpochSecond(last.getLong("lastSeen"))
+        )
     }
 
     private fun accessToken(): String {

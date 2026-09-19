@@ -15,6 +15,13 @@ actor OpenSkyClient {
     /// handed back so a caller can look its aircraft type up for free elsewhere.
     struct FetchedTrack: Sendable { let points: [TrackPoint]; let flownOn: String; let icao24: String }
 
+    /// The same airframe's most recently completed flight before some point in
+    /// time -- "this plane flew in from X about N hours ago" material. Purely a
+    /// courtesy note: never treated as a source of truth the way a real flight's
+    /// own facts are, and it's fine for this to come back nil (no ADS-B history,
+    /// or it was already on the ground for a while beforehand).
+    struct PreviousFlight: Sendable { let fromICAO: String?; let toICAO: String?; let landedAt: Date }
+
     private var token: String?
     private var tokenExpiresAt = Date.distantPast
 
@@ -27,12 +34,15 @@ actor OpenSkyClient {
 
         switch flight.phase {
         case .inProgress:
-            // Airborne now: the flights endpoints only list finished flights; look at live state vectors.
-            guard let icao24 = try await findAirborne(bearer, callsign, origin, destination) else {
-                throw OpenSkyError(message: "\(flight.flightNumber) (ATC callsign \(callsign)) is not in OpenSky's live picture right now — no receiver is hearing it at the moment. Tried again shortly.")
+            // Airborne now: the flights endpoints only list finished flights, and
+            // adsb.lol's live lookup (LivePositionClient, already used for the
+            // pulsing plane icon) resolves the callsign to its hex far more simply
+            // than OpenSky's own bounding-box scan of every live state vector did.
+            guard let hex = await LivePositionClient.shared.position(callsign: callsign)?.hex else {
+                throw OpenSkyError(message: "\(flight.flightNumber) (ATC callsign \(callsign)) is not in the live picture right now — no receiver is hearing it at the moment. Tried again shortly.")
             }
-            return FetchedTrack(points: try await fetchPath(bearer, icao24, at: 0),
-                                flownOn: LocalDateTime.from(Date(), in: origin.zone).dayString, icao24: icao24)
+            return FetchedTrack(points: try await fetchPath(bearer, hex, at: 0),
+                                flownOn: LocalDateTime.from(Date(), in: origin.zone).dayString, icao24: hex)
 
         case .past, .upcoming:
             let days: [Date] = flight.phase == .past ? [scheduled]
@@ -55,6 +65,25 @@ actor OpenSkyClient {
                 ? "OpenSky has no \(who) in \(whereText) on \(checked.first ?? "")–\(checked.last ?? "")." + hint + " Coverage relies on volunteer receivers."
                 : "OpenSky has no \(who) in \(whereText) on \(checked.first ?? "")." + hint + " Its history only reaches back about 30 days.")
         }
+    }
+
+    /// The airframe's own flight history for the 18 hours before `before` —
+    /// enough slack for a realistic turnaround — with the latest landing in
+    /// that window picked out. nil for a fresh delivery, one that just sat on
+    /// the ground for a long stopover, or simply nothing in OpenSky's coverage.
+    func previousFlight(icao24: String, before: Date) async throws -> PreviousFlight? {
+        let bearer = try await accessToken()
+        let begin = Int(before.timeIntervalSince1970) - 18 * 3600
+        let end = Int(before.timeIntervalSince1970)
+        guard let body = try await getJSON("\(Self.api)/flights/aircraft/\(icao24)?begin=\(begin)&end=\(end)", bearer),
+              let entries = try? JSONSerialization.jsonObject(with: body) as? [[String: Any]], !entries.isEmpty else {
+            return nil
+        }
+        guard let last = entries.max(by: { ($0["lastSeen"] as? Int ?? 0) < ($1["lastSeen"] as? Int ?? 0) }),
+              let lastSeen = last["lastSeen"] as? Int else { return nil }
+        return PreviousFlight(fromICAO: last["estDepartureAirport"] as? String,
+                              toICAO: last["estArrivalAirport"] as? String,
+                              landedAt: Date(timeIntervalSince1970: TimeInterval(lastSeen)))
     }
 
     private func findFlight(_ bearer: String, _ callsign: String, _ origin: Airport, _ destination: Airport,
@@ -82,22 +111,6 @@ actor OpenSkyClient {
         return nil
     }
 
-    private func findAirborne(_ bearer: String, _ callsign: String, _ origin: Airport, _ destination: Airport) async throws -> String? {
-        let pad = 4.0
-        let lamin = min(origin.latitude, destination.latitude) - pad
-        let lamax = max(origin.latitude, destination.latitude) + pad
-        let lomin = min(origin.longitude, destination.longitude) - pad
-        let lomax = max(origin.longitude, destination.longitude) + pad
-        let url = "\(Self.api)/states/all?lamin=\(lamin)&lomin=\(lomin)&lamax=\(lamax)&lomax=\(lomax)"
-        guard let body = try await getJSON(url, bearer),
-              let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
-              let states = obj["states"] as? [[Any]] else { return nil }
-        for v in states where v.count > 1 {
-            if Self.sameCallsign(v[1] as? String ?? "", callsign) { return v[0] as? String }
-        }
-        return nil
-    }
-
     /// OpenSky pads callsigns to eight characters and some carriers zero-pad the number.
     private static func sameCallsign(_ seen: String, _ wanted: String) -> Bool {
         func norm(_ s: String) -> String {
@@ -119,7 +132,12 @@ actor OpenSkyClient {
         }
         let points = path.compactMap { p -> TrackPoint? in
             guard p.count > 2, let lat = p[1] as? Double, let lon = p[2] as? Double else { return nil }
-            return TrackPoint(lat: lat, lon: lon)
+            // path[0] is the point's own Unix time -- every number type
+            // JSONSerialization might hand back for it, covered here.
+            let time: Date? = (p.first).flatMap { raw -> Double? in
+                (raw as? Double) ?? (raw as? Int).map(Double.init) ?? (raw as? NSNumber)?.doubleValue
+            }.map { Date(timeIntervalSince1970: $0) }
+            return TrackPoint(lat: lat, lon: lon, time: time)
         }
         if points.count < 2 { throw OpenSkyError(message: "Track too short to draw.") }
         return points

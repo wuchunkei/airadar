@@ -118,7 +118,14 @@ data class Flight(
 enum class FlightPhase { PAST, IN_PROGRESS, UPCOMING }
 
 @Immutable
-data class TrackPoint(val lat: Double, val lon: Double)
+data class TrackPoint(
+    val lat: Double,
+    val lon: Double,
+    /** When this position was actually reported over ADS-B -- null only for a
+     * point decoded before this field existed (an already-cached track on
+     * disk); every freshly fetched one carries a real one. */
+    val time: java.time.Instant? = null
+)
 
 enum class FlightStatus {
     ON_TIME,

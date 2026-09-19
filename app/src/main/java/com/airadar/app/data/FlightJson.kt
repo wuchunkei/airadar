@@ -32,8 +32,17 @@ fun Flight.toJson(): JSONObject = JSONObject().apply {
     put("feedStatus", feedStatus?.name?.lowercase() ?: JSONObject.NULL)
     put("importedVia", importedVia ?: JSONObject.NULL)
     if (passengers.isNotEmpty()) put("passengers", JSONArray().apply { passengers.forEach { put(it) } })
+    // A third element, when a point has a time, is its own Unix timestamp --
+    // added after the wire format shipped, so an older point without one
+    // just stays a plain [lat, lon] pair.
     put("track", track?.let { points ->
-        JSONArray().apply { points.forEach { put(JSONArray().put(it.lat).put(it.lon)) } }
+        JSONArray().apply {
+            points.forEach { p ->
+                val row = JSONArray().put(p.lat).put(p.lon)
+                p.time?.let { row.put(it.epochSecond.toDouble()) }
+                put(row)
+            }
+        }
     } ?: JSONObject.NULL)
     put("trackFlownOn", trackFlownOn?.toString() ?: JSONObject.NULL)
 }
@@ -66,7 +75,8 @@ fun flightFromJson(o: JSONObject): Flight = Flight(
     track = o.optJSONArray("track")?.let { arr ->
         (0 until arr.length()).map { i ->
             val p = arr.getJSONArray(i)
-            TrackPoint(p.getDouble(0), p.getDouble(1))
+            val time = if (p.length() >= 3) java.time.Instant.ofEpochSecond(p.getDouble(2).toLong()) else null
+            TrackPoint(p.getDouble(0), p.getDouble(1), time)
         }
     },
     trackFlownOn = o.text("trackFlownOn")?.let { runCatching { LocalDate.parse(it.take(10)) }.getOrNull() },

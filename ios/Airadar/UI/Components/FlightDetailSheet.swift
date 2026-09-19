@@ -25,6 +25,10 @@ struct FlightDetailSheet<Actions: View>: View {
     /// adsbdb's free aircraft lookup, from the live position's own hex —
     /// separate from AeroDataBox's quota, and this is the one place a photo shows.
     @State private var adsbdbAircraft: AdsbdbClient.Aircraft?
+    /// Where this same airframe flew in from, if OpenSky's own per-aircraft
+    /// history has anything recent -- a courtesy note, not a fact this trip
+    /// itself carries.
+    @State private var previousFlight: OpenSkyClient.PreviousFlight?
     let onDismiss: () -> Void
     var primaryAction: (label: String, action: () -> Void)? = nil
     /// Under the primary one, quieter — "Incorrect" beneath "Correct".
@@ -44,6 +48,9 @@ struct FlightDetailSheet<Actions: View>: View {
 
                 header
                 codes
+                if let note = previousFlightNote {
+                    Label(note, systemImage: "arrow.uturn.backward.circle").font(.caption).foregroundStyle(.secondary)
+                }
                 if let url = adsbdbAircraft?.photoURL { aircraftPhoto(url) }
                 facts
                 extraActions()
@@ -111,6 +118,14 @@ struct FlightDetailSheet<Actions: View>: View {
         .task(id: live?.hex) {
             guard let hex = live?.hex else { return }
             adsbdbAircraft = try? await AdsbdbClient.shared.aircraft(modeS: hex)
+        }
+        // A courtesy note, not a fact about this flight -- purely "this
+        // airframe flew in from somewhere not long ago", useful context for
+        // why an on-time departure might slip. Only ever attempted once a
+        // hex is known, same as the aircraft photo above.
+        .task(id: live?.hex) {
+            guard let hex = live?.hex else { return }
+            previousFlight = try? await OpenSkyClient.shared.previousFlight(icao24: hex, before: flight.departureInstant ?? Date())
         }
     }
 
@@ -198,6 +213,16 @@ struct FlightDetailSheet<Actions: View>: View {
             if let p = flight.pnr { DetailRow(label: "Booking reference", value: p) }
             if let s = flight.sharedBy { DetailRow(label: "Shared by", value: s.person.givenName, secondary: s.status.label) }
         }
+    }
+
+    /// "Landed from ZBAA 3h ago" -- the ICAO code as-is, since resolving it to
+    /// a city needs an ICAO-keyed lookup this app doesn't carry; still useful
+    /// context on its own.
+    private var previousFlightNote: String? {
+        guard let p = previousFlight, let from = p.fromICAO else { return nil }
+        let ago = RelativeDateTimeFormatter()
+        ago.unitsStyle = .short
+        return "Landed from \(from) " + ago.localizedString(for: p.landedAt, relativeTo: Date())
     }
 
     private var routes: [MapRoute] {

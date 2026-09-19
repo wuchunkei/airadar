@@ -55,6 +55,10 @@ enum FlightPhase: Sendable { case past, inProgress, upcoming }
 struct TrackPoint: Codable, Hashable, Sendable {
     let lat: Double
     let lon: Double
+    /// When this position was actually reported over ADS-B — nil only for a
+    /// point decoded before this field existed (an already-cached track on
+    /// disk); every freshly fetched one carries a real one.
+    var time: Date? = nil
 }
 
 enum ShareStatus: String, Codable, Sendable {
@@ -148,7 +152,8 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     var shares: [TripShare] = []
     var typicalDurationMinutes: Int?
 
-    // The wire carries the track as [[lat, lon]]; everything else is one-to-one.
+    // The wire carries the track as [[lat, lon]] or [[lat, lon, time]] once a
+    // point has one; everything else is one-to-one.
     enum CodingKeys: String, CodingKey {
         case id, flightNumber, airlineName, departure, arrival, departureTerminal, arrivalTerminal, departureGate, arrivalGate
         case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, callsign, pnr, isPending, isManual, passengers
@@ -190,7 +195,12 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         feedStatus = try c.decodeIfPresent(FeedStatus.self, forKey: .feedStatus)
         importedVia = try c.decodeIfPresent(String.self, forKey: .importedVia)
         passengers = try c.decodeIfPresent([String].self, forKey: .passengers) ?? []
-        track = try c.decodeIfPresent([[Double]].self, forKey: .track)?.compactMap { $0.count >= 2 ? TrackPoint(lat: $0[0], lon: $0[1]) : nil }
+        // A third element, when present, is the point's own Unix timestamp —
+        // added after the wire format shipped, so an older cached track (or
+        // one from before this field existed) simply decodes with time: nil.
+        track = try c.decodeIfPresent([[Double]].self, forKey: .track)?.compactMap {
+            $0.count >= 2 ? TrackPoint(lat: $0[0], lon: $0[1], time: $0.count >= 3 ? Date(timeIntervalSince1970: $0[2]) : nil) : nil
+        }
         trackFlownOn = try c.decodeIfPresent(String.self, forKey: .trackFlownOn).map { String($0.prefix(10)) }
         deletedAt = try c.decodeIfPresent(Date.self, forKey: .deletedAt)
         sharedBy = try c.decodeIfPresent(TripShare.self, forKey: .sharedBy)
@@ -221,7 +231,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         try c.encodeIfPresent(feedStatus, forKey: .feedStatus)
         try c.encodeIfPresent(importedVia, forKey: .importedVia)
         if !passengers.isEmpty { try c.encode(passengers, forKey: .passengers) }
-        try c.encodeIfPresent(track?.map { [$0.lat, $0.lon] }, forKey: .track)
+        try c.encodeIfPresent(track?.map { pt in pt.time.map { [pt.lat, pt.lon, $0.timeIntervalSince1970] } ?? [pt.lat, pt.lon] }, forKey: .track)
         try c.encodeIfPresent(trackFlownOn, forKey: .trackFlownOn)
         try c.encodeIfPresent(deletedAt, forKey: .deletedAt)
         try c.encodeIfPresent(sharedBy, forKey: .sharedBy)
