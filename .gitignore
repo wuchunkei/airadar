@@ -22,3 +22,12 @@ __pycache__/
 ios/Config.xcconfig
 ios/Airadar.xcodeproj/
 ios/DerivedData/
+# xcodegen writes these fresh into each target's own source folder from
+# project.yml's info:/entitlements: blocks -- not the hand-maintained
+# ios/Entitlements/Airadar.entitlements, which stays tracked.
+ios/Airadar/Info.plist
+ios/AiradarWidgets/Info.plist
+ios/AiradarWatch/Info.plist
+ios/AiradarWatch/AiradarWatch.entitlements
+ios/AiradarWatchWidget/Info.plist
+ios/AiradarWatchWidget/AiradarWatchWidget.entitlements

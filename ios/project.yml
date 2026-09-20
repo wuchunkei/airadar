@@ -4,6 +4,7 @@ options:
   bundleIdPrefix: com.airadar
   deploymentTarget:
     iOS: "26.0"
+    watchOS: "26.0"
   xcodeVersion: "26.0"
   createIntermediateGroups: true
 
@@ -30,6 +31,14 @@ schemes:
       config: Debug
     archive:
       config: Release
+  # For running/debugging the watch app on its own -- Airadar's own scheme
+  # already carries it along as an embedded dependency for a normal build.
+  AiradarWatch:
+    build:
+      targets:
+        AiradarWatch: all
+    run:
+      config: Debug
 
 targets:
   Airadar:
@@ -42,6 +51,8 @@ targets:
       - package: GoogleSignIn
         product: GoogleSignIn
       - target: AiradarWidgets
+        embed: true
+      - target: AiradarWatch
         embed: true
     info:
       path: Airadar/Info.plist
@@ -145,3 +156,84 @@ targets:
     configFiles:
       Debug: Config.xcconfig
       Release: Config.xcconfig
+
+  # The watch companion: mirrors whatever FlightStore last sent it over
+  # WatchConnectivity (WatchSync.swift, phone side) -- no sign-in, no
+  # networking of its own in this first pass, just a fast, glanceable
+  # showing of what the phone already knows. Independent-runtime is on
+  # so it keeps showing that last snapshot (and its complications keep
+  # ticking) even when the phone is out of range.
+  AiradarWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: AiradarWatch
+      # Everything but FlightActivityAttributes.swift -- ActivityKit itself
+      # (Live Activities, iOS/iPadOS/macOS only) isn't available on watchOS.
+      - path: Shared
+        excludes:
+          - FlightActivityAttributes.swift
+    dependencies:
+      - target: AiradarWatchWidget
+        embed: true
+    info:
+      path: AiradarWatch/Info.plist
+      properties:
+        CFBundleDisplayName: Airadar
+        WKApplication: true
+        WKRunsIndependentlyOfCompanionApp: true
+        WKCompanionAppBundleIdentifier: com.airadar.app
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # Read by Config.swift, for the day this does call the backend directly.
+        BACKEND_URL: $(BACKEND_URL)
+        BACKEND_TOKEN: $(BACKEND_TOKEN)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.airadar.app.watchkitapp
+        SDKROOT: watchos
+        TARGETED_DEVICE_FAMILY: "4"
+        SKIP_INSTALL: false
+        BACKEND_URL: $(BACKEND_URL)
+        BACKEND_TOKEN: $(BACKEND_TOKEN)
+        CODE_SIGN_ENTITLEMENTS: AiradarWatch/AiradarWatch.entitlements
+    configFiles:
+      Debug: Config.xcconfig
+      Release: Config.xcconfig
+    entitlements:
+      path: AiradarWatch/AiradarWatch.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.airadar.app]
+
+  # Complications -- accessoryCircular (the countdown ring) and
+  # accessoryRectangular (route + time) for the watch face. Reads the same
+  # WatchSnapshot the app itself shows, from the App Group container
+  # (WatchSync.swift on the phone writes it there too, not just over the
+  # live WCSession message, so a complication refreshing on its own budget
+  # -- the app process need not even be running -- still has something to draw).
+  AiradarWatchWidget:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: AiradarWatchWidget
+      - path: Shared
+        excludes:
+          - FlightActivityAttributes.swift
+    info:
+      path: AiradarWatchWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Airadar
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.airadar.app.watchkitapp.widget
+        SDKROOT: watchos
+        TARGETED_DEVICE_FAMILY: "4"
+        CODE_SIGN_ENTITLEMENTS: AiradarWatchWidget/AiradarWatchWidget.entitlements
+    configFiles:
+      Debug: Config.xcconfig
+      Release: Config.xcconfig
+    entitlements:
+      path: AiradarWatchWidget/AiradarWatchWidget.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.airadar.app]

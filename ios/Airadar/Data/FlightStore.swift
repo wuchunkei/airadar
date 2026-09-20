@@ -262,6 +262,7 @@ final class FlightStore: ObservableObject {
         deleted = all.filter { $0.deletedAt != nil }.sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
         persist()
         LiveActivities.sync(flights)
+        WatchSync.shared.sync(flights)
     }
 
     /// Average block time over the last week of the same number, else the scheduled duration.
