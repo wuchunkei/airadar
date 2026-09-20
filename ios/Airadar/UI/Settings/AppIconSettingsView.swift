@@ -91,15 +91,12 @@ struct AppIconSettingsView: View {
         .disabled(locked)
     }
 
-    // The masters' own two backdrops: every tier but Default uses the same
-    // deep navy in both appearances; Default alone switches to a soft light
-    // neutral in light mode, matching exactly what's actually applied
-    // (AppIconSettingsView's own Contents.json for each appiconset).
-    private static let navy = Color(red: 32.0 / 255, green: 37.0 / 255, blue: 43.0 / 255)
-    private static let lightNeutral = Color(red: 214.0 / 255, green: 216.0 / 255, blue: 219.0 / 255)
-
+    // Every tier's actual Home Screen icon now shares one backdrop rule:
+    // white in light appearance, black in dark -- matching the appiconset
+    // Contents.json generated for each tier exactly, so the preview here
+    // never drifts from what's really applied.
     private func icon(for tier: MilestoneTier, dimmed: Bool) -> some View {
-        let bg = (tier == .blackIron && colorScheme == .light) ? Self.lightNeutral : Self.navy
+        let bg: Color = colorScheme == .dark ? .black : .white
         return RoundedRectangle(cornerRadius: 17, style: .continuous)
             .fill(bg)
             .overlay { TierBadgeView(tier: tier, size: 44) }
