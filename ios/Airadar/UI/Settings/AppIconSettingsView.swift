@@ -8,7 +8,6 @@ import SwiftUI
 /// on its own (`AppIconManager`).
 struct AppIconSettingsView: View {
     @EnvironmentObject private var store: FlightStore
-    @Environment(\.colorScheme) private var colorScheme
     @State private var manual = AppIconManager.isManual
     @State private var manualArtKey = AppIconManager.manualArtKey
 
@@ -91,42 +90,19 @@ struct AppIconSettingsView: View {
         .disabled(locked)
     }
 
+    /// The masters' own fixed navy backdrop (#20252B) -- one consistent
+    /// look baked into every tier's actual Home Screen icon, not a light/
+    /// dark square of this view's own invention, so the preview matches
+    /// what really gets applied.
+    private static let iconBackground = Color(red: 32.0 / 255, green: 37.0 / 255, blue: 43.0 / 255)
+
     private func icon(for tier: MilestoneTier, dimmed: Bool) -> some View {
-        let bg = colorScheme == .dark ? Color(red: 0.08, green: 0.086, blue: 0.098) : Color(red: 0.882, green: 0.890, blue: 0.910)
-        return RoundedRectangle(cornerRadius: 17, style: .continuous)
-            .fill(bg)
-            .overlay {
-                if tier == .blackIron {
-                    DefaultGlyph(dark: colorScheme == .dark).frame(width: 38, height: 38)
-                } else {
-                    TierBadgeView(tier: tier, size: 44)
-                }
-            }
+        RoundedRectangle(cornerRadius: 17, style: .continuous)
+            .fill(Self.iconBackground)
+            .overlay { TierBadgeView(tier: tier, size: 44) }
             .frame(width: 68, height: 68)
             .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
             .saturation(dimmed ? 0 : 1)
             .opacity(dimmed ? 0.38 : 1)
-    }
-}
-
-/// Default's own flat glyph -- a loose bundle resource, same convention as
-/// TierBadgeView's tier art, since Home Screen alternate-icon images
-/// themselves live sealed in the asset catalog and aren't loadable at
-/// runtime for a preview like this.
-private struct DefaultGlyph: View {
-    let dark: Bool
-    private static var cache: [String: UIImage] = [:]
-    private var art: UIImage? {
-        let key = dark ? "tier-default-dark-logo" : "tier-default-light-logo"
-        if let cached = Self.cache[key] { return cached }
-        guard let url = Bundle.main.url(forResource: key, withExtension: "png"),
-              let data = try? Data(contentsOf: url), let image = UIImage(data: data) else { return nil }
-        Self.cache[key] = image
-        return image
-    }
-
-    var body: some View {
-        if let art { Image(uiImage: art).resizable().scaledToFit() }
-        else { Image(systemName: "airplane").font(.system(size: 20, weight: .semibold)).foregroundStyle(dark ? .white : .black) }
     }
 }
