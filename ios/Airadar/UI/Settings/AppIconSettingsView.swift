@@ -8,6 +8,7 @@ import SwiftUI
 /// on its own (`AppIconManager`).
 struct AppIconSettingsView: View {
     @EnvironmentObject private var store: FlightStore
+    @Environment(\.colorScheme) private var colorScheme
     @State private var manual = AppIconManager.isManual
     @State private var manualArtKey = AppIconManager.manualArtKey
 
@@ -90,15 +91,17 @@ struct AppIconSettingsView: View {
         .disabled(locked)
     }
 
-    /// The masters' own fixed navy backdrop (#20252B) -- one consistent
-    /// look baked into every tier's actual Home Screen icon, not a light/
-    /// dark square of this view's own invention, so the preview matches
-    /// what really gets applied.
-    private static let iconBackground = Color(red: 32.0 / 255, green: 37.0 / 255, blue: 43.0 / 255)
+    // The masters' own two backdrops: every tier but Default uses the same
+    // deep navy in both appearances; Default alone switches to a soft light
+    // neutral in light mode, matching exactly what's actually applied
+    // (AppIconSettingsView's own Contents.json for each appiconset).
+    private static let navy = Color(red: 32.0 / 255, green: 37.0 / 255, blue: 43.0 / 255)
+    private static let lightNeutral = Color(red: 214.0 / 255, green: 216.0 / 255, blue: 219.0 / 255)
 
     private func icon(for tier: MilestoneTier, dimmed: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 17, style: .continuous)
-            .fill(Self.iconBackground)
+        let bg = (tier == .blackIron && colorScheme == .light) ? Self.lightNeutral : Self.navy
+        return RoundedRectangle(cornerRadius: 17, style: .continuous)
+            .fill(bg)
             .overlay { TierBadgeView(tier: tier, size: 44) }
             .frame(width: 68, height: 68)
             .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))

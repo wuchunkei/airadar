@@ -58,7 +58,13 @@ enum AppIconManager {
         guard UIApplication.shared.supportsAlternateIcons else { return }
         // Black Iron is the default icon that ships in the bundle, not a
         // registered alternate — reaching it again means reverting to nil.
-        let name: String? = (tier == nil || tier == .blackIron) ? nil : tier?.artKey
+        // Every other tier's registered name is its own App Icon Set's own
+        // name -- "AppIcon-gold", not "gold" -- matching how Xcode itself
+        // auto-registers every appiconset ASSETCATALOG_COMPILER_INCLUDE_
+        // ALL_APPICON_ASSETS pulls in; a project.yml-declared shorter alias
+        // for the same icon used to exist alongside this one, which left
+        // two conflicting registrations for the same underlying icon.
+        let name: String? = (tier == nil || tier == .blackIron) ? nil : tier.map { "AppIcon-\($0.artKey)" }
         guard UIApplication.shared.alternateIconName != name else { return }
         UIApplication.shared.setAlternateIconName(name) { error in
             if let error { print("AppIconManager: couldn't switch to \(name ?? "the default icon"): \(error.localizedDescription)") }

@@ -70,34 +70,16 @@ targets:
           CFBundlePrimaryIcon:
             CFBundleIconFiles: [AppIcon]
             UIPrerenderedIcon: false
-          CFBundleAlternateIcons:
-            bronze:
-              CFBundleIconFiles: [AppIcon-bronze]
-              UIPrerenderedIcon: false
-            silver:
-              CFBundleIconFiles: [AppIcon-silver]
-              UIPrerenderedIcon: false
-            gold:
-              CFBundleIconFiles: [AppIcon-gold]
-              UIPrerenderedIcon: false
-            platinum:
-              CFBundleIconFiles: [AppIcon-platinum]
-              UIPrerenderedIcon: false
-            diamond:
-              CFBundleIconFiles: [AppIcon-diamond]
-              UIPrerenderedIcon: false
-            ruby:
-              CFBundleIconFiles: [AppIcon-ruby]
-              UIPrerenderedIcon: false
-            amber:
-              CFBundleIconFiles: [AppIcon-amber]
-              UIPrerenderedIcon: false
-            silk:
-              CFBundleIconFiles: [AppIcon-silk]
-              UIPrerenderedIcon: false
-            porcelain:
-              CFBundleIconFiles: [AppIcon-porcelain]
-              UIPrerenderedIcon: false
+          # No CFBundleAlternateIcons block here on purpose: with
+          # ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS on, Xcode
+          # auto-registers every other App Icon Set in the catalog as an
+          # alternate, keyed by its own set name ("AppIcon-gold", etc, via
+          # CFBundleIconName) -- hand-declaring the same icons again here
+          # under short keys ("gold") created two conflicting registrations
+          # for the same underlying icon, which is exactly the kind of
+          # ambiguity that makes setAlternateIconName misbehave. Pass
+          # "AppIcon-<tier.artKey>" (AppIconManager) to match Xcode's own
+          # auto-generated name.
         # OpenSky's TLS setup lacks the forward-secrecy ciphers ATS insists on.
         NSAppTransportSecurity:
           NSExceptionDomains:
