@@ -135,7 +135,17 @@ struct FlightDetailSheet<Actions: View>: View {
                     live = fix
                     if knownHex == nil { knownHex = fix.hex }
                     let point = TrackPoint(lat: fix.coordinate.latitude, lon: fix.coordinate.longitude, time: fix.seenAt)
-                    if liveTrail.last?.lat != point.lat || liveTrail.last?.lon != point.lon { liveTrail.append(point) }
+                    if liveTrail.last?.lat != point.lat || liveTrail.last?.lon != point.lon {
+                        liveTrail.append(point)
+                        // Every real fix earns its keep on the server, not just
+                        // in this sheet's own memory -- otherwise the whole
+                        // trail is lost the moment the sheet closes or the app
+                        // is relaunched. Stored on the trip itself (not a
+                        // separate collection), so it survives a soft delete
+                        // and is purged with the trip -- the recycle bin's own
+                        // 30-day TTL, no extra retention logic of its own.
+                        store.setTrack(flight.id, points: storedTrail, flownOn: flight.departureDay)
+                    }
                 }
                 try? await Task.sleep(for: .seconds(300))
             }
@@ -327,25 +337,25 @@ struct FlightDetailSheet<Actions: View>: View {
         // A flight that hasn't departed always shows the plain arc, never a
         // track -- even a stale one stored from before this rule existed.
         guard flight.phase != .upcoming, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
-        if let track = flight.track, track.count >= 2 {
-            // The one-time historical fetch on its own goes stale the moment
-            // it lands (trackFlownOn turning non-null stops it from ever
-            // being asked for again) -- so for a flight still in the air,
-            // whatever this session's own live poll has collected SINCE the
-            // stored track's own last point is appended, keeping the line
-            // itself growing all the way from departure to right now,
-            // not just the plane marker (which livePlane already refreshes
-            // on its own regardless).
-            var points = track
-            if flight.phase == .inProgress, let lastStored = track.compactMap(\.time).max() {
-                points += liveTrail.filter { ($0.time ?? .distantPast) > lastStored }
-            }
-            return [MapTrack(from: a, to: b, points: Self.gapFilled(points), live: flight.phase == .inProgress)]
-        }
-        if liveTrail.count >= 2 {
-            return [MapTrack(from: a, to: b, points: Self.gapFilled(liveTrail), live: true)]
-        }
-        return []
+        guard storedTrail.count >= 2 else { return [] }
+        return [MapTrack(from: a, to: b, points: Self.gapFilled(storedTrail), live: flight.phase == .inProgress)]
+    }
+
+    /// The real fixes only -- no interpolated gap-fill points -- worth
+    /// pushing to the server as they're the same points `mapTracks` bowing
+    /// would otherwise have to recompute from scratch on every other device
+    /// that opens this trip. The one-time historical fetch on its own goes
+    /// stale the moment it lands (`trackFlownOn` turning non-null stops it
+    /// from ever being asked for again) -- so for a flight still in the air,
+    /// whatever this session's own live poll has collected SINCE the stored
+    /// track's own last point is appended, keeping the line itself growing
+    /// all the way from departure to right now, not just the plane marker
+    /// (which `livePlane` already refreshes on its own regardless).
+    private var storedTrail: [TrackPoint] {
+        guard let track = flight.track, !track.isEmpty else { return liveTrail }
+        guard flight.phase == .inProgress else { return track }
+        let lastStored = track.compactMap(\.time).max() ?? .distantPast
+        return track + liveTrail.filter { ($0.time ?? .distantPast) > lastStored }
     }
 
     /// Bridges a gap between two consecutive real points with a bowed arc

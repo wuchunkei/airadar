@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightPhase
 import com.airadar.app.data.FlightStatus
+import com.airadar.app.data.FlightStore
 import com.airadar.app.data.LivePosition
 import com.airadar.app.data.LivePositionClient
 import com.airadar.app.data.TrackPoint
@@ -126,6 +127,23 @@ fun FlightDetailSheet(
                             val last = liveTrail.lastOrNull()
                             if (last == null || last.lat != fix.lat || last.lon != fix.lon) {
                                 liveTrail.add(TrackPoint(fix.lat, fix.lon, fix.seenAt))
+                                // Every real fix earns its keep on the server, not
+                                // just in this sheet's own memory -- otherwise the
+                                // whole trail is lost the moment the sheet closes
+                                // or the app is relaunched. Stored on the trip
+                                // itself (not a separate collection), so it
+                                // survives a soft delete and is purged with the
+                                // trip -- the recycle bin's own 30-day TTL, no
+                                // extra retention logic of its own.
+                                val storedTrack = flight.track
+                                val lastStored = if (storedTrack != null)
+                                    storedTrack.mapNotNull { it.time }.maxOrNull() else null
+                                val trail = if (storedTrack != null && storedTrack.isNotEmpty()) {
+                                    storedTrack + liveTrail.filter {
+                                        (it.time ?: java.time.Instant.MIN).isAfter(lastStored ?: java.time.Instant.MIN)
+                                    }
+                                } else liveTrail.toList()
+                                FlightStore.setTrack(flight.id, trail, flight.departureTime.toLocalDate())
                             }
                         }
                         delay(300_000)
