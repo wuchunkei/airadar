@@ -96,12 +96,40 @@ data class Flight(
      * Cancelled and diverted stay as they are; those are real outcomes worth keeping. */
     val displayStatus: FlightStatus
         get() {
+            if (trackDiverged) return FlightStatus.DIVERTED
             if (phase != FlightPhase.PAST || status == FlightStatus.CANCELLED || status == FlightStatus.DIVERTED) return status
             return FlightStatus.LANDED
         }
 
+    /** A real track whose last known fix, once the schedule says the flight
+     * is over, sits nowhere near the airport it was supposed to land at --
+     * a diversion or a return to origin looks identical from here, and
+     * either way the schedule's own status can't be trusted for this trip
+     * anymore, whatever it claims. Never checked mid-route -- being far
+     * from the destination is simply what "still flying" looks like. 100km,
+     * not a tighter number, so a track that merely lost ADS-B coverage a
+     * little early on final approach doesn't misread as a diversion. */
+    private val trackDiverged: Boolean
+        get() {
+            if (phase != FlightPhase.PAST) return false
+            val last = track?.lastOrNull() ?: return false
+            val arrival = arrivalAirport ?: return false
+            return greatCircleKm(last.lat, last.lon, arrival.latitude, arrival.longitude) > 100
+        }
+
+    /** The real track's last known fix, only when it's genuine evidence the
+     * flight didn't reach where it was scheduled to -- for naming where it
+     * actually ended up, on top of `displayStatus` already reading Diverted. */
+    val divergedLastFix: TrackPoint?
+        get() = if (trackDiverged) track?.lastOrNull() else null
+
     val durationMinutes: Int
         get() {
+            if (trackDiverged) {
+                val start = track?.firstOrNull()?.time
+                val end = track?.lastOrNull()?.time
+                if (start != null && end != null) return (java.time.Duration.between(start, end).toMinutes()).toInt().coerceAtLeast(0)
+            }
             val dep = departureInstant ?: return 0
             val arr = arrivalInstant ?: return 0
             return ((arr.toEpochMilli() - dep.toEpochMilli()) / 60000).toInt()
@@ -122,6 +150,16 @@ data class Flight(
 
     val distanceKm: Int
         get() {
+            if (trackDiverged) {
+                val points = track
+                if (points != null && points.size >= 2) {
+                    var total = 0
+                    for (i in 0 until points.size - 1) {
+                        total += greatCircleKm(points[i].lat, points[i].lon, points[i + 1].lat, points[i + 1].lon)
+                    }
+                    return total
+                }
+            }
             val dep = departureAirport ?: return 0
             val arr = arrivalAirport ?: return 0
             return greatCircleKm(dep.latitude, dep.longitude, arr.latitude, arr.longitude)

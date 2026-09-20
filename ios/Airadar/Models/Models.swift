@@ -274,16 +274,47 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     /// leave a real trip stuck reading "Scheduled" long after it landed.
     /// Cancelled and diverted stay as they are; those are real outcomes worth keeping.
     var displayStatus: FlightStatus {
+        if trackDiverged { return .diverted }
         guard phase == .past, status != .cancelled, status != .diverted else { return status }
         return .landed
     }
 
+    /// A real track whose last known fix, once the schedule says the flight
+    /// is over, sits nowhere near the airport it was supposed to land at --
+    /// a diversion or a return to origin looks identical from here, and
+    /// either way the schedule's own status can't be trusted for this trip
+    /// anymore, whatever it claims. Confirmed against a real case: a
+    /// same-day return over the Atlantic that AeroDataBox itself still
+    /// reported as a completed, on-schedule flight. Never checked mid-route
+    /// -- being far from the destination is simply what "still flying"
+    /// looks like, not evidence of anything. 100km, not a tighter number,
+    /// so a track that merely lost ADS-B coverage a little early on final
+    /// approach (common at airports with thin ground-receiver coverage)
+    /// doesn't misread as a diversion.
+    private var trackDiverged: Bool {
+        guard phase == .past, let track, let last = track.last, let arrival = arrivalAirport else { return false }
+        return greatCircleKm(last.lat, last.lon, arrival.latitude, arrival.longitude) > 100
+    }
+
+    /// The real track's last known fix, only when it's genuine evidence the
+    /// flight didn't reach where it was scheduled to -- for naming where it
+    /// actually ended up, on top of `displayStatus` already reading Diverted.
+    var divergedLastFix: TrackPoint? { trackDiverged ? track?.last : nil }
+
     var durationMinutes: Int {
+        if trackDiverged, let track, let start = track.first?.time, let end = track.last?.time {
+            return max(0, Int(end.timeIntervalSince(start) / 60))
+        }
         guard let dep = departureInstant, let arr = arrivalInstant else { return 0 }
         return max(0, Int(arr.timeIntervalSince(dep) / 60))
     }
 
     var distanceKm: Int {
+        if trackDiverged, let track, track.count >= 2 {
+            var total = 0.0
+            for (p, q) in zip(track, track.dropFirst()) { total += greatCircleKm(p.lat, p.lon, q.lat, q.lon) }
+            return Int(total.rounded())
+        }
         guard let a = departureAirport, let b = arrivalAirport else { return 0 }
         return Int(greatCircleKm(a.latitude, a.longitude, b.latitude, b.longitude).rounded())
     }

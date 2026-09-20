@@ -23,6 +23,10 @@ struct FlightDetailSheet<Actions: View>: View {
     /// courtesy note, refreshed on the same 5-minute cadence as the fix
     /// itself, not a fact kept anywhere past this sheet being open.
     @State private var passingLocation: String?
+    /// Where a diverted/returned flight's real track shows it actually
+    /// ended up -- named once, when `flight.divergedLastFix` says there is
+    /// one, not kept past this sheet either.
+    @State private var divergedNote: String?
     /// Learned once (from whichever of adsb.lol/OpenSky answers first) and
     /// kept for the rest of this session, so OpenSky's own live lookup can
     /// use its cheap icao24 filter on every later poll instead of the
@@ -72,6 +76,11 @@ struct FlightDetailSheet<Actions: View>: View {
                 codes
                 if flight.phase == .inProgress, let passingLocation {
                     Label("Over \(passingLocation)", systemImage: "location.fill").font(.caption).foregroundStyle(.secondary)
+                }
+                if let divergedNote {
+                    Label("Its real track ends near \(divergedNote), not \(flight.arrival) — likely diverted or turned back",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(FlightStatus.diverted.color)
                 }
                 if let note = previousFlightNote {
                     Label(note, systemImage: "arrow.uturn.backward.circle").font(.caption).foregroundStyle(.secondary)
@@ -212,6 +221,13 @@ struct FlightDetailSheet<Actions: View>: View {
         .task(id: flight.id) {
             guard flight.sharedBy == nil else { return }
             _ = try? await BackendClient.shareTrip(flight.id)
+        }
+        // Named once the real track (just loaded, or already stored from a
+        // past session) shows this flight diverged -- see
+        // `Flight.divergedLastFix` for what actually triggers this.
+        .task(id: "\(flight.id)|\(flight.track?.count ?? 0)") {
+            guard let last = flight.divergedLastFix else { divergedNote = nil; return }
+            divergedNote = await PassingLocation.describe(CLLocationCoordinate2D(latitude: last.lat, longitude: last.lon))
         }
         // Only worth asking inside the last day before departure -- any
         // earlier and "can I drive there right now" isn't the traveller's
