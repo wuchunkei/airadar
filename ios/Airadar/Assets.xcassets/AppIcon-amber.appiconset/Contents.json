@@ -1,0 +1,44 @@
+{
+  "images": [
+    {
+      "filename": "icon-60@2x-light.png",
+      "idiom": "iphone",
+      "scale": "2x",
+      "size": "60x60"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "icon-60@2x-dark.png",
+      "idiom": "iphone",
+      "scale": "2x",
+      "size": "60x60"
+    },
+    {
+      "filename": "icon-60@3x-light.png",
+      "idiom": "iphone",
+      "scale": "3x",
+      "size": "60x60"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "icon-60@3x-dark.png",
+      "idiom": "iphone",
+      "scale": "3x",
+      "size": "60x60"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

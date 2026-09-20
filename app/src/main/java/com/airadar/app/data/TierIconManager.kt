@@ -25,8 +25,9 @@ object TierIconManager {
         MilestoneTier.PLATINUM to "$PACKAGE.TierIconPlatinum",
         MilestoneTier.DIAMOND to "$PACKAGE.TierIconDiamond",
         MilestoneTier.RUBY to "$PACKAGE.TierIconRuby",
-        MilestoneTier.OBSIDIAN to "$PACKAGE.TierIconObsidian",
-        MilestoneTier.RAINBOW to "$PACKAGE.TierIconRainbow"
+        MilestoneTier.AMBER to "$PACKAGE.TierIconAmber",
+        MilestoneTier.SILK to "$PACKAGE.TierIconSilk",
+        MilestoneTier.PORCELAIN to "$PACKAGE.TierIconPorcelain"
     )
 
     private var lastApplied: MilestoneTier? = null

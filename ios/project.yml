@@ -89,11 +89,14 @@ targets:
             ruby:
               CFBundleIconFiles: [AppIcon-ruby]
               UIPrerenderedIcon: false
-            obsidian:
-              CFBundleIconFiles: [AppIcon-obsidian]
+            amber:
+              CFBundleIconFiles: [AppIcon-amber]
               UIPrerenderedIcon: false
-            rainbow:
-              CFBundleIconFiles: [AppIcon-rainbow]
+            silk:
+              CFBundleIconFiles: [AppIcon-silk]
+              UIPrerenderedIcon: false
+            porcelain:
+              CFBundleIconFiles: [AppIcon-porcelain]
               UIPrerenderedIcon: false
         # OpenSky's TLS setup lacks the forward-secrecy ciphers ATS insists on.
         NSAppTransportSecurity:

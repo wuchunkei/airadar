@@ -144,7 +144,7 @@ struct MyView: View {
                         .tabViewStyle(.page(indexDisplayMode: .never))
                         .frame(height: 118)
                     } else {
-                        TierProgressCard(standing: .compute(for: history), rainbowRank: store.rainbowRank,
+                        TierProgressCard(standing: .compute(for: history), porcelainRank: store.porcelainRank,
                                           avatarUrl: auth.user?.avatarUrl, avatarInitial: auth.user?.name?.prefix(1).uppercased() ?? "?",
                                           avatarTint: auth.user?.color.map { Color(hex: $0) } ?? .accentColor,
                                           flightsFed: store.flights.filter { $0.isManual }.count)
@@ -173,8 +173,8 @@ struct MyView: View {
                 if history.isEmpty { homeRegion = await HomeRegion.find() }
             }
             .task(id: upcomingDepartures.map(\.iata)) { await checkReachability() }
-            // Only ever does anything once standing genuinely reads Rainbow.
-            .task(id: history.count) { await store.refreshRainbowRank() }
+            // Only ever does anything once standing genuinely reads Porcelain.
+            .task(id: history.count) { await store.refreshPorcelainRank() }
         }
         .sheet(item: $openId) { id in
             if let f = store.flights.first(where: { $0.id == id }) {
@@ -246,13 +246,13 @@ private struct LegCard: View {
 /// how many flights this traveller has fed the system written below it.
 /// The left end is the traveller's own photo, not a badge — this is their
 /// card, the tier medallion only marks where the route is headed.
-/// Rainbow, with nothing beyond it, just shows the badge and its tagline.
+/// Porcelain, with nothing beyond it, just shows the badge and its tagline.
 private struct TierProgressCard: View {
     let standing: TierStanding
-    /// Rainbow's sequence number, once the backend has handed one out —
+    /// Porcelain's sequence number, once the backend has handed one out —
     /// nil the whole time up to and including the moment standing first
-    /// reads Rainbow but the claim hasn't come back yet.
-    var rainbowRank: Int? = nil
+    /// reads Porcelain but the claim hasn't come back yet.
+    var porcelainRank: Int? = nil
     var avatarUrl: String? = nil
     var avatarInitial: String = "?"
     var avatarTint: Color = .accentColor
@@ -332,7 +332,7 @@ private struct TierProgressCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     // Hidden tier, hidden bragging right: which-numbered
                     // traveller ever to get here, once the backend confirms it.
-                    if let rainbowRank { Text("#\(rainbowRank)").font(.caption.bold()).foregroundStyle(.secondary) }
+                    if let porcelainRank { Text("#\(porcelainRank)").font(.caption.bold()).foregroundStyle(.secondary) }
                     Text(tier.tagline).font(.caption).foregroundStyle(.secondary)
                     Text(fedText).font(.caption2).foregroundStyle(.secondary)
                 }

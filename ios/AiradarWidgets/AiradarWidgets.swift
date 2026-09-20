@@ -163,7 +163,7 @@ private struct LockScreenView: View {
                 StatusText(state: s).font(.caption.weight(.semibold))
             }
             if s.stage == .landed {
-                HStack(alignment: .top) {
+                HStack(alignment: .center) {
                     Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading, large: true)
                     Spacer()
                     Facts(state: s, attributes: a)
@@ -217,12 +217,17 @@ private struct Facts: View {
     let state: FlightActivityAttributes.ContentState
     let attributes: FlightActivityAttributes
     var body: some View {
-        VStack(alignment: .trailing, spacing: 2) {
+        // Three rows spread across the same height the endpoint block beside
+        // them takes up, at a size that actually matches it -- cramped into
+        // a tight, tiny-type corner (the original .caption/2pt-spacing look)
+        // read as an afterthought next to a large airport code.
+        VStack(alignment: .trailing, spacing: 10) {
             fact("Duration", state.durationText)
             fact("Distance", "\(attributes.distanceKm) km")
             fact("Baggage", state.baggageClaim.map { "Belt \($0)" } ?? "—")
         }
-        .font(.caption)
+        .font(.subheadline)
+        .frame(maxHeight: .infinity)
     }
     private func fact(_ name: String, _ value: String) -> some View {
         HStack(spacing: 6) { Text(name).foregroundStyle(.secondary); Text(value).fontWeight(.semibold) }

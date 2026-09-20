@@ -267,11 +267,11 @@ fun MyScreen(
                 // A route selected takes this slot above; nothing selected, the
                 // tier card is back in it -- same height either way.
                 val standing = remember(history) { TierStanding.compute(history) }
-                val rainbowRank by FlightStore.rainbowRank.observeAsState()
-                LaunchedEffect(history.size) { FlightStore.refreshRainbowRank() }
+                val porcelainRank by FlightStore.porcelainRank.observeAsState()
+                LaunchedEffect(history.size) { FlightStore.refreshPorcelainRank() }
                 TierProgressCard(
                     standing = standing,
-                    rainbowRank = rainbowRank,
+                    porcelainRank = porcelainRank,
                     avatarUrl = authUser?.avatarUrl,
                     avatarInitial = authUser?.name?.take(1)?.uppercase() ?: "?",
                     avatarTint = authUser?.color?.let(::colorOf) ?: MaterialTheme.colorScheme.primary,

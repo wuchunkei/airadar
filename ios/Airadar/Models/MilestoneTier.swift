@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The eight visible tiers, plus one hidden one above them — run the way a
+/// The nine visible tiers, plus one hidden one above them — run the way a
 /// real airline's elite tiers are: promotion happens on legs flown OR
 /// distance flown SINCE THE LAST RANK-UP, whichever gets there first, and
 /// both counters reset to zero the moment that happens — a long-haul
@@ -10,16 +10,20 @@ import SwiftUI
 /// elsewhere — My's own stats panel — is a separate, never-reset count;
 /// it just isn't what decides a rank-up.)
 ///
-/// Rainbow (500+ legs) is a secret: nothing before it hints it exists, and
+/// Porcelain (751+ legs) is a secret: nothing before it hints it exists, and
 /// reaching it is rare enough that it also carries a sequence number — the
 /// Nth traveller ever to get there — awarded by the backend, never the
-/// client (`BackendClient.claimRainbow`).
+/// client (`BackendClient.claimPorcelain`). It's the true ceiling this
+/// ladder used to call Rainbow — renamed, and split off from what used to
+/// be one enormous top band (Obsidian, then Rainbow) into three narrower
+/// ones (Amber, Silk, Porcelain) so the climb from Ruby onward still feels
+/// like a series of rank-ups, not one long plateau.
 ///
 /// 首飛 (First Flight) has its own artwork but isn't a rung on this ladder —
 /// it's a one-off "flew at all" stamp, unlocked at leg 1 regardless of tier,
 /// parked for now (its own place in the UI is a later pass).
 enum MilestoneTier: Int, CaseIterable, Comparable {
-    case blackIron, bronze, silver, gold, platinum, diamond, ruby, obsidian, rainbow
+    case blackIron, bronze, silver, gold, platinum, diamond, ruby, amber, silk, porcelain
 
     static func < (a: MilestoneTier, b: MilestoneTier) -> Bool { a.rawValue < b.rawValue }
 
@@ -39,13 +43,14 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .platinum: 51...75
         case .diamond: 76...100
         case .ruby: 101...250
-        case .obsidian: 251...499
-        case .rainbow: 500...Int.max
+        case .amber: 251...450
+        case .silk: 451...750
+        case .porcelain: 751...Int.max
         }
     }
 
-    /// The band's width in legs — Rainbow, the true ceiling, has none.
-    var legsInBand: Int { self == .rainbow ? Int.max : legBand.upperBound - legBand.lowerBound + 1 }
+    /// The band's width in legs — Porcelain, the true ceiling, has none.
+    var legsInBand: Int { self == .porcelain ? Int.max : legBand.upperBound - legBand.lowerBound + 1 }
 
     /// The band's width converted to km at the average leg length — the
     /// budget that resets to zero every time a rank-up happens.
@@ -69,12 +74,13 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .platinum: "Platinum"
         case .diamond: "Diamond"
         case .ruby: "Ruby"
-        case .obsidian: "Obsidian"
-        case .rainbow: "Rainbow"
+        case .amber: "Amber"
+        case .silk: "Silk"
+        case .porcelain: "Porcelain"
         }
     }
 
-    /// Only ever shown for the tier with no next — today just Rainbow.
+    /// Only ever shown for the tier with no next — today just Porcelain.
     var tagline: String {
         switch self {
         case .blackIron: "Every journey starts here."
@@ -83,9 +89,10 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .gold: "Fifty flights strong."
         case .platinum: "Triple digits — a real habit now."
         case .diamond: "Diamond-clear dedication."
-        case .ruby: "Six hundred, and still boarding."
-        case .obsidian: "Legend status."
-        case .rainbow: "A secret worth finding."
+        case .ruby: "Two-fifty, and still climbing."
+        case .amber: "Preserved in flight, one leg at a time."
+        case .silk: "Smooth as the old trade routes."
+        case .porcelain: "A secret worth finding."
         }
     }
 
@@ -101,8 +108,9 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .platinum: "platinum"
         case .diamond: "diamond"
         case .ruby: "ruby"
-        case .obsidian: "obsidian"
-        case .rainbow: "rainbow"
+        case .amber: "amber"
+        case .silk: "silk"
+        case .porcelain: "porcelain"
         }
     }
 
@@ -117,8 +125,9 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .platinum: [Color(red: 0.93, green: 0.95, blue: 0.97), Color(red: 0.66, green: 0.72, blue: 0.77)]
         case .diamond: [Color(red: 0.92, green: 0.99, blue: 1.00), Color(red: 0.37, green: 0.75, blue: 0.88)]
         case .ruby: [Color(red: 1.00, green: 0.54, blue: 0.54), Color(red: 0.48, green: 0.05, blue: 0.12)]
-        case .obsidian: [Color(red: 0.23, green: 0.14, blue: 0.31), Color(red: 0.02, green: 0.02, blue: 0.04)]
-        case .rainbow: [Color(red: 0.55, green: 0.95, blue: 0.85), Color(red: 0.30, green: 0.40, blue: 0.85)]
+        case .amber: [Color(red: 1.00, green: 0.82, blue: 0.40), Color(red: 0.72, green: 0.42, blue: 0.05)]
+        case .silk: [Color(red: 0.98, green: 0.90, blue: 0.86), Color(red: 0.80, green: 0.63, blue: 0.58)]
+        case .porcelain: [Color(red: 0.98, green: 0.99, blue: 1.00), Color(red: 0.55, green: 0.65, blue: 0.82)]
         }
     }
 
@@ -131,8 +140,9 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         case .platinum: Color(red: 0.81, green: 0.88, blue: 0.93)
         case .diamond: Color(red: 0.74, green: 0.94, blue: 1.00)
         case .ruby: Color(red: 0.85, green: 0.12, blue: 0.25)
-        case .obsidian: Color(red: 0.48, green: 0.31, blue: 0.68)
-        case .rainbow: Color(red: 0.70, green: 0.85, blue: 0.60)
+        case .amber: Color(red: 0.88, green: 0.56, blue: 0.10)
+        case .silk: Color(red: 0.90, green: 0.75, blue: 0.70)
+        case .porcelain: Color(red: 0.30, green: 0.42, blue: 0.68)
         }
     }
 }

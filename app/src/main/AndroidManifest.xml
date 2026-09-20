@@ -110,10 +110,10 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".TierIconObsidian"
+            android:name=".TierIconAmber"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_tier_obsidian"
+            android:icon="@mipmap/ic_launcher_tier_amber"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -121,10 +121,21 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".TierIconRainbow"
+            android:name=".TierIconSilk"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_tier_rainbow"
+            android:icon="@mipmap/ic_launcher_tier_silk"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".TierIconPorcelain"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_tier_porcelain"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

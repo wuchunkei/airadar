@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 import java.time.Instant
 
 /**
- * The eight visible tiers, plus one hidden one above them — run the way a
+ * The nine visible tiers, plus one hidden one above them — run the way a
  * real airline's elite tiers are: promotion happens on legs flown OR
  * distance flown SINCE THE LAST RANK-UP, whichever gets there first, and
  * both counters reset to zero the moment that happens — a long-haul
@@ -14,17 +14,20 @@ import java.time.Instant
  * elsewhere — My's own stats panel — is a separate, never-reset count; it
  * just isn't what decides a rank-up.)
  *
- * Rainbow (500+ legs) is a secret: nothing before it hints it exists, and
+ * Porcelain (751+ legs) is a secret: nothing before it hints it exists, and
  * reaching it is rare enough that it also carries a sequence number — the
  * Nth traveller ever to get there — awarded by the backend, never the
- * client ([BackendClient.claimRainbow]).
+ * client ([BackendClient.claimPorcelain]). It's the true ceiling this ladder
+ * used to call Rainbow -- renamed, and split off from what used to be one
+ * enormous top band (Obsidian, then Rainbow) into three narrower ones
+ * (Amber, Silk, Porcelain).
  *
  * Declared in ladder order -- Kotlin enums compare by declaration (ordinal)
  * order, matching iOS's own `rawValue` ordering, so `<`/`compareTo` need no
  * extra code here.
  */
 enum class MilestoneTier {
-    BLACK_IRON, BRONZE, SILVER, GOLD, PLATINUM, DIAMOND, RUBY, OBSIDIAN, RAINBOW;
+    BLACK_IRON, BRONZE, SILVER, GOLD, PLATINUM, DIAMOND, RUBY, AMBER, SILK, PORCELAIN;
 
     /** The lifetime leg-count band this tier owns -- legs 1-10 are Black
      * Iron, 11-20 Bronze, and so on, however a traveller actually gets
@@ -38,12 +41,13 @@ enum class MilestoneTier {
             PLATINUM -> 51..75
             DIAMOND -> 76..100
             RUBY -> 101..250
-            OBSIDIAN -> 251..499
-            RAINBOW -> 500..Int.MAX_VALUE
+            AMBER -> 251..450
+            SILK -> 451..750
+            PORCELAIN -> 751..Int.MAX_VALUE
         }
 
-    /** The band's width in legs -- Rainbow, the true ceiling, has none. */
-    val legsInBand: Int get() = if (this == RAINBOW) Int.MAX_VALUE else legBand.last - legBand.first + 1
+    /** The band's width in legs -- Porcelain, the true ceiling, has none. */
+    val legsInBand: Int get() = if (this == PORCELAIN) Int.MAX_VALUE else legBand.last - legBand.first + 1
 
     /** The band's width converted to km at the average leg length -- the
      * budget that resets to zero every time a rank-up happens. */
@@ -68,11 +72,12 @@ enum class MilestoneTier {
             PLATINUM -> "Platinum"
             DIAMOND -> "Diamond"
             RUBY -> "Ruby"
-            OBSIDIAN -> "Obsidian"
-            RAINBOW -> "Rainbow"
+            AMBER -> "Amber"
+            SILK -> "Silk"
+            PORCELAIN -> "Porcelain"
         }
 
-    /** Only ever shown for the tier with no next -- today just Rainbow. */
+    /** Only ever shown for the tier with no next -- today just Porcelain. */
     val tagline: String
         get() = when (this) {
             BLACK_IRON -> "Every journey starts here."
@@ -81,9 +86,10 @@ enum class MilestoneTier {
             GOLD -> "Fifty flights strong."
             PLATINUM -> "Triple digits — a real habit now."
             DIAMOND -> "Diamond-clear dedication."
-            RUBY -> "Six hundred, and still boarding."
-            OBSIDIAN -> "Legend status."
-            RAINBOW -> "A secret worth finding."
+            RUBY -> "Two-fifty, and still climbing."
+            AMBER -> "Preserved in flight, one leg at a time."
+            SILK -> "Smooth as the old trade routes."
+            PORCELAIN -> "A secret worth finding."
         }
 
     /** The real artwork's file key -- `tier_<key>_logo` under
@@ -98,8 +104,9 @@ enum class MilestoneTier {
             PLATINUM -> "platinum"
             DIAMOND -> "diamond"
             RUBY -> "ruby"
-            OBSIDIAN -> "obsidian"
-            RAINBOW -> "rainbow"
+            AMBER -> "amber"
+            SILK -> "silk"
+            PORCELAIN -> "porcelain"
         }
 
     /** Placeholder centre -> edge palette -- only ever seen if [artKey]'s
@@ -113,8 +120,9 @@ enum class MilestoneTier {
             PLATINUM -> listOf(Color(0xFFEDF2F7), Color(0xFFA8B8C4))
             DIAMOND -> listOf(Color(0xFFEBFDFF), Color(0xFF5EBFE0))
             RUBY -> listOf(Color(0xFFFF8A8A), Color(0xFF7A0D1F))
-            OBSIDIAN -> listOf(Color(0xFF3B234F), Color(0xFF05050A))
-            RAINBOW -> listOf(Color(0xFF8CF2D9), Color(0xFF4D66D9))
+            AMBER -> listOf(Color(0xFFFFD166), Color(0xFFB86B0D))
+            SILK -> listOf(Color(0xFFFAE6DB), Color(0xFFCCA093))
+            PORCELAIN -> listOf(Color(0xFFFAFCFF), Color(0xFF8CA6D1))
         }
 
     val rimColor: Color
@@ -126,8 +134,9 @@ enum class MilestoneTier {
             PLATINUM -> Color(0xFFCFE1EC)
             DIAMOND -> Color(0xFFBCF0FF)
             RUBY -> Color(0xFFD91F40)
-            OBSIDIAN -> Color(0xFF7A4FAD)
-            RAINBOW -> Color(0xFFB3D999)
+            AMBER -> Color(0xFFE08F1A)
+            SILK -> Color(0xFFE6BFB3)
+            PORCELAIN -> Color(0xFF4D6BAD)
         }
 
     companion object {

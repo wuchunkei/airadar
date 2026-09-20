@@ -120,13 +120,13 @@ fun AvatarView(url: String?, initial: String, tint: Color, size: androidx.compos
  * actually is, "X/Y flights · X/Y km" written over the line itself, and how
  * many flights this traveller has fed the system written below it. The left
  * end is the traveller's own photo, not a badge -- this is their card, the
- * tier medallion only marks where the route is headed. Rainbow, with
+ * tier medallion only marks where the route is headed. Porcelain, with
  * nothing beyond it, just shows the badge and its tagline.
  */
 @Composable
 fun TierProgressCard(
     standing: TierStanding,
-    rainbowRank: Int?,
+    porcelainRank: Int?,
     avatarUrl: String?,
     avatarInitial: String,
     avatarTint: Color,
@@ -185,9 +185,9 @@ fun TierProgressCard(
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     // Hidden tier, hidden bragging right: which-numbered
                     // traveller ever to get here, once the backend confirms it.
-                    if (rainbowRank != null) {
+                    if (porcelainRank != null) {
                         Text(
-                            "#$rainbowRank",
+                            "#$porcelainRank",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

@@ -49,19 +49,19 @@ object FlightStore {
     /** Where the tier ladder puts this traveller right now. */
     val tierStanding: TierStanding get() = TierStanding.compute(completedFlights)
 
-    /** Rainbow's sequence number, once claimed -- "the Nth traveller here".
+    /** Porcelain's sequence number, once claimed -- "the Nth traveller here".
      * Never set locally: only the backend hands one out, and only once
-     * standing genuinely reads Rainbow. */
-    private val _rainbowRank = MutableLiveData<Int?>(null)
-    val rainbowRank: LiveData<Int?> = _rainbowRank
+     * standing genuinely reads Porcelain. */
+    private val _porcelainRank = MutableLiveData<Int?>(null)
+    val porcelainRank: LiveData<Int?> = _porcelainRank
 
     /** Safe to call any time standing is checked: an existing claim just
      * comes back unchanged, so there's no harm calling this opportunistically. */
-    fun refreshRainbowRank() {
-        if (tierStanding.tier != MilestoneTier.RAINBOW || !synced) return
+    fun refreshPorcelainRank() {
+        if (tierStanding.tier != MilestoneTier.PORCELAIN || !synced) return
         scope.launch {
-            val rank = runCatching { BackendClient.claimRainbow() }.getOrNull()
-            withContext(Dispatchers.Main) { _rainbowRank.value = rank }
+            val rank = runCatching { BackendClient.claimPorcelain() }.getOrNull()
+            withContext(Dispatchers.Main) { _porcelainRank.value = rank }
         }
     }
 

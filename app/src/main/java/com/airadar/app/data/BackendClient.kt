@@ -128,17 +128,17 @@ object BackendClient {
 
     /** Idempotent: a traveller who already claimed a rank just gets it back.
      * Throws (400) if the server's own re-walk of this account's trips
-     * doesn't actually land on Rainbow -- the client's own tier reading is
+     * doesn't actually land on Porcelain -- the client's own tier reading is
      * never trusted for a rank that has to stay unique. */
-    suspend fun claimRainbow(): Int? = withContext(Dispatchers.IO) {
-        rainbowRank(authed("POST", "tiers/rainbow/claim"))
+    suspend fun claimPorcelain(): Int? = withContext(Dispatchers.IO) {
+        porcelainRank(authed("POST", "tiers/porcelain/claim"))
     }
 
-    suspend fun myRainbowRank(): Int? = withContext(Dispatchers.IO) {
-        rainbowRank(authed("GET", "tiers/rainbow/mine"))
+    suspend fun myPorcelainRank(): Int? = withContext(Dispatchers.IO) {
+        porcelainRank(authed("GET", "tiers/porcelain/mine"))
     }
 
-    private fun rainbowRank(o: JSONObject): Int? = if (o.has("rank") && !o.isNull("rank")) o.getInt("rank") else null
+    private fun porcelainRank(o: JSONObject): Int? = if (o.has("rank") && !o.isNull("rank")) o.getInt("rank") else null
 
     // ---- community crowd-review ---------------------------------------------
 
