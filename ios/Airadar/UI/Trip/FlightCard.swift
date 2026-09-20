@@ -9,6 +9,8 @@ struct FlightCard: View {
     let onTap: () -> Void
 
     @State private var expandedShares = false
+    @State private var routeValid = false
+    @State private var showMapChooser = false
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var store: FlightStore
 
@@ -57,7 +59,8 @@ struct FlightCard: View {
                 }
                 AirportRow(city: flight.departureAirport.map { "\($0.city), \($0.countryCode)" }, code: flight.departure,
                            terminal: flight.departureTerminal, time: flight.shownTime(arrival: false, forceSystemZone: forceSystemZone),
-                           ink: ink, muted: inkMuted)
+                           ink: ink, muted: inkMuted, highlighted: routeValid,
+                           onTap: routeValid ? { showMapChooser = true } : nil)
                 AirportRow(city: flight.arrivalAirport.map { "\($0.city), \($0.countryCode)" }, code: flight.arrival,
                            terminal: flight.arrivalTerminal, time: flight.shownTime(arrival: true, forceSystemZone: forceSystemZone),
                            ink: ink, muted: inkMuted)
@@ -97,6 +100,23 @@ struct FlightCard: View {
             }
         }
         .buttonStyle(.plain)
+        // Same last-24h-before-departure window as the detail sheet's own
+        // check -- any earlier and "can I drive there right now" isn't the
+        // traveller's question yet.
+        .task(id: flight.id) {
+            routeValid = false
+            guard flight.phase == .upcoming, let airport = flight.departureAirport,
+                  let departs = flight.departureInstant,
+                  departs.timeIntervalSinceNow > 0, departs.timeIntervalSinceNow < 86_400 else { return }
+            routeValid = await RouteValidity.hasDrivableRoute(to: airport)
+        }
+        .confirmationDialog("Navigate to \(flight.departure)", isPresented: $showMapChooser, titleVisibility: .visible) {
+            ForEach(MapProvider.available) { provider in
+                Button(provider.label) {
+                    if let airport = flight.departureAirport { provider.open(to: airport) }
+                }
+            }
+        }
     }
 
     private var cardBackground: some ShapeStyle {
@@ -117,12 +137,20 @@ struct AirportRow: View {
     let time: ShownTime
     let ink: Color
     let muted: Color
+    var highlighted: Bool = false
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    Text(code).font(.title3.bold()).foregroundStyle(ink)
+                    let codeText = Text(code).font(.title3.bold())
+                        .foregroundStyle(highlighted ? Color(red: 0.043, green: 0.435, blue: 0.831) : ink)
+                    if let onTap {
+                        Button(action: onTap) { codeText }.buttonStyle(.plain)
+                    } else {
+                        codeText
+                    }
                     if let terminal { Text("T\(normalizeTerminal(terminal))").font(.title3.bold()).foregroundStyle(ink) }
                 }
                 Text(city ?? "").font(.caption).foregroundStyle(muted)
