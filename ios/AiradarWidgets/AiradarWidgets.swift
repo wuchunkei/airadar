@@ -116,6 +116,14 @@ struct FlightLiveActivity: Widget {
                         RouteLine(state: s).frame(height: 16)
                     }
                     .padding(.top, 2)
+                    // The bottom region spans the island's full width, so its
+                    // own rounded corners are the widest ones on the whole
+                    // shape -- the route line's end node and plane, drawn
+                    // right at the edge, read as clipped by that curve the
+                    // same way the top rows did. RouteLine sizes itself off
+                    // the space it's actually given, so this alone pulls
+                    // everything in without touching its own math.
+                    .padding(.horizontal, 8)
                 }
             } compactLeading: {
                 if s.stage == .landed {

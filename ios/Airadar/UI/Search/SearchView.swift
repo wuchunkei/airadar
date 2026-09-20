@@ -17,6 +17,11 @@ struct SearchView: View {
     @State private var candidates: [Flight] = []
     @State private var showCandidates = false
     @FocusState private var numberFieldFocused: Bool
+    /// The previewed flight's real track, if OpenSky has one -- wired here too
+    /// (not just once a flight is actually a trip) so a completed or in-air
+    /// flight's map shows what really happened, rather than the scheduled
+    /// route's plain arc, before "Add to trips" is ever tapped.
+    @State private var trackStatus: TrackStatus?
 
     private static let shown: DateFormatter = {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US"); f.dateFormat = "yyyy-MM-dd (EEEE)"; return f
@@ -90,7 +95,8 @@ struct SearchView: View {
             }
         }
         .sheet(item: $result) { f in
-            FlightDetailSheet(flight: f, forceSystemZone: settings.forceSystemZone, onDismiss: { result = nil },
+            FlightDetailSheet(flight: f, forceSystemZone: settings.forceSystemZone, trackStatus: trackStatus,
+                              onLoadTrack: { loadTrack(f) }, onDismiss: { result = nil; trackStatus = nil },
                               primaryAction: ("Add to trips", { result = nil; onAdd(f) }))
         }
         .sheet(isPresented: $showCandidates) {
@@ -122,6 +128,25 @@ struct SearchView: View {
                 if deduped.count <= 1 { result = deduped.first }
                 else { candidates = deduped; showCandidates = true }
             } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    /// Not tied to FlightStore -- this flight isn't a trip yet, may never
+    /// become one -- so the fetched track is applied straight onto the
+    /// preview's own `result`, not synced anywhere.
+    private func loadTrack(_ flight: Flight) {
+        trackStatus = .loading
+        Task {
+            do {
+                let fetched = try await OpenSkyClient.shared.fetchTrack(flight)
+                var updated = flight
+                updated.track = fetched.points
+                updated.trackFlownOn = fetched.flownOn
+                result = updated
+                trackStatus = .loaded
+            } catch {
+                trackStatus = .failed(error.localizedDescription)
+            }
         }
     }
 }

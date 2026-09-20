@@ -19,6 +19,10 @@ struct FlightDetailSheet<Actions: View>: View {
     /// a progress cut is for, and only shown while this stays too short to
     /// draw on its own.
     @State private var liveTrail: [TrackPoint] = []
+    /// What the aircraft is over right now, from the same live fix -- a
+    /// courtesy note, refreshed on the same 5-minute cadence as the fix
+    /// itself, not a fact kept anywhere past this sheet being open.
+    @State private var passingLocation: String?
     /// Learned once (from whichever of adsb.lol/OpenSky answers first) and
     /// kept for the rest of this session, so OpenSky's own live lookup can
     /// use its cheap icao24 filter on every later poll instead of the
@@ -66,6 +70,9 @@ struct FlightDetailSheet<Actions: View>: View {
 
                 header
                 codes
+                if flight.phase == .inProgress, let passingLocation {
+                    Label("Over \(passingLocation)", systemImage: "location.fill").font(.caption).foregroundStyle(.secondary)
+                }
                 if let note = previousFlightNote {
                     Label(note, systemImage: "arrow.uturn.backward.circle").font(.caption).foregroundStyle(.secondary)
                 }
@@ -146,6 +153,7 @@ struct FlightDetailSheet<Actions: View>: View {
                         // 30-day TTL, no extra retention logic of its own.
                         store.setTrack(flight.id, points: storedTrail, flownOn: flight.departureDay)
                     }
+                    passingLocation = await PassingLocation.describe(fix.coordinate)
                 }
                 try? await Task.sleep(for: .seconds(300))
             }
