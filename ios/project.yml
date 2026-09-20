@@ -102,7 +102,10 @@ targets:
               NSIncludesSubdomains: true
               NSExceptionRequiresForwardSecrecy: false
               NSExceptionMinimumTLSVersion: TLSv1.2
-        LSApplicationQueriesSchemes: [googlegmail]
+        # googlegmail: "open in Gmail" after importing mail. comgooglemaps/iosamap:
+        # so the departure-airport navigation chooser can tell which map apps
+        # are actually installed, to offer only those (AirportNavigation.swift).
+        LSApplicationQueriesSchemes: [googlegmail, comgooglemaps, iosamap]
         # Sign in with Google: the *iOS* OAuth client id, and its reversed form as a URL scheme.
         GIDClientID: $(GID_CLIENT_ID)
         GIDServerClientID: $(GID_SERVER_CLIENT_ID)

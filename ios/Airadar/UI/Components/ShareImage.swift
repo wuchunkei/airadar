@@ -87,6 +87,30 @@ enum ShareImage {
             let points = path.map { snap.point(for: $0) }
             cg.addLines(between: points)
             cg.strokePath()
+            // A midpoint arrowhead, same shape and logic as the app's own
+            // live map (ArrowedPolylineRenderer) -- so a picture shared to
+            // someone with no Airadar still shows which way the flight goes,
+            // not just that a line connects the two airports.
+            if points.count >= 2 {
+                let mid = points.count / 2
+                let a = points[max(0, mid - 1)], b = points[min(points.count - 1, mid + 1)]
+                let m = points[mid]
+                let angle = atan2(b.y - a.y, b.x - a.x)
+                let size: CGFloat = 10
+                cg.saveGState()
+                cg.translateBy(x: m.x, y: m.y)
+                cg.rotate(by: angle)
+                cg.move(to: CGPoint(x: size, y: 0))
+                cg.addLine(to: CGPoint(x: -size * 0.9, y: -size * 0.8))
+                cg.addLine(to: CGPoint(x: -size * 0.4, y: 0))
+                cg.addLine(to: CGPoint(x: -size * 0.9, y: size * 0.8))
+                cg.closePath()
+                cg.setFillColor(TileMapView.Coordinator.routeColor.cgColor)
+                cg.setStrokeColor(UIColor.white.withAlphaComponent(0.9).cgColor)
+                cg.setLineWidth(1.5)
+                cg.drawPath(using: .fillStroke)
+                cg.restoreGState()
+            }
             for a in [from, to] {
                 let p = snap.point(for: a.coordinate)
                 let dot = CGRect(x: p.x - 6, y: p.y - 6, width: 12, height: 12)

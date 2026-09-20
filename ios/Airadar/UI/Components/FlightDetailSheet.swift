@@ -42,6 +42,11 @@ struct FlightDetailSheet<Actions: View>: View {
     /// history has anything recent -- a courtesy note, not a fact this trip
     /// itself carries.
     @State private var previousFlight: OpenSkyClient.PreviousFlight?
+    /// Whether a real driving route to the departure airport exists from here
+    /// -- only checked inside the last 24h before departure, since that's the
+    /// only window "tap to navigate" actually matters in.
+    @State private var routeValid = false
+    @State private var showMapChooser = false
     let onDismiss: () -> Void
     var primaryAction: (label: String, action: () -> Void)? = nil
     /// Under the primary one, quieter — "Incorrect" beneath "Correct".
@@ -167,6 +172,48 @@ struct FlightDetailSheet<Actions: View>: View {
             guard let hex = live?.hex else { return }
             previousFlight = try? await OpenSkyClient.shared.previousFlight(icao24: hex, before: flight.departureInstant ?? Date())
         }
+        // The Share button's own map snapshot is the slow part of that flow
+        // (a real MKMapSnapshotter fetch) -- ShareImage.warm exists exactly
+        // to pre-fetch it, but nothing was actually calling it until the
+        // button itself was tapped. Starting it here, the moment this sheet
+        // opens, gives it the traveller's whole time looking at the sheet as
+        // a head start, so the tap that matters lands on an already-warm
+        // cache instead of a cold one. Cheap either way: it's keyed by route
+        // and never touches the server, so warming it for a sheet that never
+        // gets shared costs nothing but a map tile fetch.
+        .task(id: "\(flight.departure)-\(flight.arrival)") {
+            await ShareImage.warm(flight)
+        }
+        // Same idea for the share link itself: creating one is idempotent on
+        // the server (an existing link share for this trip is just handed
+        // back, never duplicated), so asking for it here costs nothing and
+        // means the real tap's own call finds it already minted -- a fast
+        // lookup instead of a fresh insert. Only for a trip that's actually
+        // mine to share -- a friend's shared-in trip never shows the Share
+        // button at all, so there's nothing worth warming for it.
+        .task(id: flight.id) {
+            guard flight.sharedBy == nil else { return }
+            _ = try? await BackendClient.shareTrip(flight.id)
+        }
+        // Only worth asking inside the last day before departure -- any
+        // earlier and "can I drive there right now" isn't the traveller's
+        // question yet, and the fix only means anything for a trip that
+        // hasn't left. A denied/no-fix location or no drivable route both
+        // just leave the code its ordinary colour, never a false blue.
+        .task(id: flight.id) {
+            routeValid = false
+            guard flight.phase == .upcoming, let airport = flight.departureAirport,
+                  let departs = flight.departureInstant,
+                  departs.timeIntervalSinceNow > 0, departs.timeIntervalSinceNow < 86_400 else { return }
+            routeValid = await RouteValidity.hasDrivableRoute(to: airport)
+        }
+        .confirmationDialog("Navigate to \(flight.departure)", isPresented: $showMapChooser, titleVisibility: .visible) {
+            ForEach(MapProvider.available) { provider in
+                Button(provider.label) {
+                    if let airport = flight.departureAirport { provider.open(to: airport) }
+                }
+            }
+        }
     }
 
     /// `flight.callsign` for the rest of this session, or whatever adsbdb just
@@ -213,8 +260,14 @@ struct FlightDetailSheet<Actions: View>: View {
 
     private var codes: some View {
         HStack(spacing: 12) {
+            // Only the departure code is a navigation target -- tapping the
+            // arrival code to navigate somewhere the traveller isn't yet
+            // would just be confusing. Blue exactly when a real drivable
+            // route was found, in the same last-24h window it was checked in.
             BigCode(code: flight.departure, terminal: flight.departureTerminal ?? enrichedFlight?.departureTerminal,
-                    gate: flight.departureGate ?? enrichedFlight?.departureGate, city: flight.departureAirport?.cityCountry, trailing: false)
+                    gate: flight.departureGate ?? enrichedFlight?.departureGate, city: flight.departureAirport?.cityCountry,
+                    trailing: false, highlighted: routeValid,
+                    onTap: routeValid ? { showMapChooser = true } : nil)
             // The way between: an arrow before departure, the plane along a dashed line in the air, done after.
             FlightProgressLine(flight: flight).frame(maxWidth: .infinity).frame(height: 18)
             BigCode(code: flight.arrival, terminal: flight.arrivalTerminal ?? enrichedFlight?.arrivalTerminal,
@@ -345,14 +398,23 @@ extension FlightDetailSheet where Actions == EmptyView {
 
 private struct BigCode: View {
     let code: String, terminal: String?, gate: String?, city: String?, trailing: Bool
+    var highlighted: Bool = false
+    var onTap: (() -> Void)? = nil
+
     var body: some View {
-        VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
+        let content = VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
             Text(city ?? "").font(.caption).foregroundStyle(.secondary)
             Text(code).font(.system(size: 40, weight: .bold))
+                .foregroundStyle(highlighted ? Color(red: 0.043, green: 0.435, blue: 0.831) : .primary)
             if terminal != nil || gate != nil {
                 Text([terminal.map { "Terminal \(normalizeTerminal($0))" }, gate.map { "Gate \($0)" }].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
             }
+        }
+        if let onTap {
+            Button(action: onTap) { content }.buttonStyle(.plain)
+        } else {
+            content
         }
     }
 }

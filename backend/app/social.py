@@ -376,19 +376,68 @@ async def copy_linked(token: str, request: Request, user: dict = Depends(current
     return trip_out(doc)
 
 
+# label/colour for a browser preview -- the same wording and (dark-theme) hues
+# as the apps' own FlightStatus, so the web page and "Finished"'s blue read
+# the same as the card it stands in for.
+_STATUS = {
+    "ON_TIME": ("On time", "#5BD9A8"), "COMPLETED": ("Completed", "#B0ADBA"),
+    "LANDED": ("Finished", "#7FB8FF"), "DELAYED": ("Delayed", "#FFB067"),
+    "CANCELLED": ("Cancelled", "#FF8A80"), "DIVERTED": ("Diverted", "#FF8A80"),
+    "BOARDING": ("Boarding", "#7FB8FF"), "DEPARTED": ("Departed", "#7FB8FF"),
+    "IN_FLIGHT": ("In flight", "#7FB8FF"), "SCHEDULED": ("Scheduled", "#B0ADBA"),
+}
+
+
 @router.get("/s/{token}", response_class=HTMLResponse)
 async def link_page(token: str, request: Request):
-    """What a browser sees; the app itself opens airadar://s/{token}."""
+    """
+    What a browser sees when the app itself isn't there to catch the Universal
+    Link -- a stand-in for the in-app LinkedTripSheet, so someone with no
+    Airadar still gets the same simple trip-card read (who sent it, the route,
+    the times, how the flight stands) before being asked to install the app.
+    """
     _, trip, owner = await _by_token(request.app.state.db, token)
     t = trip_out(trip)
+    name = owner.get("name") or _given_name(owner)
+    initial = name[:1].upper()
+    tint = _color(owner)
+    label, color = _STATUS.get(t.status.value if hasattr(t.status, "value") else t.status, ("Scheduled", "#B0ADBA"))
+    if t.delayMinutes:
+        label = f"{label} {t.delayMinutes}m"
+
+    def airport(code: str, terminal: str | None, when: datetime, align: str) -> str:
+        term = f'<span style="opacity:.7">T{terminal}</span> ' if terminal else ""
+        return f"""<div style="text-align:{align}">
+<div style="font-size:30px;font-weight:700">{term}{code}</div>
+<div style="font-size:15px;font-weight:600;margin-top:2px">{when.strftime('%H:%M')}</div>
+</div>"""
+
     return f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{t.flightNumber} · Airadar</title>
-<body style="font-family:system-ui;margin:0;padding:32px;background:#0f1115;color:#eee">
-<p style="color:#9aa">{owner.get("name") or _given_name(owner)} shared a flight</p>
-<h1 style="margin:0">{t.flightNumber} <span style="color:#9aa;font-weight:400">{t.airlineName}</span></h1>
-<h2 style="margin:16px 0">{t.departure} → {t.arrival}</h2>
-<p>{t.departureTime.strftime('%Y-%m-%d %H:%M')} → {t.arrivalTime.strftime('%H:%M')}</p>
-<p style="margin-top:32px"><a href="airadar://s/{token}" style="background:#4f8cff;color:#fff;padding:14px 22px;border-radius:12px;text-decoration:none">Open in Airadar</a></p>
+<body style="font-family:-apple-system,system-ui,sans-serif;margin:0;padding:28px 16px;background:#0f1115;color:#eee;display:flex;justify-content:center">
+<div style="width:100%;max-width:380px">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+    <div style="width:26px;height:26px;border-radius:50%;background:{tint};color:#fff;font-size:12px;font-weight:700;
+                display:flex;align-items:center;justify-content:center;flex:none">{initial}</div>
+    <div style="color:{tint};font-weight:600;font-size:15px">{name} shared a flight</div>
+  </div>
+  <div style="background:#1a1d23;border:0.5px solid #2c3038;border-radius:20px;padding:18px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <div style="font-size:15px;font-weight:500;color:#aab">{t.airlineName}</div>
+      <div style="font-size:15px;font-weight:700">{t.flightNumber}</div>
+    </div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin:16px 0">
+      {airport(t.departure, t.departureTerminal, t.departureTime, "left")}
+      <div style="padding-top:6px;color:#8a8d99">→</div>
+      {airport(t.arrival, t.arrivalTerminal, t.arrivalTime, "right")}
+    </div>
+    <div style="display:inline-block;font-size:12px;font-weight:600;color:{color};background:{color}26;
+                padding:3px 8px;border-radius:6px">{label}</div>
+    <div style="color:#8a8d99;font-size:13px;margin-top:10px">{t.departureTime.strftime('%Y-%m-%d')}</div>
+  </div>
+  <a href="airadar://s/{token}" style="display:block;text-align:center;margin-top:20px;background:#4f8cff;color:#fff;
+     padding:14px 22px;border-radius:14px;text-decoration:none;font-weight:600">Open in Airadar</a>
+</div>
 </body>"""
 
 
