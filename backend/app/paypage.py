@@ -51,22 +51,14 @@ PAGE = """<!doctype html><title>Airadar plans</title>""" + STYLE + """
 <main>
 <h1>Airadar</h1>
 <div class="grid">
-  <button class="btn" id="superior">Superior<small>US$1 / month · sync, friends, 5 past & 10 ahead</small></button>
-  <button class="btn" id="premium">Premium<small>US$5 / month · everything, no limits</small></button>
-  <button class="btn" id="upgrade">Upgrade to Premium<small>Keep your token · pay only the difference</small></button>
+  <button class="btn" id="premium">Premium<small>US$5 / month · unlimited trips & history</small></button>
+  <button class="btn" id="buyout">Premium, once<small>US$50 once · yours for good, no subscription</small></button>
+  <button class="btn" id="share">Share<small>US$0.99 / month · send trips to friends</small></button>
   <button class="btn forgot-btn" id="forgot">Forgot token<small>Find it with your order number</small></button>
 </div>
 </main>
 
 <form id="checkout" method="post" action="/pay/checkout" hidden><input type="hidden" name="plan" id="plan"></form>
-<form id="upgradeForm" method="post" action="/pay/upgrade" hidden><input type="hidden" name="token" id="upgradeToken"></form>
-
-<div class="modal" id="upgradeModal"><div class="card">
-  <h2>Upgrade to Premium</h2><p>Enter your Superior token. What is left of this month is credited against the first Premium month.</p>
-  <input id="upTok" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
-  <div class="err" id="upErr"></div>
-  <div class="row"><button class="btn" id="upCancel" type="button">Cancel</button><button class="btn" id="upGo" type="button">Check</button></div>
-</div></div>
 
 <div class="modal" id="forgotModal"><div class="card">
   <p class="label" id="fLabel">Order number</p>
@@ -78,30 +70,18 @@ PAGE = """<!doctype html><title>Airadar plans</title>""" + STYLE + """
 
 <script>
 const $ = s => document.querySelector(s);
-const sup = $('#superior'), prem = $('#premium'), up = $('#upgrade'), forgot = $('#forgot');
-const all = [sup, prem, up, forgot];
+const prem = $('#premium'), buy = $('#buyout'), share = $('#share'), forgot = $('#forgot');
+const all = [prem, buy, share, forgot];
 function clear(){ all.forEach(b => b.classList.remove('stone','hot')); document.body.classList.remove('forgot'); }
 
-[sup, prem, up].forEach(b => b.addEventListener('mouseenter', clear));
+[prem, buy, share].forEach(b => b.addEventListener('mouseenter', clear));
 // Forgot: the page reddens and the other three turn to cracked stone.
-forgot.addEventListener('mouseenter', () => { clear(); forgot.classList.add('hot'); document.body.classList.add('forgot'); [sup, prem, up].forEach(b => b.classList.add('stone')); });
+forgot.addEventListener('mouseenter', () => { clear(); forgot.classList.add('hot'); document.body.classList.add('forgot'); [prem, buy, share].forEach(b => b.classList.add('stone')); });
 all.forEach(b => b.addEventListener('mouseleave', clear));
 
-sup.addEventListener('click', () => { $('#plan').value = 'superior'; $('#checkout').submit(); });
 prem.addEventListener('click', () => { $('#plan').value = 'premium'; $('#checkout').submit(); });
-
-// Upgrade: the token is checked first; only a live Superior token goes on to Stripe.
-up.addEventListener('click', () => { $('#upgradeModal').classList.add('open'); $('#upTok').focus(); });
-$('#upCancel').addEventListener('click', () => $('#upgradeModal').classList.remove('open'));
-$('#upGo').addEventListener('click', async () => {
-  const token = $('#upTok').value.trim().toUpperCase(); $('#upErr').textContent = '';
-  const r = await fetch('/pay/api/upgrade-check', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({token})});
-  const d = await r.json();
-  if (!r.ok) { $('#upErr').textContent = d.detail || 'Could not check the token.'; return; }
-  $('#upErr').style.color = '#9aa3b2';
-  $('#upErr').textContent = `First month: US$${(d.firstMonthCents/100).toFixed(2)} (US$${(d.creditCents/100).toFixed(2)} of Superior credited). Sending you to Stripe…`;
-  $('#upgradeToken').value = token; setTimeout(() => $('#upgradeForm').submit(), 900);
-});
+buy.addEventListener('click', () => { $('#plan').value = 'premium_buyout'; $('#checkout').submit(); });
+share.addEventListener('click', () => { $('#plan').value = 'share'; $('#checkout').submit(); });
 
 // Forgot: one box. The order number goes in; the token takes its place piece by piece
 // while the label above fades from "Order number" to "Token" — about three seconds in all.

@@ -146,6 +146,7 @@ fun AiradarApp() {
     limitHit?.let { hit ->
         MembershipDialog(
             current = settings.membership.tier,
+            canShare = settings.membership.canShare,
             reason = hit.reason,
             onDismiss = { FlightStore.clearLimitHit() },
             onGetPlan = {
@@ -166,7 +167,7 @@ fun AiradarApp() {
     LaunchedEffect(token) {
         val t = token ?: return@LaunchedEffect
         // A guest does not take part in sharing: the link is simply not recognised.
-        if (!settings.isLoggedIn || !settings.membership.limits.sharing) {
+        if (!settings.isLoggedIn || !settings.membership.canShare) {
             DeepLinks.shareToken.value = null
             return@LaunchedEffect
         }
@@ -240,7 +241,7 @@ fun AiradarApp() {
                 onFriendsClick = { overlay = Overlay.FRIENDS },
                 onCreateFirst = { tab = Tab.SEARCH },
                 // Friends and sharing are for plan holders; a guest sees neither.
-                signedIn = settings.isLoggedIn && settings.membership.limits.sharing,
+                signedIn = settings.isLoggedIn && settings.membership.canShare,
                 onDeleted = { flight ->
                     FlightReminders.cancel(context, flight.id)
                     scope.launch {

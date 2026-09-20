@@ -19,7 +19,7 @@ struct RootView: View {
     @State private var linked: BackendClient.LinkedTrip?
     @State private var toast: String?
 
-    private var canShare: Bool { auth.isSignedIn && (auth.user?.membership.limits.sharing ?? false) }
+    private var canShare: Bool { auth.isSignedIn && (auth.user?.membership.canShare ?? false) }
 
     private func deleted(_ flight: Flight) {
         FlightReminders.cancel(flight.id)
@@ -71,7 +71,7 @@ struct RootView: View {
         .tint(.accentColor)
         // A plan limit was hit somewhere: explain, offer more.
         .sheet(item: $store.limitHit) { hit in
-            MembershipView(current: Entitlements.membership.tier, reason: hit.reason) { store.limitHit = nil }
+            MembershipView(current: Entitlements.membership.tier, canShare: Entitlements.membership.canShare, reason: hit.reason) { store.limitHit = nil }
                 .presentationDetents([.large])
         }
         // A trip someone sent as a link — plan holders only; a guest does not take part in sharing.

@@ -63,15 +63,18 @@ object AuthStore {
         prefs.edit().apply {
             if (t == null) remove("ct.token").remove("ct.tier").remove("ct.until").remove("ct.email")
             else putString("ct.token", t.token).putString("ct.tier", t.tier.name)
-                .putLong("ct.until", t.until.toEpochMilli()).putString("ct.email", t.boundEmail)
+                // -1 stands for a lifetime/buyout token, which has no expiry.
+                .putLong("ct.until", t.until?.toEpochMilli() ?: -1L).putString("ct.email", t.boundEmail)
         }.apply()
         _checkedToken.postValue(t)
     }
 
     private fun loadCheckedToken(): CheckedToken? {
         val token = prefs.getString("ct.token", null) ?: return null
-        val tier = runCatching { Tier.valueOf(prefs.getString("ct.tier", null) ?: "") }.getOrDefault(Tier.SUPERIOR)
-        return CheckedToken(token, tier, Instant.ofEpochMilli(prefs.getLong("ct.until", 0L)), prefs.getString("ct.email", null))
+        val tier = runCatching { Tier.valueOf(prefs.getString("ct.tier", null) ?: "") }.getOrDefault(Tier.PREMIUM)
+        val untilMillis = prefs.getLong("ct.until", -1L)
+        val until = if (untilMillis < 0) null else Instant.ofEpochMilli(untilMillis)
+        return CheckedToken(token, tier, until, prefs.getString("ct.email", null))
     }
 
     val accessToken: String? get() = prefs.getString("accessToken", null)

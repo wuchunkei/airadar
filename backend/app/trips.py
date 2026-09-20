@@ -146,8 +146,17 @@ async def _refresh_live(state, doc: dict) -> dict:
 @router.get("", response_model=list[Trip])
 async def list_trips(request: Request, user: dict = Depends(current_user)):
     state = request.app.state
-    cursor = state.db.trips.find({"userId": user["_id"], "deletedAt": None})
+    db = state.db
+    cursor = db.trips.find({"userId": user["_id"], "deletedAt": None})
     docs = [d async for d in cursor]
+    lim = (await membership(db, user)).limits
+    if lim.pastDays is not None:
+        # A guest's sync reaches PAST_DAYS back, not further -- a trip older
+        # than that just stops appearing, the same as if it had never
+        # synced; nothing about the stored document itself changes; it
+        # reappears the moment the plan does.
+        cutoff = date.today() - timedelta(days=lim.pastDays)
+        docs = [d for d in docs if d["departureTime"].date() >= cutoff]
     return [_out(await _refresh_live(state, d)) for d in docs]
 
 
@@ -159,34 +168,31 @@ async def list_deleted(request: Request, user: dict = Depends(current_user)):
 
 async def _enforce_limits(db, user: dict, trip: TripIn, key: str) -> None:
     """
-    Superior: 5 past trips, 10 ahead (Now + Coming), nothing beyond a month out.
-    Guest-level (lapsed): 1 past trip, a week ahead, 3 trips in all.
-    Premium: no limits. Updating a trip that already exists is always allowed.
+    Guest: one trip in the air or ahead at a time, and a past trip only
+    within PAST_DAYS back. Premium: no limits. Updating a trip that already
+    exists is always allowed -- these gate new trips only.
     """
     m = await membership(db, user)
     lim = m.limits
-    if lim.maxPastTrips is None and lim.futureDays is None and lim.maxTrips is None and lim.maxUpcomingTrips is None:
+    if lim.maxUpcomingTrips is None and lim.pastDays is None and lim.futureDays is None:
         return
     if await db.trips.find_one({"_id": key, "deletedAt": None}):
         return
     today = date.today()
     trip_day = trip.departureTime.date()
-    cursor = db.trips.find({"userId": user["_id"], "deletedAt": None})
-    existing = [d async for d in cursor]
-    past_count = sum(1 for d in existing if d["departureTime"].date() < today)
-    upcoming_count = len(existing) - past_count  # today and ahead: Now and Coming
 
     def refuse(reason: str):
         raise HTTPException(status_code=402, detail={"code": "limit", "tier": m.tier, "error": reason})
 
-    if lim.maxTrips is not None and len(existing) >= lim.maxTrips:
-        refuse(f"{lim.maxTrips} trips is the most this plan keeps.")
-    if trip_day < today and lim.maxPastTrips is not None and past_count >= lim.maxPastTrips:
-        refuse(f"This plan keeps {lim.maxPastTrips} past trip{'s' if lim.maxPastTrips != 1 else ''}.")
-    if trip_day >= today and lim.maxUpcomingTrips is not None and upcoming_count >= lim.maxUpcomingTrips:
-        refuse(f"This plan keeps {lim.maxUpcomingTrips} trips ahead at a time.")
+    if trip_day < today and lim.pastDays is not None and (today - trip_day).days > lim.pastDays:
+        refuse(f"This plan adds past trips up to {lim.pastDays} days back.")
     if trip_day > today and lim.futureDays is not None and (trip_day - today).days > lim.futureDays:
         refuse(f"This plan adds trips up to {lim.futureDays} days ahead.")
+    if trip_day >= today and lim.maxUpcomingTrips is not None:
+        cursor = db.trips.find({"userId": user["_id"], "deletedAt": None})
+        upcoming_count = sum(1 async for d in cursor if d["departureTime"].date() >= today)
+        if upcoming_count >= lim.maxUpcomingTrips:
+            refuse(f"This plan keeps {lim.maxUpcomingTrips} trip{'s' if lim.maxUpcomingTrips != 1 else ''} ahead at a time.")
 
 
 @router.put("/{trip_id}", response_model=Trip)

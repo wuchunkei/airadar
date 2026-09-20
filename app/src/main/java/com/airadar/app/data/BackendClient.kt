@@ -196,7 +196,8 @@ object BackendClient {
                 ?: runCatching { LocalDateTime.parse(raw.take(19)).atOffset(java.time.ZoneOffset.UTC).toInstant() }.getOrNull()
         },
         grace = o.optBoolean("grace", false),
-        token = o.text("token")
+        token = o.text("token"),
+        canShare = o.optBoolean("canShare", false)
     )
 
     /** Before sign-in: is this token live, and may this phone use it? Binds the phone on first use. */
@@ -205,9 +206,9 @@ object BackendClient {
         val o = call("POST", "billing/token/check", JSONObject().put("token", code).put("deviceId", AuthStore.deviceId))
         CheckedToken(
             token = code,
-            tier = runCatching { Tier.valueOf(o.optString("plan").uppercase()) }.getOrDefault(Tier.SUPERIOR),
-            until = o.text("until")?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant() }.getOrNull() }
-                ?: java.time.Instant.now(),
+            tier = runCatching { Tier.valueOf(o.optString("plan").uppercase()) }.getOrDefault(Tier.PREMIUM),
+            // Absent means a lifetime or one-time-buyout token -- no expiry, not "now".
+            until = o.text("until")?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant() }.getOrNull() },
             boundEmail = o.text("boundEmail")
         ).also(AuthStore::saveCheckedToken)
     }

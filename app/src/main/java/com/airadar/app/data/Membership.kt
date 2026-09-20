@@ -5,25 +5,22 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
-enum class Tier { GUEST, SUPERIOR, PREMIUM }
+enum class Tier { GUEST, PREMIUM }
 
 /** What a tier allows; null means no limit. Mirrors billing.py on the server. */
 @Immutable
 data class Limits(
-    val maxPastTrips: Int?,
     /** Trips in the air or ahead — Now and Coming together. */
     val maxUpcomingTrips: Int?,
-    val maxTrips: Int?,
-    val futureDays: Int?,
-    val sharing: Boolean
+    /** How far back a past trip may be added, or kept appearing once synced. */
+    val pastDays: Int?,
+    val futureDays: Int?
 ) {
     companion object {
-        val GUEST = Limits(maxPastTrips = 1, maxUpcomingTrips = null, maxTrips = 3, futureDays = 7, sharing = false)
-        val SUPERIOR = Limits(maxPastTrips = 5, maxUpcomingTrips = 10, maxTrips = null, futureDays = 30, sharing = true)
-        val PREMIUM = Limits(maxPastTrips = null, maxUpcomingTrips = null, maxTrips = null, futureDays = null, sharing = true)
+        val GUEST = Limits(maxUpcomingTrips = 1, pastDays = 7, futureDays = null)
+        val PREMIUM = Limits(maxUpcomingTrips = null, pastDays = null, futureDays = null)
         fun of(tier: Tier) = when (tier) {
             Tier.GUEST -> GUEST
-            Tier.SUPERIOR -> SUPERIOR
             Tier.PREMIUM -> PREMIUM
         }
     }
@@ -34,7 +31,10 @@ data class Membership(
     val tier: Tier,
     val until: Instant?,
     val grace: Boolean = false,
-    val token: String? = null
+    val token: String? = null,
+    /** The Share add-on — its own small subscription, held or not
+     * independent of [tier]; a guest can have it, a Premium member might not. */
+    val canShare: Boolean = false
 ) {
     val limits: Limits get() = Limits.of(tier)
 
@@ -45,12 +45,13 @@ data class Membership(
 
 /** A token the traveller entered and the server accepted for this phone — before or without sign-in. */
 @Immutable
-data class CheckedToken(val token: String, val tier: Tier, val until: Instant, val boundEmail: String?)
+data class CheckedToken(val token: String, val tier: Tier, val until: Instant?, val boundEmail: String?)
 
 /** Plans are bought on the web (Stripe) and redeemed here with a token. */
 object Plans {
-    const val SUPERIOR_PRICE = "US$1 / month"
     const val PREMIUM_PRICE = "US$5 / month"
+    const val PREMIUM_BUYOUT_PRICE = "US$50 once"
+    const val SHARE_PRICE = "US$0.99 / month"
     val payUrl: String get() = com.airadar.app.BuildConfig.BACKEND_URL.trimEnd('/') + "/pay"
 }
 
@@ -73,7 +74,7 @@ object Entitlements {
 
     val membership: Membership
         get() {
-            if (!paywallEnabled) return Membership(Tier.PREMIUM, null)
+            if (!paywallEnabled) return Membership(Tier.PREMIUM, null, canShare = true)
             return if (AuthStore.isSignedIn) AuthStore.user.value?.membership ?: Membership.GUEST else Membership.GUEST
         }
 
@@ -86,17 +87,16 @@ object Entitlements {
         if (live.any { it.id == flight.id }) return
         val today = LocalDate.now()
         val day = flight.departureTime.toLocalDate()
-        val past = live.count { it.departureTime.toLocalDate() < today }
 
-        lim.maxTrips?.let { if (live.size >= it) throw LimitReached("$it trips is the most this plan keeps.", m.tier) }
-        if (day < today) lim.maxPastTrips?.let {
-            if (past >= it) throw LimitReached("This plan keeps $it past trip${if (it == 1) "" else "s"}.", m.tier)
-        }
-        if (day >= today) lim.maxUpcomingTrips?.let {
-            if (live.size - past >= it) throw LimitReached("This plan keeps $it trips ahead at a time.", m.tier)
+        if (day < today) lim.pastDays?.let {
+            if (ChronoUnit.DAYS.between(day, today) > it) throw LimitReached("This plan adds past trips up to $it days back.", m.tier)
         }
         if (day > today) lim.futureDays?.let {
             if (ChronoUnit.DAYS.between(today, day) > it) throw LimitReached("This plan adds trips up to $it days ahead.", m.tier)
+        }
+        if (day >= today) lim.maxUpcomingTrips?.let {
+            val upcoming = live.count { f -> f.departureTime.toLocalDate() >= today }
+            if (upcoming >= it) throw LimitReached("This plan keeps $it trip${if (it == 1) "" else "s"} ahead at a time.", m.tier)
         }
     }
 }

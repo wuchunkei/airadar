@@ -1,23 +1,42 @@
 """
-Membership tiers, paid through Stripe on a web page, unlocked in the app with a token.
+Membership: free vs Premium, paid through Stripe on a web page and unlocked
+in the app with a token, plus a separate Share add-on that either tier can
+hold independently.
 
-  guest     no token — the app works with small limits, no sign-in
-  superior  US$1/month
-  premium   US$5/month
+  guest     no token — signed in, searching, reminders and the tier ladder
+            all work; My Trips holds one trip at a time, and a past trip may
+            only be added (or kept syncing) up to PAST_DAYS back
+  premium   unlocks everything guest doesn't — paid monthly, or once as a
+            lifetime buyout (both mint the same kind of token; a lifetime
+            one just never expires)
+
+Sharing is NOT part of either tier: it's its own SHARE_PRICE/month add-on,
+held or not independent of the main plan, because a guest and a Premium
+member might each want it (or not) on their own.
 
 Paying on /pay (Stripe Checkout) mints a token (a UUID) tied to the Stripe
-subscription. Only a hash of the token is stored, so a copy of the database
-does not give away anyone's plan; "Forgot token" therefore issues a fresh
-token rather than showing the old one, which is gone for good.
+subscription, or to nothing at all for a one-time buyout. Only a hash of the
+token is stored, so a copy of the database does not give away anyone's plan;
+"Forgot token" therefore issues a fresh token rather than showing the old
+one, which is gone for good.
 In the app the token comes first: it is checked and bound to that phone, and
 only then may the traveller sign in with Google; the first Google account used
 with the token is bound to it too. Another phone, or another account on the
-same phone, is refused. The token stays valid while Stripe says the
-subscription is paid, plus GRACE_DAYS. An order number finds a token again.
+same phone, is refused. A subscription token stays valid while Stripe says
+it is paid, plus GRACE_DAYS; a lifetime or buyout token never expires. An
+order number finds a token again.
 
-Upgrading keeps the token: the unused part of the Superior month is credited
-against the first Premium month, the Superior subscription is cancelled, and
-the token simply becomes Premium.
+IMPORTANT — not yet compliant for the App Store: Apple's guideline 3.1.1
+generally requires unlocking in-app digital content through native In-App
+Purchase, not an external checkout page like this one. This module's Stripe
+flow is fine for the web and for Android (Google is more permissive here,
+though Play's own policies still prefer Play Billing for digital goods
+sold for use inside the app), but shipping it as the iOS purchase path
+as-is risks rejection. Swapping in StoreKit 2 (iOS) / Play Billing
+(Android) for the actual purchase step, with this module's token concept
+becoming the thing a receipt gets validated into server-side, is a
+separate, real piece of work -- flagged here rather than silently done
+either way.
 """
 
 import hashlib
@@ -32,8 +51,6 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from bson import ObjectId
-
 from .auth import current_user
 
 router = APIRouter(tags=["billing"])
@@ -47,31 +64,31 @@ router = APIRouter(tags=["billing"])
 PAYWALL_ENABLED = False
 
 GRACE_DAYS = 3  # a paid plan keeps working this long after its period ends
-PLANS = {"superior": "Superior", "premium": "Premium"}
-PRICE_CENTS = {"superior": 100, "premium": 500}
-PRICES = {"superior": "US$1 / month", "premium": "US$5 / month"}
+PAST_DAYS = 7  # how far back a guest's past trips reach -- both adding one and syncing one already stored
+# The actual prices live in Stripe (the STRIPE_PRICE_* env vars below, and
+# the /pay page's own copy) -- not duplicated here as figures that could
+# drift from what Stripe is really charging.
+PLANS = {"premium": "Premium", "share": "Share"}
 
 
 class Limits(BaseModel):
-    maxPastTrips: int | None  # None = unlimited
-    maxUpcomingTrips: int | None  # trips in the air or ahead
-    maxTrips: int | None  # everything together
-    futureDays: int | None
-    sharing: bool
+    maxUpcomingTrips: int | None  # trips in the air or ahead, at a time
+    pastDays: int | None  # how far back a past trip may be added or kept appearing; None = unlimited
+    futureDays: int | None  # how far ahead a trip may be added; None = unlimited
 
 
 LIMITS = {
-    "guest": Limits(maxPastTrips=1, maxUpcomingTrips=None, maxTrips=3, futureDays=7, sharing=False),
-    "superior": Limits(maxPastTrips=5, maxUpcomingTrips=10, maxTrips=None, futureDays=30, sharing=True),
-    "premium": Limits(maxPastTrips=None, maxUpcomingTrips=None, maxTrips=None, futureDays=None, sharing=True),
+    "guest": Limits(maxUpcomingTrips=1, pastDays=PAST_DAYS, futureDays=None),
+    "premium": Limits(maxUpcomingTrips=None, pastDays=None, futureDays=None),
 }
 
 
 class Membership(BaseModel):
-    tier: str  # guest | superior | premium
-    until: datetime | None  # end of the paid period; grace runs GRACE_DAYS past it
+    tier: str  # guest | premium
+    until: datetime | None  # end of the paid period; grace runs GRACE_DAYS past it; None for guest or a lifetime/buyout token
     grace: bool = False  # past the period end, inside the grace days
     limits: Limits
+    canShare: bool  # the separate Share add-on, independent of tier
 
 
 def _now() -> datetime:
@@ -79,29 +96,39 @@ def _now() -> datetime:
 
 
 def _token_live(tok: dict | None) -> bool:
-    """Paid and inside the period, or within the grace days after it. A cancelled subscription ends at once."""
+    """Paid and inside the period, or within the grace days after it. A
+    cancelled subscription ends at once. A lifetime/buyout token (no
+    currentPeriodEnd) is always live."""
     if not tok or tok.get("status") != "active":
         return False
-    end = tok.get("currentPeriodEnd") or _now()
+    end = tok.get("currentPeriodEnd")
+    if end is None:
+        return True
     return end + timedelta(days=GRACE_DAYS) > _now()
 
 
-def _membership_of(tok: dict | None) -> Membership:
+def _membership_of(tok: dict | None, share_tok: dict | None) -> Membership:
+    can_share = bool(share_tok and _token_live(share_tok))
     if tok and _token_live(tok):
-        plan = tok["plan"]
-        return Membership(tier=plan, until=tok["currentPeriodEnd"], grace=tok["currentPeriodEnd"] <= _now(),
-                          limits=LIMITS[plan])
-    return Membership(tier="guest", until=None, limits=LIMITS["guest"])
+        return Membership(tier="premium", until=tok.get("currentPeriodEnd"),
+                          grace=bool(tok.get("currentPeriodEnd")) and tok["currentPeriodEnd"] <= _now(),
+                          limits=LIMITS["premium"], canShare=can_share)
+    return Membership(tier="guest", until=None, limits=LIMITS["guest"], canShare=can_share)
 
 
 async def membership(db, user: dict) -> Membership:
-    """The tier in force for a signed-in account: its token, if paid and bound to this email."""
+    """The tier in force for a signed-in account: its token, if paid and
+    bound to this email, plus the Share add-on's own token -- an
+    independent purchase, held or not regardless of the main tier."""
     if not PAYWALL_ENABLED:
-        return Membership(tier="premium", until=None, limits=LIMITS["premium"])
+        return Membership(tier="premium", until=None, limits=LIMITS["premium"], canShare=True)
     tok = await db.tokens.find_one({"_id": user["tokenId"]}) if user.get("tokenId") else None
-    if tok and (tok.get("lifetime") or tok.get("boundEmail") == user["email"]):
-        return _membership_of(tok)
-    return _membership_of(None)
+    if tok and not (tok.get("lifetime") or tok.get("boundEmail") == user["email"]):
+        tok = None
+    share_tok = await db.tokens.find_one({"_id": user["shareTokenId"]}) if user.get("shareTokenId") else None
+    if share_tok and not (share_tok.get("lifetime") or share_tok.get("boundEmail") == user["email"]):
+        share_tok = None
+    return _membership_of(tok, share_tok)
 
 
 # ---- Stripe -----------------------------------------------------------------------
@@ -114,13 +141,6 @@ def _stripe():
         raise HTTPException(status_code=500, detail="STRIPE_SECRET_KEY is not set on the server.")
     stripe.api_key = key
     return stripe
-
-
-def _price_id(plan: str) -> str:
-    pid = os.environ.get(f"STRIPE_PRICE_{plan.upper()}", "").strip()
-    if not pid:
-        raise HTTPException(status_code=500, detail=f"STRIPE_PRICE_{plan.upper()} is not set on the server.")
-    return pid
 
 
 def _public_url(request: Request) -> str:
@@ -179,41 +199,30 @@ def _sub_state(sub) -> tuple[str, datetime]:
 
 async def _token_for_session(db, session) -> tuple[dict, str | None]:
     """
-    The token record for a paid Checkout session — created (or, for an upgrade,
-    changed) once — and the plain token if this call is the one that minted it.
-    A later visit to the success page gets the record but no token: it was
-    shown once, and only its hash is kept.
+    The token record for a paid Checkout session — created once — and the
+    plain token if this call is the one that minted it. A later visit to the
+    success page gets the record but no token: it was shown once, and only
+    its hash is kept.
     """
     existing = await db.tokens.find_one({"sessionId": session["id"]})
     if existing:
         return existing, None
     meta = session.get("metadata") or {}
     sub_id = session.get("subscription")
-    status, period_end = ("active", _now() + timedelta(days=31))
     if sub_id:
         status, period_end = _sub_state(_stripe().Subscription.retrieve(sub_id))
-
-    upgrade_of = meta.get("upgradeToken")
-    if upgrade_of:
-        old = await db.tokens.find_one({"_id": ObjectId(upgrade_of)})
-        if old:
-            if old.get("subscriptionId") and old["subscriptionId"] != sub_id:
-                try:
-                    _stripe().Subscription.cancel(old["subscriptionId"])
-                except Exception:
-                    pass  # already gone; the new plan stands either way
-            await db.tokens.update_one(
-                {"_id": old["_id"]},
-                {"$set": {"plan": "premium", "sessionId": session["id"], "subscriptionId": sub_id,
-                          "status": status, "currentPeriodEnd": period_end, "upgradedAt": _now()}},
-            )
-            return await db.tokens.find_one({"_id": old["_id"]}), None
+    else:
+        # A one-time buyout: paid once, no subscription, no expiry -- same
+        # as a lifetime token from LIFETIME_PREMIUM_TOKENS in every way that
+        # matters (_token_live treats a missing currentPeriodEnd as live
+        # forever), just bought rather than seeded.
+        status, period_end = "active", None
 
     plain = _new_token()
     doc = {
         "tokenHash": _hash(plain),
         "order": _new_order(),
-        "plan": meta.get("plan", "superior"),
+        "plan": meta.get("plan", "premium"),
         "sessionId": session["id"],
         "subscriptionId": sub_id,
         "customerId": session.get("customer"),
@@ -258,72 +267,41 @@ async def stripe_webhook(request: Request):
     return {"ok": True}
 
 
-# ---- Checkout, upgrade, lookup --------------------------------------------------------
+# ---- Checkout, lookup ------------------------------------------------------------------
+
+# What a traveller can actually buy: the main plan two ways (recurring or a
+# once-only buyout, both minting a "premium" token -- a buyout's just one
+# with no subscription behind it, so _token_live treats it as never-ending),
+# plus the Share add-on as its own small recurring purchase.
+CHECKOUTS = {
+    "premium": {"mode": "subscription", "price_env": "STRIPE_PRICE_PREMIUM", "token_plan": "premium"},
+    "premium_buyout": {"mode": "payment", "price_env": "STRIPE_PRICE_PREMIUM_BUYOUT", "token_plan": "premium"},
+    "share": {"mode": "subscription", "price_env": "STRIPE_PRICE_SHARE", "token_plan": "share"},
+}
 
 
-def _checkout(request: Request, plan: str, metadata: dict, discounts: list | None = None):
+def _checkout(request: Request, checkout: str):
+    if checkout not in CHECKOUTS:
+        raise HTTPException(status_code=400, detail="Unknown plan.")
+    spec = CHECKOUTS[checkout]
     stripe = _stripe()
     base = _public_url(request)
+    price_id = os.environ.get(spec["price_env"], "").strip()
+    if not price_id:
+        raise HTTPException(status_code=500, detail=f"{spec['price_env']} is not set on the server.")
     session = stripe.checkout.Session.create(
-        mode="subscription",
-        line_items=[{"price": _price_id(plan), "quantity": 1}],
+        mode=spec["mode"],
+        line_items=[{"price": price_id, "quantity": 1}],
         success_url=f"{base}/pay/success?session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"{base}/pay",
-        metadata=metadata,
-        **({"discounts": discounts} if discounts else {}),
+        metadata={"plan": spec["token_plan"], "checkout": checkout},
     )
     return RedirectResponse(session["url"], status_code=303)
 
 
 @router.post("/pay/checkout")
 async def pay_checkout(request: Request, plan: str = Form(...)):
-    if plan not in PLANS:
-        raise HTTPException(status_code=400, detail="Unknown plan.")
-    return _checkout(request, plan, {"plan": plan})
-
-
-def _upgrade_credit_cents(tok: dict) -> int:
-    """The unused share of the current Superior month, in cents, capped at the month's price."""
-    end = tok.get("currentPeriodEnd")
-    if not end:
-        return 0
-    remaining = (end - _now()).total_seconds()
-    fraction = max(0.0, min(1.0, remaining / (30 * 24 * 3600)))
-    return int(round(PRICE_CENTS["superior"] * fraction))
-
-
-class UpgradeCheck(BaseModel):
-    token: str
-
-
-@router.post("/pay/api/upgrade-check")
-async def upgrade_check(body: UpgradeCheck, request: Request):
-    """Is this token a live Superior? If so, what will the first Premium month cost?"""
-    tok = await _find(request.app.state.db, body.token)
-    if not tok:
-        raise HTTPException(status_code=404, detail="No such token.")
-    if tok["plan"] == "premium":
-        raise HTTPException(status_code=400, detail="This token is already Premium.")
-    if not _token_live(tok):
-        raise HTTPException(status_code=402, detail="This token's subscription is not active.")
-    credit = _upgrade_credit_cents(tok)
-    return {"ok": True, "creditCents": credit, "firstMonthCents": PRICE_CENTS["premium"] - credit,
-            "periodEnd": tok["currentPeriodEnd"].isoformat()}
-
-
-@router.post("/pay/upgrade")
-async def pay_upgrade(request: Request, token: str = Form(...)):
-    db = request.app.state.db
-    tok = await _find(db, token)
-    if not tok or tok["plan"] != "superior" or not _token_live(tok):
-        raise HTTPException(status_code=400, detail="Only a live Superior token can be upgraded.")
-    credit = _upgrade_credit_cents(tok)
-    discounts = None
-    if credit > 0:
-        coupon = _stripe().Coupon.create(amount_off=credit, currency="usd", duration="once",
-                                         name=f"Unused Superior time ({tok['order']})")
-        discounts = [{"coupon": coupon["id"]}]
-    return _checkout(request, "premium", {"plan": "premium", "upgradeToken": str(tok["_id"])}, discounts)
+    return _checkout(request, plan)
 
 
 @router.post("/pay/api/lookup")
@@ -352,7 +330,7 @@ class TokenCheck(BaseModel):
 
 class TokenStatus(BaseModel):
     plan: str
-    until: datetime
+    until: datetime | None  # None for a lifetime or one-time-buyout token
     grace: bool
     boundEmail: str | None  # who, if anyone, has already signed in with it
 
@@ -375,13 +353,16 @@ async def token_check(body: TokenCheck, request: Request):
             raise HTTPException(status_code=403, detail="This token is in use on another phone.")
         if not tok.get("deviceId"):
             await db.tokens.update_one({"_id": tok["_id"]}, {"$set": {"deviceId": body.deviceId, "deviceBoundAt": _now()}})
-    return TokenStatus(plan=tok["plan"], until=tok["currentPeriodEnd"], grace=tok["currentPeriodEnd"] <= _now(),
+    end = tok.get("currentPeriodEnd")
+    return TokenStatus(plan=tok["plan"], until=end, grace=bool(end) and end <= _now(),
                        boundEmail=tok.get("boundEmail"))
 
 
 @router.post("/billing/redeem", response_model=Membership)
 async def redeem(body: TokenCheck, request: Request, user: dict = Depends(current_user)):
-    """After Google sign-in: ties the token to this account (first come) and raises the plan."""
+    """After Google sign-in: ties the token to this account (first come) and
+    raises the plan -- to tokenId for a premium token, shareTokenId for a
+    Share one, the two held completely independently."""
     db = request.app.state.db
     tok = await _find(db, body.token)
     if not tok:
@@ -400,7 +381,8 @@ async def redeem(body: TokenCheck, request: Request, user: dict = Depends(curren
             updates.update({"boundEmail": user["email"], "boundAt": _now()})
         if updates:
             await db.tokens.update_one({"_id": tok["_id"]}, {"$set": updates})
-    user = await db.users.find_one_and_update({"_id": user["_id"]}, {"$set": {"tokenId": tok["_id"]}}, return_document=True)
+    field = "shareTokenId" if tok["plan"] == "share" else "tokenId"
+    user = await db.users.find_one_and_update({"_id": user["_id"]}, {"$set": {field: tok["_id"]}}, return_document=True)
     return await membership(db, user)
 
 

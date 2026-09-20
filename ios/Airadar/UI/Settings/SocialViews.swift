@@ -126,24 +126,27 @@ struct RecycleBinView: View {
     }
 }
 
-/// Guest / Superior / Premium side by side; shown whenever a plan limit is hit, and from Settings.
+/// Guest / Premium side by side, plus the separate Share add-on; shown
+/// whenever a plan limit is hit, and from Settings.
 struct MembershipView: View {
     let current: Tier
+    let canShare: Bool
     let reason: String?
     let onDismiss: () -> Void
     @Environment(\.openURL) private var openURL
 
-    private struct PlanRow: Identifiable { let feature: String, guest: String, superior: String, premium: String; var id: String { feature } }
+    private struct PlanRow: Identifiable { let feature: String, guest: String, premium: String; var id: String { feature } }
     private let rows: [PlanRow] = [
-        PlanRow(feature: "Trips ahead", guest: "3 in all", superior: "10", premium: "Unlimited"),
-        PlanRow(feature: "Past trips", guest: "1", superior: "5", premium: "Unlimited"),
-        PlanRow(feature: "Add ahead", guest: "7 days", superior: "30 days", premium: "Any date"),
-        PlanRow(feature: "Cloud sync", guest: "—", superior: "✓", premium: "✓"),
-        PlanRow(feature: "Friends & sharing", guest: "—", superior: "✓", premium: "✓"),
-        PlanRow(feature: "Recycle bin", guest: "—", superior: "✓", premium: "✓"),
-        PlanRow(feature: "Flown tracks", guest: "—", superior: "—", premium: "✓"),
-        PlanRow(feature: "Gmail & calendar import", guest: "—", superior: "—", premium: "✓"),
-        PlanRow(feature: "Price", guest: "Free", superior: Plans.superiorPrice, premium: Plans.premiumPrice),
+        PlanRow(feature: "Trips ahead", guest: "1 at a time", premium: "Unlimited"),
+        PlanRow(feature: "Past trips", guest: "Last 7 days", premium: "Unlimited"),
+        PlanRow(feature: "Add ahead", guest: "Any date", premium: "Any date"),
+        PlanRow(feature: "Cloud sync", guest: "Last 7 days", premium: "Unlimited"),
+        PlanRow(feature: "Reminders & tiers", guest: "✓", premium: "✓"),
+        PlanRow(feature: "Search a flight", guest: "✓", premium: "✓"),
+        PlanRow(feature: "Recycle bin", guest: "—", premium: "✓"),
+        PlanRow(feature: "Flown tracks", guest: "—", premium: "✓"),
+        PlanRow(feature: "Gmail & calendar import", guest: "—", premium: "✓"),
+        PlanRow(feature: "Price", guest: "Free", premium: Plans.premiumPrice),
     ]
 
     var body: some View {
@@ -152,18 +155,29 @@ struct MembershipView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if let reason { Text(reason).foregroundStyle(.red) }
                     Grid(horizontalSpacing: 6, verticalSpacing: 8) {
-                        GridRow { Text(""); cell("Guest", .guest, header: true); cell("Superior", .superior, header: true); cell("Premium", .premium, header: true) }
+                        GridRow { Text(""); cell("Guest", .guest, header: true); cell("Premium", .premium, header: true) }
                         Divider()
                         ForEach(rows) { r in
                             GridRow {
                                 Text(r.feature).font(.caption.weight(.semibold)).gridColumnAlignment(.leading)
                                 cell(r.guest, .guest)
-                                cell(r.superior, .superior)
                                 cell(r.premium, .premium)
                             }
                         }
                     }
-                    Text("Plans are bought on the web and unlocked in the app with a token. Paid plans keep working for 3 days after a period ends.")
+                    Divider().padding(.vertical, 4)
+                    // Not a tier column -- its own small subscription, held
+                    // or not regardless of Guest/Premium.
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Share").font(.subheadline.weight(.semibold))
+                            Text("Send trips to friends — \(Plans.sharePrice)").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: canShare ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(canShare ? Color.accentColor : .secondary)
+                    }
+                    Text("Premium is bought on the web (monthly, or once as a lifetime buyout) and unlocked in the app with a token; a subscription keeps working for 3 days after a period ends.")
                         .font(.caption2).foregroundStyle(.secondary)
                     Button { openURL(Plans.payURL) } label: { Text("Get a plan on the web").fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 6) }
                         .buttonStyle(.glassProminent)

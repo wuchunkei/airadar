@@ -181,24 +181,25 @@ struct SettingsView: View {
     }
 }
 
-/// "Premium · until 2026-10-12", "Superior · grace period", or "No plan".
+/// "Premium · until 2026-10-12", "Premium · lifetime", or "No plan".
 /// Not shown anywhere right now — the paywall is shelved (see
 /// Entitlements.paywallEnabled) — kept for when it comes back.
 struct PlanLine: View {
     let membership: Membership
     private var name: String {
-        switch membership.tier { case .premium: "Premium"; case .superior: "Superior"; case .guest: "No plan" }
+        switch membership.tier { case .premium: "Premium"; case .guest: "No plan" }
     }
     private var color: Color {
         switch membership.tier {
         case .premium: Color(red: 1, green: 0.82, blue: 0.29)
-        case .superior: Color(red: 0.12, green: 0.70, blue: 0.48)
         case .guest: .secondary
         }
     }
     private var suffix: String {
         if membership.grace { return " · Grace period" }
-        guard let until = membership.until else { return "" }
+        guard let until = membership.until else {
+            return membership.tier == .premium ? " · Lifetime" : ""
+        }
         return " · Until " + until.formatted(date: .numeric, time: .omitted)
     }
     var body: some View {

@@ -230,12 +230,11 @@ fun SettingsScreen(
 
 }
 
-/** "Premium · until 2026-10-12", "Superior · grace period", or "No plan". */
+/** "Premium · until 2026-10-12", "Premium · lifetime", or "No plan". */
 @Composable
 private fun PlanLine(tier: Tier, until: java.time.Instant?, grace: Boolean, note: String?) {
     val name = when (tier) {
         Tier.PREMIUM -> "Premium"
-        Tier.SUPERIOR -> "Superior"
         Tier.GUEST -> "No plan"
     }
     val when_ = until?.atZone(ZoneId.systemDefault())?.toLocalDate()
@@ -243,11 +242,11 @@ private fun PlanLine(tier: Tier, until: java.time.Instant?, grace: Boolean, note
         buildString {
             append(name)
             if (grace) append(" · grace period")
-            else if (when_ != null && tier != Tier.GUEST) append(" · until $when_")
+            else if (tier == Tier.PREMIUM) append(if (when_ != null) " · until $when_" else " · lifetime")
         },
         style = MaterialTheme.typography.bodyLarge,
         fontWeight = FontWeight.Medium,
-        color = if (tier == Tier.PREMIUM) Color(0xFFFFD24A) else if (tier == Tier.SUPERIOR) Color(0xFF1FB37A) else MaterialTheme.colorScheme.onSurfaceVariant
+        color = if (tier == Tier.PREMIUM) Color(0xFFFFD24A) else MaterialTheme.colorScheme.onSurfaceVariant
     )
     note?.let {
         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

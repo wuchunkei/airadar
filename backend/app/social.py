@@ -155,8 +155,8 @@ async def list_friends(request: Request, user: dict = Depends(current_user)):
 async def request_friend(body: FriendRequest, request: Request, user: dict = Depends(current_user)):
     db = request.app.state.db
     other_id = ObjectId(body.userId)
-    if not (await membership(db, user)).limits.sharing:
-        raise HTTPException(status_code=402, detail={"code": "limit", "tier": "guest", "error": "Friends need a subscription."})
+    if not (await membership(db, user)).canShare:
+        raise HTTPException(status_code=402, detail={"code": "limit", "tier": "guest", "error": "Friends need the Share add-on."})
     if other_id == user["_id"]:
         raise HTTPException(status_code=400, detail="That is you.")
     other = await db.users.find_one({"_id": other_id})
@@ -250,8 +250,8 @@ async def share_trip(trip_id: str, body: ShareRequest, request: Request, user: d
     if not trip:
         raise HTTPException(status_code=404, detail="No such trip.")
 
-    if not (await membership(db, user)).limits.sharing:
-        raise HTTPException(status_code=402, detail={"code": "limit", "tier": "guest", "error": "Sharing needs a subscription."})
+    if not (await membership(db, user)).canShare:
+        raise HTTPException(status_code=402, detail={"code": "limit", "tier": "guest", "error": "Sharing needs the Share add-on."})
     if body.toUserId:
         to_id = ObjectId(body.toUserId)
         if not await _are_friends(db, user["_id"], to_id):

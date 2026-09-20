@@ -154,7 +154,7 @@ enum BackendClient {
 
     // MARK: - Plan tokens
 
-    private struct TokenStatus: Decodable { let plan: Tier; let until: Date; let grace: Bool; let boundEmail: String? }
+    private struct TokenStatus: Decodable { let plan: Tier; let until: Date?; let grace: Bool; let boundEmail: String? }
 
     /// Before sign-in: is this token live, and may this phone use it? Binds the phone on first use.
     @MainActor
