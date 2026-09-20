@@ -10,7 +10,7 @@ struct FlightDetailSheet<Actions: View>: View {
     var forceSystemZone = false
     var trackStatus: TrackStatus? = nil
     var onLoadTrack: (() -> Void)? = nil
-    /// The aircraft's real position while it flies, asked for every minute the sheet is open.
+    /// The aircraft's real position while it flies, asked every 5 minutes the sheet is open.
     @State private var live: LivePosition?
     /// Every live fix collected this way since the sheet opened -- a real,
     /// if short, breadcrumb trail for a flight OpenSky's own track fetch
@@ -105,7 +105,7 @@ struct FlightDetailSheet<Actions: View>: View {
                 store.applyCallsign(flight.id, callsign: found)
             }
         }
-        // In the air: where the aircraft really is, refreshed every minute --
+        // In the air: where the aircraft really is, refreshed every 5 minutes --
         // adsb.lol and OpenSky polled together once the hex is known (each
         // misses a real fraction of the time; whichever answers on a given
         // cycle covers for the other), adsb.lol alone tried first while it
@@ -132,13 +132,18 @@ struct FlightDetailSheet<Actions: View>: View {
                     let point = TrackPoint(lat: fix.coordinate.latitude, lon: fix.coordinate.longitude, time: fix.seenAt)
                     if liveTrail.last?.lat != point.lat || liveTrail.last?.lon != point.lon { liveTrail.append(point) }
                 }
-                try? await Task.sleep(for: .seconds(60))
+                try? await Task.sleep(for: .seconds(300))
             }
         }
-        // OpenSky gets the first shot at a real track — free, whatever the
-        // phase — quietly, the way it always has.
+        // OpenSky gets the first shot at a real track — quietly, the way it
+        // always has -- but only once the flight has actually left the
+        // ground. A flight that hasn't departed yet always shows the plain
+        // arc, never a borrowed track from some past occurrence of the same
+        // route (that borrowed track could itself be an incomplete or
+        // diverted flight, which reads as a broken route for a trip that
+        // hasn't even happened).
         .task(id: "\(flight.id)|\(callsign ?? "")") {
-            if flight.trackFlownOn == nil, callsign != nil { onLoadTrack?() }
+            if flight.trackFlownOn == nil, callsign != nil, flight.phase != .upcoming { onLoadTrack?() }
         }
         // The backend's own lookup only gets asked once OpenSky has had its
         // shot and failed (or can't even be tried — no ATC callsign at all):
@@ -266,7 +271,9 @@ struct FlightDetailSheet<Actions: View>: View {
     /// trail, real fixes rather than the schedule's own estimate. Empty
     /// while neither exists, which is when `routes`' plain arc takes over.
     private var mapTracks: [MapTrack] {
-        guard let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
+        // A flight that hasn't departed always shows the plain arc, never a
+        // track -- even a stale one stored from before this rule existed.
+        guard flight.phase != .upcoming, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
         if let track = flight.track, track.count >= 2 {
             // The one-time historical fetch on its own goes stale the moment
             // it lands (trackFlownOn turning non-null stops it from ever
@@ -292,7 +299,7 @@ struct FlightDetailSheet<Actions: View>: View {
     /// instead of a straight line -- confirmed a real, not hypothetical,
     /// need: OpenSky's own historical track for a genuinely airborne
     /// aircraft, tested live, had a 9.7-minute hole where every position
-    /// call came back empty. A gap wider than 2.5x the 60-second poll
+    /// call came back empty. A gap wider than 2.5x the 5-minute poll
     /// interval means neither live source answered for at least one whole
     /// cycle -- the interpolated points carry no time of their own, so
     /// they're never mistaken for another real fix by anything reading them.
@@ -301,7 +308,7 @@ struct FlightDetailSheet<Actions: View>: View {
         var out: [TrackPoint] = [points[0]]
         for i in 1..<points.count {
             let prev = points[i - 1], next = points[i]
-            if let t1 = prev.time, let t2 = next.time, t2.timeIntervalSince(t1) > 150 {
+            if let t1 = prev.time, let t2 = next.time, t2.timeIntervalSince(t1) > 750 {
                 let bridge = TileMapView.arcPath(from: CLLocationCoordinate2D(latitude: prev.lat, longitude: prev.lon),
                                                  to: CLLocationCoordinate2D(latitude: next.lat, longitude: next.lon), rank: 0)
                 out += bridge.dropFirst().dropLast().map { TrackPoint(lat: $0.latitude, lon: $0.longitude) }
@@ -389,14 +396,20 @@ struct FlightProgressLine: View {
                     .position(x: w - 4, y: midY)
             case .inProgress, .past:
                 let f = flight.phase == .past ? 1 : flight.fractionFlown
-                let green = Color(red: 0.20, green: 0.70, blue: 0.30)
+                // Flying: green, the same colour the map's own live plane
+                // and track use. Finished: blue, matching a completed
+                // trip's own route line -- no longer "in progress" green
+                // once it's actually done.
+                let tint = flight.phase == .past
+                    ? Color(red: 0.043, green: 0.435, blue: 0.831)
+                    : Color(red: 0.20, green: 0.70, blue: 0.30)
                 Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: w - 8, y: midY)) }
                     .stroke(Color.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                 Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: (w - 8) * f, y: midY)) }
-                    .stroke(green, lineWidth: 2)
+                    .stroke(tint, lineWidth: 2)
                 Circle().fill(Color.secondary).frame(width: 6, height: 6).position(x: w - 4, y: midY)
                 if flight.phase == .inProgress {
-                    Image(systemName: "airplane").font(.system(size: 12)).foregroundStyle(green)
+                    Image(systemName: "airplane").font(.system(size: 12)).foregroundStyle(tint)
                         .position(x: max(6, (w - 8) * f), y: midY)
                 }
             }

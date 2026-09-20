@@ -79,8 +79,8 @@ fun FlightDetailSheet(
                 .navigationBarsPadding()
         ) {
             // Where the aircraft actually is right now (ADS-B), asked every
-            // minute while the flight is in the air -- the same cadence and
-            // source (adsb.lol) the pulsing dot on My's own map uses.
+            // 5 minutes while the flight is in the air -- the same source
+            // (adsb.lol) the pulsing dot on My's own map uses.
             var live by remember(flight.id) { mutableStateOf<LivePosition?>(null) }
             // Every live fix collected this way since the sheet opened -- a
             // real, if short, breadcrumb trail for a flight OpenSky's own
@@ -128,7 +128,7 @@ fun FlightDetailSheet(
                                 liveTrail.add(TrackPoint(fix.lat, fix.lon, fix.seenAt))
                             }
                         }
-                        delay(60_000)
+                        delay(300_000)
                     }
                 }
             }
@@ -141,8 +141,12 @@ fun FlightDetailSheet(
                 // or (until then, or if it never does) this session's own
                 // live-polled breadcrumb trail. Only when neither exists does
                 // the plain arc with a progress cut take over.
+                // A flight that hasn't departed always shows the plain arc,
+                // never a track -- even a stale one stored from before this
+                // rule existed.
                 val storedTrack = flight.track
                 val realTrack = when {
+                    flight.phase == FlightPhase.UPCOMING -> null
                     storedTrack != null && storedTrack.size >= 2 -> {
                         // The one-time historical fetch on its own goes stale
                         // the moment it lands (trackFlownOn turning non-null
@@ -414,7 +418,7 @@ private val dateFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, d 
  * instead of a straight line -- confirmed a real, not hypothetical, need:
  * OpenSky's own historical track for a genuinely airborne aircraft, tested
  * live, had a 9.7-minute hole where every position call came back empty. A
- * gap wider than 2.5x the 60-second poll interval means neither live source
+ * gap wider than 2.5x the 5-minute poll interval means neither live source
  * answered for at least one whole cycle -- the interpolated points carry no
  * time of their own, so they're never mistaken for another real fix by
  * anything reading them. */
@@ -426,7 +430,7 @@ private fun gapFilled(points: List<TrackPoint>): List<TrackPoint> {
         val next = points[i]
         val t1 = prev.time
         val t2 = next.time
-        if (t1 != null && t2 != null && java.time.Duration.between(t1, t2).seconds > 150) {
+        if (t1 != null && t2 != null && java.time.Duration.between(t1, t2).seconds > 750) {
             val bridge = arcPath(prev.lat, prev.lon, next.lat, next.lon)
             bridge.drop(1).dropLast(1).forEach { out += TrackPoint(it.latitude, it.longitude) }
         }
@@ -465,5 +469,5 @@ fun FlightStatus.label(): String = when (this) {
     FlightStatus.BOARDING -> "Boarding"
     FlightStatus.DEPARTED -> "Departed"
     FlightStatus.IN_FLIGHT -> "In flight"
-    FlightStatus.LANDED -> "Landed"
+    FlightStatus.LANDED -> "Finished"
 }

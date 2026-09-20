@@ -35,13 +35,17 @@ enum FlightStatus: String, Codable, Sendable, CaseIterable {
         case .boarding: "Boarding"
         case .departed: "Departed"
         case .inFlight: "In flight"
-        case .landed: "Landed"
+        case .landed: "Finished"
         }
     }
 
     var color: Color {
         switch self {
-        case .onTime, .landed, .completed: Color(red: 0.03, green: 0.48, blue: 0.33)
+        case .onTime, .completed: Color(red: 0.03, green: 0.48, blue: 0.33)
+        // "Finished" reads as its own state, not just another shade of
+        // on-time green -- the same blue the map itself uses for a
+        // completed trip's own route line.
+        case .landed: Color(red: 0.043, green: 0.435, blue: 0.831)
         case .delayed: Color(red: 0.71, green: 0.34, blue: 0.04)
         case .cancelled, .diverted: Color(red: 0.70, green: 0.15, blue: 0.12)
         case .boarding, .departed, .inFlight: Color.accentColor

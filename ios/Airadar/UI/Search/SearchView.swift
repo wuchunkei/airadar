@@ -16,6 +16,7 @@ struct SearchView: View {
     /// simple card each, earliest first, to pick the one that's actually theirs.
     @State private var candidates: [Flight] = []
     @State private var showCandidates = false
+    @FocusState private var numberFieldFocused: Bool
 
     private static let shown: DateFormatter = {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US"); f.dateFormat = "yyyy-MM-dd (EEEE)"; return f
@@ -29,6 +30,7 @@ struct SearchView: View {
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                         .font(.body.monospaced())
+                        .focused($numberFieldFocused)
                         .onChange(of: number) { number = number.uppercased().filter { $0.isLetter || $0.isNumber } }
                         .padding(14)
                         .glassEffect(.regular, in: .rect(cornerRadius: 14))
@@ -64,7 +66,10 @@ struct SearchView: View {
                     }
                 }
                 .padding(16)
+                .contentShape(Rectangle())
+                .onTapGesture { numberFieldFocused = false }
             }
+            .scrollDismissesKeyboard(.immediately)
             .navigationTitle("Search")
         }
         .sheet(isPresented: $showPicker) {
@@ -103,8 +108,19 @@ struct SearchView: View {
             defer { searching = false }
             do {
                 let found = try await BackendClient.flightCandidates(number, on: day)
-                if found.count <= 1 { result = found.first }
-                else { candidates = found; showCandidates = true }
+                // Defends against the server ever handing back the same
+                // physical flight twice (seen live: two byte-identical rows
+                // for one Shenzhen Airlines flight) -- keyed on everything a
+                // traveller would actually look at to tell two candidates
+                // apart, not just an id that's deterministic from number+day
+                // alone and so would be identical for genuine duplicates too.
+                var seen = Set<String>()
+                let deduped = found.filter { f in
+                    let key = "\(f.departure)-\(f.arrival)-\(f.departureTime)-\(f.arrivalTime)"
+                    return seen.insert(key).inserted
+                }
+                if deduped.count <= 1 { result = deduped.first }
+                else { candidates = deduped; showCandidates = true }
             } catch { self.error = error.localizedDescription }
         }
     }
