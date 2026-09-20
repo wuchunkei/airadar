@@ -34,6 +34,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 Toggle("Show times in my time zone", isOn: $settings.forceSystemZone)
+                NavigationLink("App Icon") { AppIconSettingsView() }
             }
             Section("Trips") {
                 NavigationLink("Recycle Bin") { RecycleBinView() }
