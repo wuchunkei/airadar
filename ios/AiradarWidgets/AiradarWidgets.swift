@@ -77,19 +77,32 @@ struct FlightLiveActivity: Widget {
         } dynamicIsland: { context in
             let s = context.state, a = context.attributes
             return DynamicIsland {
+                // The expanded island narrows right where the sensor housing
+                // sits, at the very top of the leading/trailing regions -- a
+                // code+terminal row starting flush against that edge (as
+                // "ICN T2" did) reads as cut off by the housing itself. A
+                // little inward padding, matching the same fix RouteLine
+                // already needed at the bottom for the same reason, keeps it
+                // clear without shrinking anything.
                 DynamicIslandExpandedRegion(.leading) {
-                    if s.stage == .landed {
-                        Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading)
-                    } else {
-                        Endpoint(code: a.departure, terminal: a.departureTerminal, place: a.departureCity, clock: s.departureClock, alignment: .leading)
+                    Group {
+                        if s.stage == .landed {
+                            Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading)
+                        } else {
+                            Endpoint(code: a.departure, terminal: a.departureTerminal, place: a.departureCity, clock: s.departureClock, alignment: .leading)
+                        }
                     }
+                    .padding(.leading, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    if s.stage == .landed {
-                        Facts(state: s, attributes: a)
-                    } else {
-                        Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .trailing)
+                    Group {
+                        if s.stage == .landed {
+                            Facts(state: s, attributes: a)
+                        } else {
+                            Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .trailing)
+                        }
                     }
+                    .padding(.trailing, 6)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     HStack(spacing: 6) {
