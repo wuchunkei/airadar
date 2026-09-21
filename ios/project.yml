@@ -183,6 +183,14 @@ targets:
         WKApplication: true
         WKRunsIndependentlyOfCompanionApp: true
         WKCompanionAppBundleIdentifier: com.airadar.app
+        # Explicit, matching TARGETED_DEVICE_FAMILY below -- Apple's own
+        # watchOS templates always declare this. Only actually matters for
+        # a CLI build with no watch simulator paired/booted: xcodebuild then
+        # resolves the embedded watch target's Info.plist against the host
+        # iOS destination's family (1,2) instead of the watch's own (4),
+        # which fails `simctl install` with "does not specify family 4".
+        # A normal Xcode Run (or one with the watch paired) doesn't hit this.
+        UIDeviceFamily: [4]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         # Read by Config.swift, for the day this does call the backend directly.
         BACKEND_URL: $(BACKEND_URL)
