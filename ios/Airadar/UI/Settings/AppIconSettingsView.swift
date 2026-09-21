@@ -8,7 +8,6 @@ import SwiftUI
 /// on its own (`AppIconManager`).
 struct AppIconSettingsView: View {
     @EnvironmentObject private var store: FlightStore
-    @Environment(\.colorScheme) private var colorScheme
     @State private var manual = AppIconManager.isManual
     @State private var manualArtKey = AppIconManager.manualArtKey
 
@@ -91,14 +90,15 @@ struct AppIconSettingsView: View {
         .disabled(locked)
     }
 
-    // Every tier's actual Home Screen icon now shares one backdrop rule:
-    // white in light appearance, black in dark -- matching the appiconset
-    // Contents.json generated for each tier exactly, so the preview here
-    // never drifts from what's really applied.
+    // The real Home Screen icon switches backdrop with the system
+    // appearance (white in light, black in dark -- see each tier's own
+    // appiconset Contents.json), but this picker's own previews always
+    // show the white version, on purpose, regardless of the app's current
+    // appearance -- a deliberate difference from "preview matches exactly
+    // what's applied", not an oversight.
     private func icon(for tier: MilestoneTier, dimmed: Bool) -> some View {
-        let bg: Color = colorScheme == .dark ? .black : .white
-        return RoundedRectangle(cornerRadius: 17, style: .continuous)
-            .fill(bg)
+        RoundedRectangle(cornerRadius: 17, style: .continuous)
+            .fill(Color.white)
             .overlay { TierBadgeView(tier: tier, size: 44) }
             .frame(width: 68, height: 68)
             .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
