@@ -275,17 +275,17 @@ fun FlightDetailSheet(
                     }
                 }
 
-                Row(
+                // Blue and tappable in the day before it leaves: navigate there.
+                val canNavigate = flight.canNavigateToDeparture()
+                var showMapChooser by remember { mutableStateOf(false) }
+                if (showMapChooser) from?.let { MapChooserSheet(it) { showMapChooser = false } }
+                // Both airport columns as wide as the wider one, so the line between
+                // them sits dead centre however long a city or gate runs on either side.
+                BalancedRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(top = 16.dp)
                 ) {
-                    // Blue and tappable in the day before it leaves: navigate there.
-                    val canNavigate = flight.canNavigateToDeparture()
-                    var showMapChooser by remember { mutableStateOf(false) }
-                    if (showMapChooser) from?.let { MapChooserSheet(it) { showMapChooser = false } }
                     Column(
                         modifier = if (canNavigate) Modifier.clickable { showMapChooser = true } else Modifier
                     ) {
@@ -299,20 +299,15 @@ fun FlightDetailSheet(
                             fontSize = 36.sp,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.displaySmall,
-                            color = if (canNavigate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            color = if (canNavigate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.codeLineAtCenter()
                         )
-                        terminalAndGate(flight.departureTerminal, flight.departureGate)?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        TerminalAndGate(flight.departureTerminal, flight.departureGate)
                     }
 
                     // The way between: an arrow before departure, the plane along a
                     // dashed line in the air, the cities it passes as dots.
-                    FlightProgressLine(flight, Modifier.weight(1f).padding(horizontal = 10.dp))
+                    FlightProgressLine(flight)
 
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
@@ -324,15 +319,10 @@ fun FlightDetailSheet(
                             flight.arrival,
                             fontSize = 36.sp,
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.displaySmall
+                            style = MaterialTheme.typography.displaySmall,
+                            modifier = Modifier.codeLineAtCenter()
                         )
-                        terminalAndGate(flight.arrivalTerminal, flight.arrivalGate)?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        TerminalAndGate(flight.arrivalTerminal, flight.arrivalGate)
                     }
                 }
 
@@ -543,6 +533,10 @@ fun Flight.statusLine(now: java.time.Instant = java.time.Instant.now()): String 
     }
 }
 
-/** "Terminal 1 · Gate 35", or whichever half is known; null for neither. */
-private fun terminalAndGate(terminal: String?, gate: String?): String? =
-    listOfNotNull(terminal?.let { "Terminal $it" }, gate?.let { "Gate $it" }).joinToString(" · ").ifEmpty { null }
+/** Terminal and gate, one line each, so the column stays narrow and the route line gets the room. */
+@Composable
+private fun TerminalAndGate(terminal: String?, gate: String?) {
+    listOfNotNull(terminal?.let { "Terminal $it" }, gate?.let { "Gate $it" }).forEach {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}

@@ -16,6 +16,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.layout.AlignmentLine
+import androidx.compose.ui.layout.HorizontalAlignmentLine
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -62,7 +67,7 @@ fun FlightProgressLine(flight: Flight, modifier: Modifier = Modifier) {
     val tint = if (phase == FlightPhase.PAST) Blue else Green
     val lineY = 31.dp
 
-    BoxWithConstraints(modifier.height(40.dp)) {
+    BoxWithConstraints(modifier.height(40.dp).codeLineAt(lineY)) {
         val span: Dp = maxWidth - 8.dp
         Canvas(Modifier.fillMaxSize()) {
             val y = lineY.toPx()
@@ -117,6 +122,52 @@ fun FlightProgressLine(flight: Flight, modifier: Modifier = Modifier) {
                 color = if (stop.fraction <= flown) Green else muted,
                 modifier = Modifier.offset(x = x - 14.dp, y = lineY - 20.dp).width(28.dp)
             )
+        }
+    }
+}
+
+/** The middle of the big airport codes, which the route line between them sits on. */
+val CodeLine = HorizontalAlignmentLine(::minOf)
+
+/** Marks [CodeLine] this far down the view. */
+fun Modifier.codeLineAt(y: Dp): Modifier = layout { measurable, constraints ->
+    val p = measurable.measure(constraints)
+    layout(p.width, p.height, mapOf(CodeLine to y.roundToPx())) { p.place(0, 0) }
+}
+
+/** Marks [CodeLine] through the middle of the view. */
+fun Modifier.codeLineAtCenter(): Modifier = layout { measurable, constraints ->
+    val p = measurable.measure(constraints)
+    layout(p.width, p.height, mapOf(CodeLine to p.height / 2)) { p.place(0, 0) }
+}
+
+/**
+ * Three views in a row: the two outer ones given the same width (the wider one's,
+ * up to 40% of the row), the middle one the rest, centred on the row — all lined
+ * up on [CodeLine], however many lines each side runs to.
+ */
+@Composable
+fun BalancedRow(modifier: Modifier = Modifier, spacing: Dp = 10.dp, content: @Composable () -> Unit) {
+    Layout(content, modifier) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val gap = spacing.roundToPx()
+        val side = minOf(
+            (width * 0.4f).toInt(),
+            maxOf(measurables[0].maxIntrinsicWidth(Constraints.Infinity), measurables[2].maxIntrinsicWidth(Constraints.Infinity))
+        )
+        val middleWidth = (width - 2 * side - 2 * gap).coerceAtLeast(0)
+        val left = measurables[0].measure(Constraints(maxWidth = side))
+        val middle = measurables[1].measure(Constraints.fixedWidth(middleWidth))
+        val right = measurables[2].measure(Constraints(maxWidth = side))
+        val placed = listOf(left, middle, right)
+        val lines = placed.map { p -> p[CodeLine].takeIf { it != AlignmentLine.Unspecified } ?: (p.height / 2) }
+        val line = lines.max()
+        val tops = lines.map { line - it }
+        val height = placed.indices.maxOf { tops[it] + placed[it].height }
+        layout(width, height) {
+            left.place(0, tops[0])
+            middle.place((width - middleWidth) / 2, tops[1])
+            right.place(width - right.width, tops[2])
         }
     }
 }

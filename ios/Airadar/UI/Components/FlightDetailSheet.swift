@@ -303,7 +303,9 @@ struct FlightDetailSheet<Actions: View>: View {
     }
 
     private var codes: some View {
-        HStack(spacing: 12) {
+        // Both airport columns as wide as the wider one, so the line between
+        // them sits dead centre however long a city or gate runs on either side.
+        BalancedRow(spacing: 12) {
             // Only the departure code is a navigation target -- tapping the
             // arrival code to navigate somewhere the traveller isn't yet
             // would just be confusing. Blue exactly when a real drivable
@@ -314,6 +316,7 @@ struct FlightDetailSheet<Actions: View>: View {
                     onTap: routeValid ? { showMapChooser = true } : nil)
             // The way between: an arrow before departure, the plane along a dashed line in the air, done after.
             FlightProgressLine(flight: flight).frame(maxWidth: .infinity).frame(height: 40)
+                .alignmentGuide(.codeLine) { $0.height - 9 }
             BigCode(code: flight.arrival, terminal: flight.arrivalTerminal ?? enrichedFlight?.arrivalTerminal,
                     gate: flight.arrivalGate ?? enrichedFlight?.arrivalGate, city: flight.arrivalAirport?.cityCountry, trailing: true)
         }
@@ -428,6 +431,53 @@ extension FlightDetailSheet where Actions == EmptyView {
     }
 }
 
+extension VerticalAlignment {
+    private enum CodeLine: AlignmentID {
+        static func defaultValue(in d: ViewDimensions) -> CGFloat { d[VerticalAlignment.center] }
+    }
+    /// The middle of the big airport codes, which the route line between them sits on.
+    static let codeLine = VerticalAlignment(CodeLine.self)
+}
+
+/// Three views in a row: the two outer ones given the same width (the wider
+/// one's, up to 40% of the row), the middle one the rest, centred on the row —
+/// all lined up on `.codeLine`, however many lines each side runs to.
+private struct BalancedRow: Layout {
+    var spacing: CGFloat = 12
+
+    private func proposals(width: CGFloat, subviews: Subviews) -> [ProposedViewSize] {
+        let left = subviews[0].sizeThatFits(.unspecified), right = subviews[2].sizeThatFits(.unspecified)
+        let side = min(max(left.width, right.width), width * 0.4)
+        let middle = max(0, width - 2 * side - 2 * spacing)
+        return [ProposedViewSize(width: side, height: nil), ProposedViewSize(width: middle, height: nil),
+                ProposedViewSize(width: side, height: nil)]
+    }
+
+    /// Each view's top, measured down from the row's top, with the shared line under all of them.
+    private func tops(_ proposals: [ProposedViewSize], subviews: Subviews) -> (tops: [CGFloat], height: CGFloat) {
+        let dims = zip(subviews, proposals).map { $0.dimensions(in: $1) }
+        let line = dims.map { $0[.codeLine] }.max() ?? 0
+        let tops = dims.map { line - $0[.codeLine] }
+        let height = zip(tops, dims).map { $0 + $1.height }.max() ?? 0
+        return (tops, height)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 3 else { return .zero }
+        let width = proposal.width ?? 320
+        return CGSize(width: width, height: tops(proposals(width: width, subviews: subviews), subviews: subviews).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 3 else { return }
+        let p = proposals(width: bounds.width, subviews: subviews)
+        let t = tops(p, subviews: subviews).tops
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY + t[0]), anchor: .topLeading, proposal: p[0])
+        subviews[1].place(at: CGPoint(x: bounds.midX, y: bounds.minY + t[1]), anchor: .top, proposal: p[1])
+        subviews[2].place(at: CGPoint(x: bounds.maxX, y: bounds.minY + t[2]), anchor: .topTrailing, proposal: p[2])
+    }
+}
+
 private struct BigCode: View {
     let code: String, terminal: String?, gate: String?, city: String?, trailing: Bool
     var highlighted: Bool = false
@@ -438,10 +488,10 @@ private struct BigCode: View {
             Text(city ?? "").font(.caption).foregroundStyle(.secondary)
             Text(code).font(.system(size: 40, weight: .bold))
                 .foregroundStyle(highlighted ? Color(red: 0.043, green: 0.435, blue: 0.831) : .primary)
-            if terminal != nil || gate != nil {
-                Text([terminal.map { "Terminal \(normalizeTerminal($0))" }, gate.map { "Gate \($0)" }].compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+                .alignmentGuide(.codeLine) { $0[VerticalAlignment.center] }
+            // One line each, so the column stays narrow and the route line between gets the room.
+            if let terminal { Text("Terminal \(normalizeTerminal(terminal))").font(.caption).foregroundStyle(.secondary) }
+            if let gate { Text("Gate \(gate)").font(.caption).foregroundStyle(.secondary) }
         }
         if let onTap {
             Button(action: onTap) { content }.buttonStyle(.plain)
