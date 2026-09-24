@@ -253,16 +253,16 @@ private struct Facts: View {
         // them takes up, at a size that actually matches it -- cramped into
         // a tight, tiny-type corner (the original .caption/2pt-spacing look)
         // read as an afterthought next to a large airport code.
+        // Values alone — "2h 7m", "1128 km", "Belt 106" read for themselves,
+        // and the island has no room for a label beside each.
         VStack(alignment: .trailing, spacing: 10) {
-            fact("Duration", state.durationText)
-            fact("Distance", "\(attributes.distanceKm) km")
-            fact("Baggage", state.baggageClaim.map { "Belt \($0)" } ?? "—")
+            Text(state.durationText)
+            Text("\(attributes.distanceKm) km")
+            Text(state.baggageClaim.map { "Belt \($0)" } ?? "Belt —")
         }
-        .font(.subheadline)
+        .font(.subheadline.weight(.semibold))
+        .lineLimit(1)
         .frame(maxHeight: .infinity)
-    }
-    private func fact(_ name: String, _ value: String) -> some View {
-        HStack(spacing: 6) { Text(name).foregroundStyle(.secondary); Text(value).fontWeight(.semibold) }
     }
 }
 
@@ -279,19 +279,33 @@ private struct AirlineMark: View {
     }
 }
 
+/// The same wording as the app's status line: a delay said as "late" (so it
+/// can't be read as a duration), and once down, how early or late it landed.
 private struct StatusText: View {
     let state: FlightActivityAttributes.ContentState
     var body: some View {
-        Text(state.statusLabel + (state.delayMinutes > 0 ? " +\(state.delayMinutes) min" : ""))
-            .foregroundStyle(color)
+        Text(text).foregroundStyle(color)
+    }
+    private var text: String {
+        if state.statusKind == .bad { return state.statusLabel }
+        switch state.stage {
+        case .landed:
+            guard let d = state.arrivalDelayMinutes else { return "Landed" }
+            return d < 0 ? "Landed · \(-d)m early" : d > 0 ? "Landed · \(d)m late" : "Landed · on time"
+        case .airborne:
+            return "In flight"
+        case .before:
+            return state.statusLabel + (state.delayMinutes > 0 ? " · \(state.delayMinutes)m late" : "")
+        }
     }
     private var color: Color {
+        if state.stage == .landed, let d = state.arrivalDelayMinutes { return d > 0 ? .orange : .green }
         switch state.statusKind {
-        case .scheduled: .secondary
-        case .live: .blue
-        case .good: .green
-        case .warn: .orange
-        case .bad: .red
+        case .scheduled: return state.delayMinutes > 0 ? .orange : .secondary
+        case .live: return .blue
+        case .good: return .green
+        case .warn: return .orange
+        case .bad: return .red
         }
     }
 }
@@ -313,12 +327,17 @@ private struct CountdownDigits: View {
 private struct Countdown: View {
     let state: FlightActivityAttributes.ContentState
     var body: some View {
-        HStack(spacing: 4) {
-            CountdownDigits(state: state).monospacedDigit()
-            Text(state.stage == .airborne ? "Landing" : "Boarding")
+        if state.stage == .landed {
+            // Down: no countdown left to show, just how it came in.
+            StatusText(state: state).fontWeight(.semibold)
+        } else {
+            HStack(spacing: 4) {
+                CountdownDigits(state: state).monospacedDigit()
+                Text(state.stage == .airborne ? "Landing" : "Boarding")
+            }
+            .fontWeight(.semibold)
+            .foregroundStyle(state.urgency.color)
         }
-        .fontWeight(.semibold)
-        .foregroundStyle(state.urgency.color)
     }
 }
 

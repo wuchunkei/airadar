@@ -19,6 +19,9 @@ struct FlightActivityAttributes: ActivityAttributes {
         var delayMinutes: Int
         /// Set once the airline reports the flight down; the arrival clock is then the landing time.
         var landed: Bool = false
+        /// How far the arrival moved from the timetable (negative early), once the
+        /// source says; for "Landed · 11m early" rather than the departure's delay.
+        var arrivalDelayMinutes: Int? = nil
         /// Cities along the way, as airport (or city) codes: dots on the route
         /// line, the next one named beneath it in the air — picked by the clock
         /// whenever the widget draws, so it moves on without an update from the app.

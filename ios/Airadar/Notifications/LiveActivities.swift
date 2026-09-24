@@ -94,6 +94,7 @@ enum LiveActivities {
             departureClock: dep.clock, arrivalClock: arr.clock,
             departureGate: f.departureGate, arrivalGate: f.arrivalGate, baggageClaim: f.baggageClaim,
             delayMinutes: f.delayMinutes, landed: f.status == .landed || f.status == .completed,
+            arrivalDelayMinutes: f.arrivalDelayMinutes,
             waypoints: waypoints(f))
     }
 
