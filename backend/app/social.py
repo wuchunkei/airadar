@@ -13,14 +13,14 @@ recipient; whoever opens it may copy the trip, and no block is shown for it.
 
 import os
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from . import names
+from . import names, sharepage
 from .auth import current_user
 from .billing import Membership, membership
 from .db import PALETTE
@@ -376,89 +376,15 @@ async def copy_linked(token: str, request: Request, user: dict = Depends(current
     return trip_out(doc)
 
 
-# label/colour for a browser preview -- the same wording and (dark-theme) hues
-# as the apps' own FlightStatus, so the web page and "Finished"'s blue read
-# the same as the card it stands in for.
-_STATUS = {
-    "ON_TIME": ("On time", "#5BD9A8"), "COMPLETED": ("Completed", "#B0ADBA"),
-    "LANDED": ("Finished", "#7FB8FF"), "DELAYED": ("Delayed", "#FFB067"),
-    "CANCELLED": ("Cancelled", "#FF8A80"), "DIVERTED": ("Diverted", "#FF8A80"),
-    "BOARDING": ("Boarding", "#7FB8FF"), "DEPARTED": ("Departed", "#7FB8FF"),
-    "IN_FLIGHT": ("In flight", "#7FB8FF"), "SCHEDULED": ("Scheduled", "#B0ADBA"),
-}
-
-
 @router.get("/s/{token}", response_class=HTMLResponse)
 async def link_page(token: str, request: Request):
     """
     What a browser sees when the app itself isn't there to catch the Universal
-    Link -- a stand-in for the in-app LinkedTripSheet, so someone with no
-    Airadar still gets the same simple trip-card read (who sent it, the route,
-    the times, how the flight stands) before being asked to install the app.
+    Link -- a stand-in for the in-app LinkedTripSheet (see sharepage.py), so
+    someone with no Airadar still gets the trip before being asked to open it.
     """
     _, trip, owner = await _by_token(request.app.state.db, token)
-    t = trip_out(trip)
-    name = owner.get("name") or _given_name(owner)
-    initial = name[:1].upper()
-    tint = _color(owner)
-    status = t.status.value if hasattr(t.status, "value") else t.status
-    label, color = _STATUS.get(status, ("Scheduled", "#B0ADBA"))
-
-    def span(minutes: int) -> str:
-        return f"{minutes // 60}h{minutes % 60}m" if minutes >= 60 else f"{minutes}m"
-
-    # Same wording as the app's status line: "late" so a delay can't be read
-    # as a duration, and how early or late it landed once that's known.
-    landed = status in ("LANDED", "COMPLETED")
-    if landed and t.arrivalDelayMinutes is not None:
-        d = t.arrivalDelayMinutes
-        label = "Landed · " + (f"{span(-d)} early" if d < 0 else f"{span(d)} late" if d > 0 else "on time")
-    elif not landed and status not in ("CANCELLED", "DIVERTED") and t.delayMinutes > 0:
-        label = f"{label} · {span(t.delayMinutes)} late"
-
-    # The times as they actually are, the same as the app shows them: the
-    # departure moved by its delay, the arrival by its own figure when known.
-    dep_moved = t.delayMinutes if t.delayMinutes > 0 else 0
-    arr_moved = t.arrivalDelayMinutes if t.arrivalDelayMinutes is not None else dep_moved
-
-    def airport(code: str, terminal: str | None, scheduled: datetime, moved: int, align: str) -> str:
-        term = f' <span style="opacity:.7">T{terminal}</span>' if terminal else ""
-        shown = scheduled + timedelta(minutes=moved)
-        was = (f'<span style="text-decoration:line-through;opacity:.6;font-weight:500;margin-right:6px">'
-               f'{scheduled.strftime("%H:%M")}</span>') if moved else ""
-        tint = "#34C759" if moved < 0 else "#E08A2E" if moved > 0 else "inherit"
-        return f"""<div style="text-align:{align}">
-<div style="font-size:30px;font-weight:700">{code}{term}</div>
-<div style="font-size:15px;font-weight:600;margin-top:2px">{was}<span style="color:{tint}">{shown.strftime('%H:%M')}</span></div>
-</div>"""
-
-    return f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{t.flightNumber} · Airadar</title>
-<body style="font-family:-apple-system,system-ui,sans-serif;margin:0;padding:28px 16px;background:#0f1115;color:#eee;display:flex;justify-content:center">
-<div style="width:100%;max-width:380px">
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
-    <div style="width:26px;height:26px;border-radius:50%;background:{tint};color:#fff;font-size:12px;font-weight:700;
-                display:flex;align-items:center;justify-content:center;flex:none">{initial}</div>
-    <div style="color:{tint};font-weight:600;font-size:15px">{name} shared a flight</div>
-  </div>
-  <div style="background:#1a1d23;border:0.5px solid #2c3038;border-radius:20px;padding:18px">
-    <div style="display:flex;justify-content:space-between;align-items:baseline">
-      <div style="font-size:15px;font-weight:500;color:#aab">{t.airlineName}</div>
-      <div style="font-size:15px;font-weight:700">{t.flightNumber}</div>
-    </div>
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin:16px 0">
-      {airport(t.departure, t.departureTerminal, t.departureTime, dep_moved, "left")}
-      <div style="padding-top:6px;color:#8a8d99">→</div>
-      {airport(t.arrival, t.arrivalTerminal, t.arrivalTime, arr_moved, "right")}
-    </div>
-    <div style="display:inline-block;font-size:12px;font-weight:600;color:{color};background:{color}26;
-                padding:3px 8px;border-radius:6px">{label}</div>
-    <div style="color:#8a8d99;font-size:13px;margin-top:10px">{t.departureTime.strftime('%Y-%m-%d')}</div>
-  </div>
-  <a href="airadar://s/{token}" style="display:block;text-align:center;margin-top:20px;background:#4f8cff;color:#fff;
-     padding:14px 22px;border-radius:14px;text-decoration:none;font-weight:600">Open in Airadar</a>
-</div>
-</body>"""
+    return sharepage.render(trip_out(trip), owner.get("name") or _given_name(owner), _color(owner), token)
 
 
 @router.get("/.well-known/assetlinks.json")
