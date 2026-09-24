@@ -13,7 +13,7 @@ recipient; whoever opens it may copy the trip, and no block is shown for it.
 
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -401,15 +401,35 @@ async def link_page(token: str, request: Request):
     name = owner.get("name") or _given_name(owner)
     initial = name[:1].upper()
     tint = _color(owner)
-    label, color = _STATUS.get(t.status.value if hasattr(t.status, "value") else t.status, ("Scheduled", "#B0ADBA"))
-    if t.delayMinutes:
-        label = f"{label} {t.delayMinutes}m"
+    status = t.status.value if hasattr(t.status, "value") else t.status
+    label, color = _STATUS.get(status, ("Scheduled", "#B0ADBA"))
 
-    def airport(code: str, terminal: str | None, when: datetime, align: str) -> str:
-        term = f'<span style="opacity:.7">T{terminal}</span> ' if terminal else ""
+    def span(minutes: int) -> str:
+        return f"{minutes // 60}h{minutes % 60}m" if minutes >= 60 else f"{minutes}m"
+
+    # Same wording as the app's status line: "late" so a delay can't be read
+    # as a duration, and how early or late it landed once that's known.
+    landed = status in ("LANDED", "COMPLETED")
+    if landed and t.arrivalDelayMinutes is not None:
+        d = t.arrivalDelayMinutes
+        label = "Landed · " + (f"{span(-d)} early" if d < 0 else f"{span(d)} late" if d > 0 else "on time")
+    elif not landed and status not in ("CANCELLED", "DIVERTED") and t.delayMinutes > 0:
+        label = f"{label} · {span(t.delayMinutes)} late"
+
+    # The times as they actually are, the same as the app shows them: the
+    # departure moved by its delay, the arrival by its own figure when known.
+    dep_moved = t.delayMinutes if t.delayMinutes > 0 else 0
+    arr_moved = t.arrivalDelayMinutes if t.arrivalDelayMinutes is not None else dep_moved
+
+    def airport(code: str, terminal: str | None, scheduled: datetime, moved: int, align: str) -> str:
+        term = f' <span style="opacity:.7">T{terminal}</span>' if terminal else ""
+        shown = scheduled + timedelta(minutes=moved)
+        was = (f'<span style="text-decoration:line-through;opacity:.6;font-weight:500;margin-right:6px">'
+               f'{scheduled.strftime("%H:%M")}</span>') if moved else ""
+        tint = "#34C759" if moved < 0 else "#E08A2E" if moved > 0 else "inherit"
         return f"""<div style="text-align:{align}">
-<div style="font-size:30px;font-weight:700">{term}{code}</div>
-<div style="font-size:15px;font-weight:600;margin-top:2px">{when.strftime('%H:%M')}</div>
+<div style="font-size:30px;font-weight:700">{code}{term}</div>
+<div style="font-size:15px;font-weight:600;margin-top:2px">{was}<span style="color:{tint}">{shown.strftime('%H:%M')}</span></div>
 </div>"""
 
     return f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -427,9 +447,9 @@ async def link_page(token: str, request: Request):
       <div style="font-size:15px;font-weight:700">{t.flightNumber}</div>
     </div>
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin:16px 0">
-      {airport(t.departure, t.departureTerminal, t.departureTime, "left")}
+      {airport(t.departure, t.departureTerminal, t.departureTime, dep_moved, "left")}
       <div style="padding-top:6px;color:#8a8d99">→</div>
-      {airport(t.arrival, t.arrivalTerminal, t.arrivalTime, "right")}
+      {airport(t.arrival, t.arrivalTerminal, t.arrivalTime, arr_moved, "right")}
     </div>
     <div style="display:inline-block;font-size:12px;font-weight:600;color:{color};background:{color}26;
                 padding:3px 8px;border-radius:6px">{label}</div>
