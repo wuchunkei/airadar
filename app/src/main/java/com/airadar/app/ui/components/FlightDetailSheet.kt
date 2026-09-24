@@ -186,7 +186,7 @@ fun FlightDetailSheet(
                     }
                     liveTrail.size >= 2 -> liveTrail.toList()
                     else -> null
-                }?.let { gapFilled(cleanedTrack(it)) }
+                }?.let { gapFilled(cleanedTrack(it, flight.departureAirport)) }
                 val progress = if (realTrack == null && flight.phase == FlightPhase.IN_PROGRESS) flight.fractionFlown else null
                 // Ticks once a minute in the air, so the map's estimated position moves on.
                 val minute by produceState(java.time.Instant.now(), flight.id) {
@@ -220,6 +220,12 @@ fun FlightDetailSheet(
             if (onLoadTrack != null && flight.callsign != null && flight.trackFlownOn == null &&
                 flight.phase != FlightPhase.UPCOMING
             ) {
+                LaunchedEffect(flight.id) { onLoadTrack() }
+            } else if (onLoadTrack != null && flight.callsign != null && flight.phase == FlightPhase.PAST &&
+                flight.trackIncomplete && TrackRefetch.done.add(flight.id)
+            ) {
+                // Fetched while still in the air, the track only ran as far as the
+                // flight had got; once down, ask once more (per launch) for all of it.
                 LaunchedEffect(flight.id) { onLoadTrack() }
             }
 
@@ -540,4 +546,9 @@ private fun TerminalAndGate(terminal: String?, gate: String?) {
     listOfNotNull(terminal?.let { "Terminal $it" }, gate?.let { "Gate $it" }).forEach {
         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+/** Flights whose incomplete track has already been asked for again this launch. */
+private object TrackRefetch {
+    val done: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
 }

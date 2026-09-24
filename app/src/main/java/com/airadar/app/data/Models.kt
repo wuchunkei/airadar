@@ -139,7 +139,16 @@ data class Flight(
 
     /** The stored track with its impossible points taken out — see [cleanedTrack]. */
     val cleanTrack: List<TrackPoint>?
-        get() = track?.let(::cleanedTrack)
+        get() = track?.let { cleanedTrack(it, departureAirport) }
+
+    /** A stored track that stops well short of where the flight was going: worth
+     * asking for again once it has landed, and drawn with the rest dashed. */
+    val trackIncomplete: Boolean
+        get() {
+            val last = cleanTrack?.lastOrNull() ?: return false
+            val arrival = arrivalAirport ?: return false
+            return greatCircleKm(last.lat, last.lon, arrival.latitude, arrival.longitude) > 100
+        }
 
     /** The real track's last known fix, only when it's genuine evidence the
      * flight didn't reach where it was scheduled to -- for naming where it
@@ -295,9 +304,23 @@ fun greatCircleKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Int {
  * could have reached from its neighbours (faster than 1,300 km/h) is some other
  * aircraft's, or a garbled one — left in, it zigzags the drawn line and can end
  * the track somewhere the flight never went. Same rules as iOS's TrackPoint.cleaned.
+ *
+ * When some points have no time (a track from an older build, which dropped them)
+ * there's no order to sort by, so progress stands in: a point well behind the
+ * furthest from [origin] reached so far — an earlier fix appended after a track
+ * that had already gone further — is dropped.
  */
-fun cleanedTrack(points: List<TrackPoint>): List<TrackPoint> {
-    val out = (if (points.all { it.time != null }) points.sortedBy { it.time } else points).toMutableList()
+fun cleanedTrack(points: List<TrackPoint>, origin: Airport? = null): List<TrackPoint> {
+    val timed = points.all { it.time != null }
+    var ordered = if (timed) points.sortedBy { it.time } else points
+    if (!timed && origin != null) {
+        var furthest = 0
+        ordered = ordered.filter { p ->
+            val d = greatCircleKm(origin.latitude, origin.longitude, p.lat, p.lon)
+            if (d < furthest - 30) false else { furthest = maxOf(furthest, d); true }
+        }
+    }
+    val out = ordered.toMutableList()
     fun impossible(a: TrackPoint, b: TrackPoint): Boolean {
         val ta = a.time ?: return false
         val tb = b.time ?: return false

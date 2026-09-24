@@ -25,6 +25,7 @@ import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightDatabase
 import com.airadar.app.data.FlightPhase
 import com.airadar.app.data.LivePosition
+import com.airadar.app.data.greatCircleKm
 import com.airadar.app.data.Region
 import com.airadar.app.data.TrackPoint
 import org.osmdroid.config.Configuration
@@ -537,6 +538,23 @@ fun TileMap(
                         Polyline(map).apply {
                             setPoints(rest)
                             outlinePaint.color = dashedColor
+                            outlinePaint.strokeWidth = 2.5f
+                            outlinePaint.isAntiAlias = true
+                            outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 10f), 0f)
+                            infoWindow = null
+                            setOnClickListener { _, _, _ -> false }
+                        }
+                    )
+                } else if (coords.size >= 2 &&
+                    greatCircleKm(coords.last().latitude, coords.last().longitude, track.to.latitude, track.to.longitude) > 50
+                ) {
+                    // A finished flight whose recorded track stops short (no receivers
+                    // along the rest of the way): the rest dashed to where it landed,
+                    // so it reads as unrecorded, not as a plane that vanished midway.
+                    addOwned(
+                        Polyline(map).apply {
+                            setPoints(arcPath(coords.last().latitude, coords.last().longitude, track.to.latitude, track.to.longitude))
+                            outlinePaint.color = color
                             outlinePaint.strokeWidth = 2.5f
                             outlinePaint.isAntiAlias = true
                             outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 10f), 0f)

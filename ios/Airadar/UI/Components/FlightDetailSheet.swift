@@ -186,6 +186,13 @@ struct FlightDetailSheet<Actions: View>: View {
         }
         .task(id: "\(flight.id)|\(callsign ?? "")") {
             if flight.trackFlownOn == nil, callsign != nil, flight.phase != .upcoming { onLoadTrack?() }
+            // Fetched while still in the air, the track only ran as far as the
+            // flight had got; once down, ask once more for the whole of it.
+            else if flight.phase == .past, flight.trackIncomplete, callsign != nil,
+                    !TrackRefetch.done.contains(flight.id) {
+                TrackRefetch.done.insert(flight.id)
+                onLoadTrack?()
+            }
         }
         // The backend's own lookup only gets asked once OpenSky has had its
         // shot and failed (or can't even be tried — no ATC callsign at all):
@@ -377,10 +384,11 @@ struct FlightDetailSheet<Actions: View>: View {
     /// all the way from departure to right now, not just the plane marker
     /// (which `livePlane` already refreshes on its own regardless).
     private var storedTrail: [TrackPoint] {
-        guard let track = flight.track, !track.isEmpty else { return TrackPoint.cleaned(liveTrail) }
-        guard flight.phase == .inProgress else { return TrackPoint.cleaned(track) }
+        let origin = flight.departureAirport
+        guard let track = flight.track, !track.isEmpty else { return TrackPoint.cleaned(liveTrail, from: origin) }
+        guard flight.phase == .inProgress else { return TrackPoint.cleaned(track, from: origin) }
         let lastStored = track.compactMap(\.time).max() ?? .distantPast
-        return TrackPoint.cleaned(track + liveTrail.filter { ($0.time ?? .distantPast) > lastStored })
+        return TrackPoint.cleaned(track + liveTrail.filter { ($0.time ?? .distantPast) > lastStored }, from: origin)
     }
 
     /// Bridges a gap between two consecutive real points with a bowed arc
@@ -597,4 +605,10 @@ struct FlightProgressLine: View {
         }
         return kept
     }
+}
+
+/// Flights whose incomplete track has already been asked for again this
+/// launch — once is enough; OpenSky may simply not have the rest.
+@MainActor private enum TrackRefetch {
+    static var done: Set<String> = []
 }

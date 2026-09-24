@@ -319,7 +319,14 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     }
 
     /// The stored track with its impossible points taken out — see `TrackPoint.cleaned`.
-    var cleanTrack: [TrackPoint]? { track.map(TrackPoint.cleaned) }
+    var cleanTrack: [TrackPoint]? { track.map { TrackPoint.cleaned($0, from: departureAirport) } }
+
+    /// A stored track that stops well short of where the flight was going:
+    /// worth asking for again once it has landed, and drawn with the rest dashed.
+    var trackIncomplete: Bool {
+        guard let last = cleanTrack?.last, let arrival = arrivalAirport else { return false }
+        return greatCircleKm(last.lat, last.lon, arrival.latitude, arrival.longitude) > 100
+    }
 
     /// The real track's last known fix, only when it's genuine evidence the
     /// flight didn't reach where it was scheduled to -- for naming where it
@@ -610,9 +617,25 @@ extension TrackPoint {
     /// no airliner could have reached from both its neighbours (faster than
     /// 1,300 km/h either way) is some other aircraft's, or a garbled one —
     /// left in, it zigzags the drawn line and can end the track somewhere the
-    /// flight never went. Points without a time keep their place untouched.
-    static func cleaned(_ points: [TrackPoint]) -> [TrackPoint] {
-        var out = points.allSatisfy { $0.time != nil } ? points.sorted { $0.time! < $1.time! } : points
+    /// flight never went.
+    ///
+    /// When some points have no time (a track from an older build, which
+    /// dropped them) there is no order to sort by, so progress stands in for
+    /// it: a point well behind the furthest from `origin` reached so far is
+    /// out of order — a fix from earlier in the flight appended after a track
+    /// that had already gone further — and is dropped.
+    static func cleaned(_ points: [TrackPoint], from origin: Airport? = nil) -> [TrackPoint] {
+        let timed = points.allSatisfy { $0.time != nil }
+        var out = timed ? points.sorted { $0.time! < $1.time! } : points
+        if !timed, let origin {
+            var furthest = 0.0
+            out = out.filter { p in
+                let d = greatCircleKm(origin.latitude, origin.longitude, p.lat, p.lon)
+                guard d >= furthest - 30 else { return false }
+                furthest = max(furthest, d)
+                return true
+            }
+        }
         func impossible(_ a: TrackPoint, _ b: TrackPoint) -> Bool {
             guard let ta = a.time, let tb = b.time else { return false }
             let km = greatCircleKm(a.lat, a.lon, b.lat, b.lon)
