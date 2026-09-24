@@ -19,7 +19,6 @@ actor AdsbdbClient {
         let manufacturer: String?
         let registration: String?
         let operatorName: String?
-        let photoURL: URL?
     }
 
     /// The ATC callsign, ICAO form (e.g. "HVN205"), for an IATA-style flight
@@ -31,7 +30,7 @@ actor AdsbdbClient {
         return route["callsign_icao"] as? String
     }
 
-    /// An aircraft's type, manufacturer, registration and a photo, from its
+    /// An aircraft's type, manufacturer and registration, from its
     /// Mode-S / ICAO24 hex — the same hex adsb.lol, airplanes.live and OpenSky
     /// all key their own data by.
     func aircraft(modeS: String) async throws -> Aircraft? {
@@ -39,8 +38,7 @@ actor AdsbdbClient {
               let a = dict["aircraft"] as? [String: Any] else { return nil }
         return Aircraft(type: a["type"] as? String, icaoType: a["icao_type"] as? String,
                         manufacturer: a["manufacturer"] as? String, registration: a["registration"] as? String,
-                        operatorName: a["registered_owner"] as? String,
-                        photoURL: (a["url_photo"] as? String).flatMap(URL.init(string:)))
+                        operatorName: a["registered_owner"] as? String)
     }
 
     /// An airline's name, codes and country from either its ICAO or IATA code.

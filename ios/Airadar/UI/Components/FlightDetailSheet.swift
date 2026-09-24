@@ -44,7 +44,7 @@ struct FlightDetailSheet<Actions: View>: View {
     /// "still nil" only counts as truly exhausted once that has actually happened.
     @State private var callsignResolutionAttempted = false
     /// adsbdb's free aircraft lookup, from the live position's own hex —
-    /// separate from AeroDataBox's quota, and this is the one place a photo shows.
+    /// separate from AeroDataBox's quota; fills in the type and registration.
     @State private var adsbdbAircraft: AdsbdbClient.Aircraft?
     /// Where this same airframe flew in from, if OpenSky's own per-aircraft
     /// history has anything recent -- a courtesy note, not a fact this trip
@@ -87,7 +87,6 @@ struct FlightDetailSheet<Actions: View>: View {
                 if let note = previousFlightNote {
                     Label(note, systemImage: "arrow.uturn.backward.circle").font(.caption).foregroundStyle(.secondary)
                 }
-                if let url = adsbdbAircraft?.photoURL { aircraftPhoto(url) }
                 facts
                 extraActions()
             }
@@ -209,7 +208,7 @@ struct FlightDetailSheet<Actions: View>: View {
         // A courtesy note, not a fact about this flight -- purely "this
         // airframe flew in from somewhere not long ago", useful context for
         // why an on-time departure might slip. Only ever attempted once a
-        // hex is known, same as the aircraft photo above.
+        // hex is known, same as the aircraft lookup above.
         .task(id: live?.hex) {
             guard let hex = live?.hex else { return }
             previousFlight = try? await OpenSkyClient.shared.previousFlight(icao24: hex, before: flight.departureInstant ?? Date())
@@ -322,20 +321,6 @@ struct FlightDetailSheet<Actions: View>: View {
             BigCode(code: flight.arrival, terminal: flight.arrivalTerminal ?? enrichedFlight?.arrivalTerminal,
                     gate: flight.arrivalGate ?? enrichedFlight?.arrivalGate, city: flight.arrivalAirport?.cityCountry, trailing: true)
         }
-    }
-
-    /// The actual airframe, if adsbdb had a photo of it — a real plane, not a
-    /// stock shot of the type. Only ever shown while it's live-tracked (that's
-    /// the only time a hex is known here), so it's gone once the flight lands.
-    private func aircraftPhoto(_ url: URL) -> some View {
-        AsyncImage(url: url) { image in
-            image.resizable().aspectRatio(contentMode: .fill)
-        } placeholder: {
-            Color(.tertiarySystemFill)
-        }
-        .frame(height: 140)
-        .frame(maxWidth: .infinity)
-        .clipShape(.rect(cornerRadius: 12))
     }
 
     private var facts: some View {
