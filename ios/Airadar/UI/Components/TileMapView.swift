@@ -271,11 +271,12 @@ struct TileMapView: UIViewRepresentable {
             } else if let last = coords.last,
                       MKMapPoint(last).distance(to: MKMapPoint(t.to.coordinate)) > 50_000 {
                 // A finished flight whose recorded track stops short (no receivers
-                // along the rest of the way): the rest dashed to where it landed,
-                // so it reads as unrecorded, not as a plane that vanished midway.
+                // along the rest of the way): the rest drawn on to where it landed,
+                // in the same line, so it reads as the flight it was, not one that
+                // vanished midway.
                 let rest = Self.arcPath(from: last, to: t.to.coordinate)
                 let gap = LegPolyline(coordinates: rest, count: rest.count)
-                gap.color = base; gap.width = 1.0; gap.dashed = true; gap.arrow = false
+                gap.color = line.color; gap.width = line.width; gap.arrow = false
                 map.addOverlay(gap, level: .aboveLabels)
             }
             legs.append(.init(line: line, from: t.from, to: t.to, rank: 0, baseColor: base))

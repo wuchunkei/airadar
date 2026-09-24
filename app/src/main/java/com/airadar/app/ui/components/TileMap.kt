@@ -549,15 +549,15 @@ fun TileMap(
                     greatCircleKm(coords.last().latitude, coords.last().longitude, track.to.latitude, track.to.longitude) > 50
                 ) {
                     // A finished flight whose recorded track stops short (no receivers
-                    // along the rest of the way): the rest dashed to where it landed,
-                    // so it reads as unrecorded, not as a plane that vanished midway.
+                    // along the rest of the way): the rest drawn on to where it landed,
+                    // in the same line, so it reads as the flight it was, not one that
+                    // vanished midway.
                     addOwned(
                         Polyline(map).apply {
                             setPoints(arcPath(coords.last().latitude, coords.last().longitude, track.to.latitude, track.to.longitude))
                             outlinePaint.color = color
-                            outlinePaint.strokeWidth = 2.5f
+                            outlinePaint.strokeWidth = 4f
                             outlinePaint.isAntiAlias = true
-                            outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 10f), 0f)
                             infoWindow = null
                             setOnClickListener { _, _, _ -> false }
                         }
