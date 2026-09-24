@@ -120,6 +120,10 @@ LIVE_EVERY = timedelta(minutes=10)
 HOT_BEFORE = timedelta(hours=3)
 HOT_AFTER = timedelta(minutes=30)
 LIVE_CACHE_TTL = timedelta(days=3)
+# Bumped whenever the live record gains a field, so a record cached by an
+# older build (which would read as "no change" for the new field) is refetched
+# at once instead of lingering until its interval runs out.
+LIVE_CACHE_VERSION = 2
 
 
 _AIRPORTS = airportsdata.load("IATA")
@@ -153,7 +157,7 @@ async def _live_record(state, number: str, day: date, every: timedelta, now: dat
     when AirLabs has nothing for it (also cached, so a miss isn't retried sooner)."""
     key = f"{number.upper()}:{day.isoformat()}"
     cached = await state.db.live_cache.find_one({"_id": key})
-    if cached and now - cached["fetchedAt"].replace(tzinfo=None) < every:
+    if cached and cached.get("version") == LIVE_CACHE_VERSION and now - cached["fetchedAt"].replace(tzinfo=None) < every:
         return cached.get("flight")
     try:
         # The live record only: a timetable row knows nothing of today's delay and
@@ -168,7 +172,7 @@ async def _live_record(state, number: str, day: date, every: timedelta, now: dat
         record = None
     await state.db.live_cache.update_one(
         {"_id": key},
-        {"$set": {"flight": record, "fetchedAt": now, "expiresAt": now + LIVE_CACHE_TTL}},
+        {"$set": {"flight": record, "fetchedAt": now, "expiresAt": now + LIVE_CACHE_TTL, "version": LIVE_CACHE_VERSION}},
         upsert=True,
     )
     return record
