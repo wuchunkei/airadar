@@ -39,6 +39,7 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await db.sessions.create_index("expiresAt", expireAfterSeconds=0)
 
     await db.trips.create_index([("userId", 1), ("deletedAt", 1)])
+    await db.live_cache.create_index("expiresAt", expireAfterSeconds=0)
     # The recycle bin empties itself: Mongo drops the document once deletedAt is
     # this old. Live trips have no deletedAt and are never touched.
     await db.trips.create_index(

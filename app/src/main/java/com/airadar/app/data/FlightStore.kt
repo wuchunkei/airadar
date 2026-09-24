@@ -27,6 +27,31 @@ object FlightStore {
     private val _flights = MutableLiveData<List<Flight>>(emptyList())
     val flights: LiveData<List<Flight>> = _flights
 
+    /** A flight within 36 h of now: worth keeping fresh while the app is open. */
+    val hasFlightNearNow: Boolean
+        get() {
+            val now = Instant.now()
+            return _flights.value.orEmpty().any { f ->
+                val dep = f.departureInstant ?: return@any false
+                kotlin.math.abs(ChronoUnit.SECONDS.between(now, dep)) < 36 * 3600
+            }
+        }
+
+    /**
+     * From three hours before take-off to half an hour after landing, when a
+     * delay matters most and the server re-checks every couple of minutes.
+     */
+    val hasFlightInLiveWindow: Boolean
+        get() {
+            val now = Instant.now()
+            return _flights.value.orEmpty().any { f ->
+                val dep = f.departureInstant ?: return@any false
+                val arr = f.arrivalInstant ?: return@any false
+                val delay = f.delayMinutes * 60L
+                !now.isBefore(dep.plusSeconds(delay - 3 * 3600)) && !now.isAfter(arr.plusSeconds(delay + 30 * 60))
+            }
+        }
+
     private val _deleted = MutableLiveData<List<Flight>>(emptyList())
     val deleted: LiveData<List<Flight>> = _deleted
 

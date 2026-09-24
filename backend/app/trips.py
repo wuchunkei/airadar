@@ -108,12 +108,54 @@ async def apply_feed_status(db, trip_key: str, status: str) -> None:
 LIVE_FIELDS = ("status", "delayMinutes", "departureTime", "arrivalTime", "departureTerminal", "arrivalTerminal",
                "departureGate", "arrivalGate", "baggageClaim", "aircraft", "callsign")
 LIVE_WINDOW = timedelta(hours=36)   # around departure: from the day before to a while after landing
-LIVE_EVERY = timedelta(minutes=5)   # per trip, so a list that is pulled often stays within quota
+# How stale a flight's live record may get before AirLabs is asked again. Tight
+# while a delay matters most, from a few hours before take-off until just after
+# landing; loose the rest of the window, where a delay a day out can wait.
+LIVE_HOT_EVERY = timedelta(minutes=2)
+LIVE_EVERY = timedelta(minutes=10)
+HOT_BEFORE = timedelta(hours=3)
+HOT_AFTER = timedelta(minutes=30)
+LIVE_CACHE_TTL = timedelta(days=3)
+
+
+def _live_interval(doc: dict, now: datetime) -> timedelta:
+    dep = doc["departureTime"].replace(tzinfo=None)
+    arr = doc.get("arrivalTime")
+    arr = arr.replace(tzinfo=None) if isinstance(arr, datetime) else dep
+    delay = timedelta(minutes=doc.get("delayMinutes") or 0)
+    return LIVE_HOT_EVERY if dep + delay - HOT_BEFORE <= now <= arr + delay + HOT_AFTER else LIVE_EVERY
+
+
+async def _live_record(state, number: str, day: date, every: timedelta, now: datetime) -> dict | None:
+    """AirLabs' live record for one flight on one day, shared by every traveller
+    on it: one look-up per interval however many trips point at the flight. None
+    when AirLabs has nothing for it (also cached, so a miss isn't retried sooner)."""
+    key = f"{number.upper()}:{day.isoformat()}"
+    cached = await state.db.live_cache.find_one({"_id": key})
+    if cached and now - cached["fetchedAt"].replace(tzinfo=None) < every:
+        return cached.get("flight")
+    try:
+        # The live record only: a timetable row knows nothing of today's delay and
+        # would wipe one already stored.
+        live = await airlabs.flight(state.http, number, day)
+        if live.departureTime.date() != day:
+            raise airlabs.AirLabsError("live record is for another day")
+        record = live.model_dump()
+        if isinstance(record.get("status"), FlightStatus):
+            record["status"] = record["status"].value
+    except Exception:
+        record = None
+    await state.db.live_cache.update_one(
+        {"_id": key},
+        {"$set": {"flight": record, "fetchedAt": now, "expiresAt": now + LIVE_CACHE_TTL}},
+        upsert=True,
+    )
+    return record
 
 
 async def _refresh_live(state, doc: dict) -> dict:
-    """Flights of the day get their status, gates and delay from AirLabs, at most every few minutes."""
-    db = state.db
+    """Flights of the day get their status, gates and delay from AirLabs: every
+    couple of minutes around the flight itself, less often further out."""
     dep = doc.get("departureTime")
     if not isinstance(dep, datetime) or doc.get("isManual"):
         return doc
@@ -121,25 +163,13 @@ async def _refresh_live(state, doc: dict) -> dict:
     now = _now().replace(tzinfo=None)
     if not (dep - LIVE_WINDOW <= now <= dep + LIVE_WINDOW):
         return doc
-    checked = doc.get("liveCheckedAt")
-    if isinstance(checked, datetime) and now - checked.replace(tzinfo=None) < LIVE_EVERY:
+    fresh = await _live_record(state, doc["flightNumber"], dep.date(), _live_interval(doc, now), now)
+    if not fresh:
         return doc
-    try:
-        # The live record only: a timetable row knows nothing of today's delay and
-        # would wipe one already stored.
-        live = await airlabs.flight(state.http, doc["flightNumber"], dep.date())
-        if live.departureTime.date() != dep.date():
-            raise airlabs.AirLabsError("live record is for another day")
-    except Exception:
-        # A miss is not news; try again after the same interval.
-        await db.trips.update_one({"_id": doc["_id"]}, {"$set": {"liveCheckedAt": now}})
-        return doc
-    fresh = live.model_dump()
     changes = {k: fresh[k] for k in LIVE_FIELDS if fresh.get(k) is not None and fresh[k] != doc.get(k)}
-    if isinstance(changes.get("status"), FlightStatus):
-        changes["status"] = changes["status"].value
-    changes["liveCheckedAt"] = now
-    await db.trips.update_one({"_id": doc["_id"]}, {"$set": changes})
+    if not changes:
+        return doc
+    await state.db.trips.update_one({"_id": doc["_id"]}, {"$set": changes})
     return {**doc, **changes}
 
 

@@ -19,7 +19,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.airadar.app.data.AuthStore
 import com.airadar.app.data.BackendClient
 import com.airadar.app.data.FlightStore
@@ -30,6 +32,7 @@ import com.airadar.app.ui.AiradarApp
 import com.airadar.app.ui.DeepLinks
 import com.airadar.app.ui.theme.AiradarTheme
 import com.airadar.app.ui.viewmodel.SettingsViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -55,10 +58,23 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AuthStore.init(this)
-        // A returning traveller's trips come down before the list is first shown.
         if (AuthStore.isSignedIn) lifecycleScope.launch {
             runCatching { BackendClient.me() }          // plan and profile as the server sees them
-            runCatching { FlightStore.syncFromServer() }
+        }
+        // While the app is on screen: the trips on coming back to it (and so on first
+        // launch, before the list is shown), then every minute around a flight itself
+        // and every second minute within a day and a half of one.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var minute = 0
+                while (true) {
+                    val due = minute == 0 || FlightStore.hasFlightInLiveWindow ||
+                        (FlightStore.hasFlightNearNow && minute % 2 == 0)
+                    if (AuthStore.isSignedIn && due) runCatching { FlightStore.syncFromServer() }
+                    delay(60_000)
+                    minute += 1
+                }
+            }
         }
         enableEdgeToEdge()
         FlightReminders.ensureChannels(this)

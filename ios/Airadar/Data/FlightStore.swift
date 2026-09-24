@@ -35,6 +35,17 @@ final class FlightStore: ObservableObject {
         }
     }
 
+    /// From three hours before take-off to half an hour after landing — when a
+    /// delay matters most, and the server re-checks every couple of minutes.
+    var hasFlightInLiveWindow: Bool {
+        let now = Date()
+        return flights.contains { f in
+            guard let dep = f.departureInstant, let arr = f.arrivalInstant else { return false }
+            let delay = TimeInterval(f.delayMinutes * 60)
+            return dep + delay - 3 * 3600 <= now && now <= arr + delay + 30 * 60
+        }
+    }
+
     /// Every leg actually flown (or in the air right now) — what the
     /// milestone tiers count against. The same filter My's own map uses for
     /// its route network, kept in one place so the two never drift apart.

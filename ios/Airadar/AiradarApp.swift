@@ -46,14 +46,14 @@ struct AiradarApp: App {
                 }
                 // While a flight is near: the Live Activity rewritten every minute (its colours
                 // are the app's to write; the countdown and progress bar tick by themselves);
-                // the server asked every second minute.
+                // the server asked every minute around the flight itself, every second one otherwise.
                 .task {
                     var minute = 0
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .seconds(60))
                         minute += 1
                         guard store.hasFlightNearNow else { continue }
-                        if minute % 2 == 0, auth.isSignedIn { try? await store.syncFromServer() }
+                        if store.hasFlightInLiveWindow || minute % 2 == 0, auth.isSignedIn { try? await store.syncFromServer() }
                         else { LiveActivities.sync(store.flights) }
                     }
                 }
