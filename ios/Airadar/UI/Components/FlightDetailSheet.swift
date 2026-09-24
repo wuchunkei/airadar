@@ -64,6 +64,7 @@ struct FlightDetailSheet<Actions: View>: View {
     /// Measured content height: the sheet opens just tall enough, not full screen.
     @State private var contentHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
+    @State private var selectedDetent: PresentationDetent = .large
 
     var body: some View {
         ScrollView {
@@ -113,7 +114,11 @@ struct FlightDetailSheet<Actions: View>: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             }
         }
-        .presentationDetents(detents)
+        .presentationDetents(detents, selection: $selectedDetent)
+        // The sheet first opens before anything is measured; once the height
+        // is known, move it there -- changing the allowed detents alone
+        // leaves it stuck at full height.
+        .onChange(of: fittedDetent) { _, new in selectedDetent = new }
         .presentationDragIndicator(.visible)
         // No ATC callsign yet: the bundled ~35-airline table missed this one at
         // import time — adsbdb reaches any airline it knows, so it gets asked
@@ -267,11 +272,23 @@ struct FlightDetailSheet<Actions: View>: View {
     /// Just tall enough for the content; only content that does not fit on one
     /// screen can be pulled up to full height.
     private var detents: Set<PresentationDetent> {
+        guard fittedDetent != .large else { return [.large] }
+        // Includes the current selection too: it can only move to the new
+        // fitted height after that height has become an allowed detent.
+        let base: Set<PresentationDetent> = contentFitsScreen ? [fittedDetent] : [fittedDetent, .large]
+        return base.union([selectedDetent])
+    }
+
+    private var fittedDetent: PresentationDetent {
         let fitted = contentHeight + footerHeight
-        guard fitted > 0 else { return [.large] }
-        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        let screen = scene?.screen.bounds.height ?? 844
-        return fitted < screen * 0.88 ? [.height(fitted)] : [.height(screen * 0.88), .large]
+        guard fitted > 0 else { return .large }
+        return .height(min(fitted, screenHeight * 0.88))
+    }
+
+    private var contentFitsScreen: Bool { contentHeight + footerHeight < screenHeight * 0.88 }
+
+    private var screenHeight: CGFloat {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.screen.bounds.height ?? 844
     }
 
     private var header: some View {
