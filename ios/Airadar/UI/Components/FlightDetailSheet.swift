@@ -64,6 +64,7 @@ struct FlightDetailSheet<Actions: View>: View {
     /// Measured content height: the sheet opens just tall enough, not full screen.
     @State private var contentHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
+    @State private var detents: Set<PresentationDetent> = [.large]
     @State private var selectedDetent: PresentationDetent = .large
 
     var body: some View {
@@ -115,10 +116,19 @@ struct FlightDetailSheet<Actions: View>: View {
             }
         }
         .presentationDetents(detents, selection: $selectedDetent)
-        // The sheet first opens before anything is measured; once the height
-        // is known, move it there -- changing the allowed detents alone
-        // leaves it stuck at full height.
-        .onChange(of: fittedDetent) { _, new in selectedDetent = new }
+        // The sheet opens before anything is measured, so at .large. Once the
+        // height is known, swap the allowed set and the selection together:
+        // .large drops out (the sheet has to move) and the selection already
+        // names the new height, so neither is ever left pointing at the other.
+        .onChange(of: fittedDetent) { _, new in
+            guard new != .large else { return }
+            detents = contentFitsScreen ? [new] : [new, .large]
+            selectedDetent = new
+        }
+        // iOS 27 no longer passes detent changes made after the sheet is up
+        // on to UIKit, so it stayed at the .large it opened with. Set the
+        // measured height on the sheet controller directly as well.
+        .background(SheetHeightFitter(height: contentHeight + footerHeight, fits: contentFitsScreen))
         .presentationDragIndicator(.visible)
         // No ATC callsign yet: the bundled ~35-airline table missed this one at
         // import time — adsbdb reaches any airline it knows, so it gets asked
@@ -271,14 +281,6 @@ struct FlightDetailSheet<Actions: View>: View {
 
     /// Just tall enough for the content; only content that does not fit on one
     /// screen can be pulled up to full height.
-    private var detents: Set<PresentationDetent> {
-        guard fittedDetent != .large else { return [.large] }
-        // Includes the current selection too: it can only move to the new
-        // fitted height after that height has become an allowed detent.
-        let base: Set<PresentationDetent> = contentFitsScreen ? [fittedDetent] : [fittedDetent, .large]
-        return base.union([selectedDetent])
-    }
-
     private var fittedDetent: PresentationDetent {
         let fitted = contentHeight + footerHeight
         guard fitted > 0 else { return .large }
@@ -523,5 +525,45 @@ struct FlightProgressLine: View {
                 }
             }
         }
+    }
+}
+
+/// Resizes the sheet this view sits in, via its UISheetPresentationController.
+private struct SheetHeightFitter: UIViewRepresentable {
+    let height: CGFloat
+    let fits: Bool
+
+    final class Coordinator { var applied: (CGFloat, Bool)? }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIView { UIView(frame: .zero) }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        guard height > 0 else { return }
+        let height = height, fits = fits
+        if let applied = context.coordinator.applied, abs(applied.0 - height) < 0.5, applied.1 == fits { return }
+        let coordinator = context.coordinator
+        // Not in the window yet on the first pass; the controller chain is there a turn later.
+        DispatchQueue.main.async {
+            guard let sheet = Self.sheetController(from: view) else { return }
+            coordinator.applied = (height, fits)
+            let fittedId = UISheetPresentationController.Detent.Identifier("airadar.fitted")
+            let fitted = UISheetPresentationController.Detent.custom(identifier: fittedId) { context in
+                min(height, context.maximumDetentValue)
+            }
+            sheet.animateChanges {
+                sheet.detents = fits ? [fitted] : [fitted, .large()]
+                sheet.selectedDetentIdentifier = fittedId
+            }
+        }
+    }
+
+    private static func sheetController(from view: UIView) -> UISheetPresentationController? {
+        var responder: UIResponder? = view
+        while let r = responder, !(r is UIViewController) { responder = r.next }
+        var controller = responder as? UIViewController
+        while let parent = controller?.parent { controller = parent }
+        return controller?.sheetPresentationController
     }
 }
