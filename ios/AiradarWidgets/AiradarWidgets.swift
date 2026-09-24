@@ -39,12 +39,6 @@ private extension FlightActivityAttributes.ContentState {
         }
     }
 
-    var fractionFlown: Double {
-        let total = arrivalDate.timeIntervalSince(departureDate)
-        guard total > 0 else { return 0 }
-        return min(1, max(0, Date().timeIntervalSince(departureDate) / total))
-    }
-
     var durationText: String {
         let minutes = Int(arrivalDate.timeIntervalSince(departureDate) / 60)
         return "\(minutes / 60)h \(minutes % 60)m"
@@ -137,7 +131,7 @@ struct FlightLiveActivity: Widget {
                 } else {
                     CountdownDigits(state: s).font(.caption.monospacedDigit().weight(.semibold))
                         .foregroundStyle(s.urgency.color)
-                        .multilineTextAlignment(.center).frame(width: 52, alignment: .center)
+                        .multilineTextAlignment(.center).minimumScaleFactor(0.8).frame(width: 56, alignment: .center)
                 }
             } minimal: {
                 AirlineMark(logo: a.logo, size: 18)
@@ -264,12 +258,16 @@ private struct StatusText: View {
     }
 }
 
-/// The countdown as words — "1h4m" above an hour, "4m" inside it — written by the
-/// app at each update, once a minute.
+/// A system timer, so it keeps ticking with the app asleep: to departure before,
+/// to landing in the air.
 private struct CountdownDigits: View {
     let state: FlightActivityAttributes.ContentState
     var body: some View {
-        if state.stage == .landed { Text("Landed") } else { Text(state.countdown) }
+        switch state.stage {
+        case .landed: Text("Landed")
+        case .before: Text(timerInterval: Date.now...max(Date.now, state.departureDate), countsDown: true)
+        case .airborne: Text(timerInterval: Date.now...max(Date.now, state.arrivalDate), countsDown: true)
+        }
     }
 }
 
@@ -286,9 +284,9 @@ private struct Countdown: View {
     }
 }
 
-/// Before departure: a solid arrow from left to right. In the air: a dashed line
-/// with a node at the far end, the part flown drawn green, the plane at the
-/// point reached (estimated from the timetable when nothing fresher has come in).
+/// Before departure: a solid arrow from left to right. In the air: a system
+/// progress bar from take-off to landing, so it fills on its own with the app
+/// asleep, and a node at the far end. Landed: the whole line green.
 private struct RouteLine: View {
     let state: FlightActivityAttributes.ContentState
 
@@ -303,15 +301,23 @@ private struct RouteLine: View {
                     .stroke(.white.opacity(0.9), lineWidth: 1.5)
                 Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(.white.opacity(0.9))
                     .position(x: w - 8, y: midY)
-            case .airborne, .landed:
-                let f = state.stage == .landed ? 1 : state.fractionFlown
+            case .airborne:
+                ProgressView(timerInterval: state.departureDate...max(state.departureDate, state.arrivalDate), countsDown: false) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }
+                .progressViewStyle(.linear)
+                .tint(.green)
+                .frame(width: w - 10)
+                .position(x: (w - 10) / 2, y: midY)
+                Circle().fill(.white.opacity(0.9)).frame(width: 6, height: 6).position(x: w - 4, y: midY)
+            case .landed:
                 Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: w - 8, y: midY)) }
-                    .stroke(.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
-                Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: (w - 8) * f, y: midY)) }
                     .stroke(.green, lineWidth: 2)
                 Circle().fill(.white.opacity(0.9)).frame(width: 6, height: 6).position(x: w - 4, y: midY)
                 Image(systemName: "airplane").font(.system(size: 11)).foregroundStyle(.green)
-                    .position(x: max(6, (w - 8) * f), y: midY)
+                    .position(x: w - 14, y: midY)
             }
         }
     }

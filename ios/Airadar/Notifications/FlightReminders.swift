@@ -36,8 +36,10 @@ enum FlightReminders {
         let terminal = flight.departureTerminal.map { " from Terminal \($0)" } ?? ""
         post(.scheduled, at: dep.addingTimeInterval(-16 * 3600), title: "\(number) tomorrow · \(route)",
              body: "Departs \(clock.string(from: dep))\(terminal)")
-        post(.status, at: dep.addingTimeInterval(-3 * 3600), title: "\(number) in 3 hours · \(route)",
-             body: "Scheduled \(clock.string(from: dep)) · open Airadar for the latest status")
+        // Timed to when its Live Activity can start: iOS only lets the app start
+        // one while it's open, so this is the nudge to open it.
+        post(.status, at: dep.addingTimeInterval(-LiveActivities.leadIn(for: flight)), title: "\(number) · \(route)",
+             body: "Departs \(clock.string(from: dep)) · open Airadar to follow it live on your Lock Screen")
         post(.departure, at: dep.addingTimeInterval(TimeInterval(flight.delayMinutes * 60)), title: "\(number) · \(route)",
              body: flight.delayMinutes > 0 ? "Departing now, \(flight.delayMinutes) min late" : "Departing now")
         post(.landed, at: arr.addingTimeInterval(TimeInterval(flight.delayMinutes * 60) + 3600), title: "\(number) · landed",

@@ -44,8 +44,9 @@ struct AiradarApp: App {
                     if phase == .active, auth.isSignedIn { Task { try? await store.syncFromServer() } }
                     if phase == .background { BackgroundRefresh.schedule() }
                 }
-                // While a flight is near: the Live Activity rewritten every minute (its countdown,
-                // colours and the plane's place are the app's to write); the server asked every second minute.
+                // While a flight is near: the Live Activity rewritten every minute (its colours
+                // are the app's to write; the countdown and progress bar tick by themselves);
+                // the server asked every second minute.
                 .task {
                     var minute = 0
                     while !Task.isCancelled {

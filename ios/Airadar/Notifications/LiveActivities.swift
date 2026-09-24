@@ -1,12 +1,21 @@
 import ActivityKit
 import Foundation
 
-/// Starts, refreshes and ends the Live Activity for flights of the day: from eight
+/// Starts, refreshes and ends the Live Activity for flights of the day: from a few
 /// hours before departure until half an hour after landing, one per flight.
 @MainActor
 enum LiveActivities {
-    private static let leadIn: TimeInterval = 8 * 3600
-    private static let linger: TimeInterval = 30 * 60
+    nonisolated private static let linger: TimeInterval = 30 * 60
+
+    /// How long before departure the activity starts. iOS ends an activity eight
+    /// hours after it starts, so the lead-in shrinks for longer flights to keep
+    /// the flight itself and the landing inside that window: three hours for a
+    /// short hop, down to half an hour for a long-haul that can't fit anyway.
+    nonisolated static func leadIn(for f: Flight) -> TimeInterval {
+        guard let dep = f.departureInstant, let arr = f.arrivalInstant else { return 3 * 3600 }
+        let room = 8 * 3600 - 10 * 60 - max(0, arr.timeIntervalSince(dep)) - linger
+        return min(3 * 3600, max(30 * 60, room))
+    }
 
     static func sync(_ flights: [Flight]) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -14,17 +23,14 @@ enum LiveActivities {
         let wanted = flights.filter { f in
             guard f.deletedAt == nil, let dep = f.departureInstant, let arr = f.arrivalInstant else { return false }
             let delay = TimeInterval(f.delayMinutes * 60)
-            return dep + delay - leadIn <= now && now <= arr + delay + linger && f.status != .cancelled
+            return dep + delay - leadIn(for: f) <= now && now <= arr + delay + linger && f.status != .cancelled
         }
         let running = Activity<FlightActivityAttributes>.activities
         for a in running where !wanted.contains(where: { $0.id == a.attributes.tripId }) {
             Task { await a.end(nil, dismissalPolicy: .immediate) }
         }
         for f in wanted {
-            // Wider than the foreground loop's own minute-by-minute cadence needs, so a
-            // background wake spaced out further than that (BackgroundRefresh.swift — no
-            // guaranteed interval) doesn't grey the Island out in the gaps between them.
-            let content = ActivityContent(state: contentState(f), staleDate: now.addingTimeInterval(16 * 60))
+            let content = ActivityContent(state: contentState(f), staleDate: nextStageChange(f, after: now))
             if let a = running.first(where: { $0.attributes.tripId == f.id }) {
                 // Attributes cannot change; one started before its mark arrived is replaced.
                 if a.attributes.logo == nil, let logo = AirlineLogos.thumbnail(for: f.flightNumber, onArrival: {}) {
@@ -43,6 +49,16 @@ enum LiveActivities {
                 _ = try? Activity.request(attributes: attributes(f, logo: logo), content: content)
             }
         }
+    }
+
+    /// When the widget next has to be redrawn with nothing new from the app: the
+    /// moment it takes off, then the moment it lands. The system redraws a Live
+    /// Activity once it goes stale, which is what flips the island from counting
+    /// down to boarding to counting down to landing while the app is asleep.
+    private static func nextStageChange(_ f: Flight, after now: Date) -> Date {
+        let delay = TimeInterval(f.delayMinutes * 60)
+        let edges = [f.departureInstant, f.arrivalInstant].compactMap { $0.map { $0 + delay } }
+        return edges.first { $0 > now } ?? now.addingTimeInterval(16 * 60)
     }
 
     private static func attributes(_ f: Flight, logo: Data?) -> FlightActivityAttributes {
@@ -72,18 +88,7 @@ enum LiveActivities {
             departureDate: (f.departureInstant ?? Date()) + delay, arrivalDate: (f.arrivalInstant ?? Date()) + delay,
             departureClock: dep.clock, arrivalClock: arr.clock,
             departureGate: f.departureGate, arrivalGate: f.arrivalGate, baggageClaim: f.baggageClaim,
-            delayMinutes: f.delayMinutes, landed: f.status == .landed || f.status == .completed,
-            countdown: countdown(f, delay: delay))
-    }
-
-    /// "1h4m" above an hour, "4m" inside it — no seconds; to departure before, to landing in the air.
-    static func countdown(_ f: Flight, delay: TimeInterval) -> String {
-        let now = Date()
-        guard let dep = f.departureInstant, let arr = f.arrivalInstant else { return "" }
-        let target = now < dep + delay ? dep + delay : arr + delay
-        let minutes = max(0, Int(target.timeIntervalSince(now) / 60))
-        if minutes >= 60 { return "\(minutes / 60)h\(minutes % 60)m" }
-        return "\(minutes)m"
+            delayMinutes: f.delayMinutes, landed: f.status == .landed || f.status == .completed)
     }
 
     private static func kind(_ s: FlightStatus) -> FlightActivityAttributes.StatusKind {
