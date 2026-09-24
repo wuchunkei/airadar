@@ -510,7 +510,7 @@ fun FlightStatus.label(): String = when (this) {
 }
 
 /**
- * The status as one line: in the air, the time left; before it goes, how late
+ * The status as one line: in the air, how long it's been flying; before it goes, how late
  * it is ("late", so it can't be read as a duration); once down, how early or
  * late it landed, when the source said.
  */
@@ -520,9 +520,9 @@ fun Flight.statusLine(now: java.time.Instant = java.time.Instant.now()): String 
     fun span(minutes: Long) = if (minutes >= 60) "${minutes / 60}h${minutes % 60}m" else "${minutes}m"
     return when (phase) {
         FlightPhase.IN_PROGRESS -> {
-            val arr = expectedArrival ?: return status
-            val left = java.time.Duration.between(now, arr).toMinutes()
-            if (left > 0) "$status · ${span(left)} left" else status
+            val dep = departureInstant ?: return status
+            val flown = java.time.Duration.between(dep.plusSeconds(delayMinutes * 60L), now).toMinutes()
+            if (flown > 0) "$status for ${span(flown)}" else status
         }
         FlightPhase.UPCOMING -> if (delayMinutes > 0) "$status · ${span(delayMinutes.toLong())} late" else status
         FlightPhase.PAST -> {

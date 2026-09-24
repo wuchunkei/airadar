@@ -568,7 +568,7 @@ extension Color {
 }
 
 extension Flight {
-    /// The status as one line: in the air, the time left; before it goes, how
+    /// The status as one line: in the air, how long it's been flying; before it goes, how
     /// late it is ("late", so it can't be read as a duration); once down, how
     /// early or late it landed, when the source said.
     func statusLine(at now: Date = Date()) -> String {
@@ -576,9 +576,9 @@ extension Flight {
         if displayStatus == .cancelled || displayStatus == .diverted { return status }
         switch phase {
         case .inProgress:
-            guard let arr = expectedArrival else { return status }
-            let left = Int(arr.timeIntervalSince(now) / 60)
-            return left > 0 ? "\(status) · \(Self.span(left)) left" : status
+            guard let dep = departureInstant else { return status }
+            let flown = Int(now.timeIntervalSince(dep + TimeInterval(delayMinutes * 60)) / 60)
+            return flown > 0 ? "\(status) for \(Self.span(flown))" : status
         case .upcoming:
             return delayMinutes > 0 ? "\(status) · \(Self.span(delayMinutes)) late" : status
         case .past:

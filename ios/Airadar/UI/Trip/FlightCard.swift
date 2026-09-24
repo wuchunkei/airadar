@@ -167,7 +167,7 @@ struct AirportRow: View {
 struct StatusChip: View {
     let flight: Flight
     var body: some View {
-        // Redrawn every minute so the time left in the air keeps counting down.
+        // Redrawn every minute so the time in the air keeps counting up.
         TimelineView(.everyMinute) { context in
             Text(flight.statusLine(at: context.date))
                 .font(.caption.weight(.semibold)).foregroundStyle(flight.displayStatus.color)

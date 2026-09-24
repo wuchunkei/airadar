@@ -939,7 +939,7 @@ fun FlightCard(
                             )
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
-                        // Ticks every minute so the time left in the air keeps counting down.
+                        // Ticks every minute so the time in the air keeps counting up.
                         val now by produceState(Instant.now()) {
                             while (true) { delay(60_000); value = Instant.now() }
                         }
