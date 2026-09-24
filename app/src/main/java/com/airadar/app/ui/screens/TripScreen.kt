@@ -26,6 +26,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
@@ -84,6 +85,7 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -118,6 +120,7 @@ import com.airadar.app.ui.components.formatDuration
 import com.airadar.app.ui.components.label
 import com.airadar.app.ui.theme.statusColor
 import com.airadar.app.ui.viewmodel.TripViewModel
+import java.time.Instant
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
@@ -935,11 +938,12 @@ fun FlightCard(
                             )
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
+                        // Ticks every minute so the time left in the air keeps counting down.
+                        val now by produceState(Instant.now()) {
+                            while (true) { delay(60_000); value = Instant.now() }
+                        }
                         Text(
-                            buildString {
-                                append(flight.displayStatus.label())
-                                if (flight.delayMinutes > 0) append(" ${flight.delayMinutes}m")
-                            },
+                            statusChipLabel(flight, now),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = flight.displayStatus.statusColor()
@@ -1133,3 +1137,19 @@ private fun AirportRow(city: String?, code: String, terminal: String?, time: Sho
 private fun LazyListState.restingAt(anchor: Int): Boolean =
     firstVisibleItemIndex < anchor ||
             (firstVisibleItemIndex == anchor && firstVisibleItemScrollOffset == 0)
+
+/**
+ * In the air: how long until it lands. Before it goes: how late it is, said as
+ * "late" so it can't be read as a duration.
+ */
+private fun statusChipLabel(flight: Flight, now: Instant): String {
+    val status = flight.displayStatus.label()
+    val arr = flight.arrivalInstant
+    if (flight.phase == FlightPhase.IN_PROGRESS && arr != null) {
+        val left = java.time.Duration.between(now, arr.plusSeconds(flight.delayMinutes * 60L)).toMinutes()
+        if (left <= 0) return status
+        return "$status · ${if (left >= 60) "${left / 60}h${left % 60}m" else "${left}m"} left"
+    }
+    if (flight.phase == FlightPhase.UPCOMING && flight.delayMinutes > 0) return "$status · ${flight.delayMinutes}m late"
+    return status
+}
