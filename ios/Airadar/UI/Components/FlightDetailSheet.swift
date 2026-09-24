@@ -520,13 +520,17 @@ struct FlightProgressLine: View {
             let span = w - 8
             let flown = flight.phase == .past ? 1 : flight.phase == .inProgress ? flight.fractionFlown : 0
             let labelled = Self.fitting(stops, span: span)
+            let green = Color(red: 0.20, green: 0.70, blue: 0.30)
             ForEach(stops, id: \.self) { stop in
-                Circle().fill(stop.fraction <= flown ? Color(red: 0.20, green: 0.70, blue: 0.30) : Color.secondary)
-                    .frame(width: 5, height: 5)
+                let passed = stop.fraction <= flown
+                // Ringed so a passed dot still reads on the green line it sits on.
+                Circle().fill(passed ? green : Color.secondary)
+                    .overlay { if passed { Circle().stroke(Color(.systemBackground), lineWidth: 1.5) } }
+                    .frame(width: passed ? 9 : 5, height: passed ? 9 : 5)
                     .position(x: span * stop.fraction, y: midY)
                 if labelled.contains(stop) {
                     Text(stop.code).font(.system(size: 9, weight: .semibold).monospaced())
-                        .foregroundStyle(.secondary).fixedSize()
+                        .foregroundStyle(passed ? green : Color.secondary).fixedSize()
                         .position(x: span * stop.fraction, y: midY - 13)
                 }
             }

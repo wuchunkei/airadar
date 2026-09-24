@@ -201,6 +201,19 @@ private struct LockScreenView: View {
 
 // MARK: - Pieces
 
+/// Which waypoint codes fit side by side along a line, left to right.
+enum WaypointLabels {
+    static func fitting(_ fractions: [Double], span: CGFloat) -> Set<Int> {
+        var kept: Set<Int> = []
+        var lastX = -CGFloat.infinity
+        for (i, f) in fractions.enumerated() {
+            let x = span * f
+            if x - lastX >= 21 { kept.insert(i); lastX = x }
+        }
+        return kept
+    }
+}
+
 /// Code and terminal on one line (same size, the terminal quieter), the city and
 /// country beneath, the local time beneath that.
 private struct Endpoint: View {
@@ -312,8 +325,8 @@ private struct Countdown: View {
 /// Before departure: a solid arrow from left to right. In the air: a system
 /// progress bar from take-off to landing, so it fills on its own with the app
 /// asleep, and a node at the far end. Landed: the whole line green. Cities
-/// along the way sit on it as dots (green once passed); in the air the next
-/// one's code is written beneath its dot.
+/// along the way sit on it as dots, each with its code beneath (as many as fit);
+/// once passed, the dot grows and it and its code turn green.
 private struct RouteLine: View {
     let state: FlightActivityAttributes.ContentState
 
@@ -349,15 +362,20 @@ private struct RouteLine: View {
             }
             let span = w - 12
             let flown = state.flownFraction
-            ForEach(state.waypoints, id: \.self) { wp in
-                Circle().fill(wp.fraction <= flown ? Color.green : Color.white.opacity(0.9))
-                    .frame(width: 5, height: 5)
+            let labelled = WaypointLabels.fitting(state.waypoints.map(\.fraction), span: span)
+            ForEach(Array(state.waypoints.enumerated()), id: \.offset) { index, wp in
+                let passed = wp.fraction <= flown
+                // Ringed in black so a passed dot still reads on the green bar it sits on.
+                Circle().fill(passed ? Color.green : Color.white.opacity(0.9))
+                    .overlay { if passed { Circle().stroke(.black, lineWidth: 1.5) } }
+                    .frame(width: passed ? 9 : 5, height: passed ? 9 : 5)
                     .position(x: span * wp.fraction, y: midY)
-            }
-            if let next = state.nextWaypoint {
-                Text(next.code).font(.system(size: 9, weight: .semibold).monospaced())
-                    .foregroundStyle(.white.opacity(0.85)).fixedSize()
-                    .position(x: min(max(12, span * next.fraction), w - 12), y: midY + 12)
+                if labelled.contains(index) {
+                    let isNext = wp == state.nextWaypoint
+                    Text(wp.code).font(.system(size: 9, weight: isNext ? .bold : .semibold).monospaced())
+                        .foregroundStyle(passed ? Color.green : Color.white.opacity(isNext ? 1 : 0.6)).fixedSize()
+                        .position(x: min(max(12, span * wp.fraction), w - 12), y: midY + 12)
+                }
             }
         }
     }
