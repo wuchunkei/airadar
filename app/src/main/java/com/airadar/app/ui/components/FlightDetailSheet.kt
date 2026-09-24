@@ -49,6 +49,7 @@ import com.airadar.app.data.FlightStore
 import com.airadar.app.data.LivePosition
 import com.airadar.app.data.LivePositionClient
 import com.airadar.app.data.TrackPoint
+import com.airadar.app.data.cleanedTrack
 import com.airadar.app.data.OpenSkyClient
 import com.airadar.app.data.formatDistance
 import com.airadar.app.ui.theme.statusColor
@@ -185,7 +186,7 @@ fun FlightDetailSheet(
                     }
                     liveTrail.size >= 2 -> liveTrail.toList()
                     else -> null
-                }?.let { gapFilled(it) }
+                }?.let { gapFilled(cleanedTrack(it)) }
                 val progress = if (realTrack == null && flight.phase == FlightPhase.IN_PROGRESS) flight.fractionFlown else null
                 // Ticks once a minute in the air, so the map's estimated position moves on.
                 val minute by produceState(java.time.Instant.now(), flight.id) {

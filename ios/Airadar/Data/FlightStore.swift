@@ -217,7 +217,8 @@ final class FlightStore: ObservableObject {
     }
 
     func setTrack(_ id: String, points: [TrackPoint], flownOn: String, icao24: String? = nil) {
-        publish(all.map { var f = $0; if f.id == id { f.track = points; f.trackFlownOn = flownOn }; return f })
+        let clean = TrackPoint.cleaned(points)
+        publish(all.map { var f = $0; if f.id == id { f.track = clean; f.trackFlownOn = flownOn }; return f })
         if let updated = all.first(where: { $0.id == id }) { push { try await BackendClient.putTrip(updated) } }
         // The airframe's own hex, from the track just fetched — worth a free,
         // one-off aircraft-type lookup if the trip doesn't already have one.

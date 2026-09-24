@@ -122,25 +122,36 @@ data class Flight(
      * from the destination is simply what "still flying" looks like. 100km,
      * not a tighter number, so a track that merely lost ADS-B coverage a
      * little early on final approach doesn't misread as a diversion. */
+    // And only a track that still reaches the end of the flight counts: one that
+    // simply stops early (out of receiver range, or only the first minutes caught)
+    // says where coverage ended, not where the plane did. Nor when the source
+    // already has the arrival: that is the airline saying it landed where it was going.
     private val trackDiverged: Boolean
         get() {
-            if (phase != FlightPhase.PAST) return false
-            val last = track?.lastOrNull() ?: return false
+            if (phase != FlightPhase.PAST || arrivalDelayMinutes != null) return false
+            val last = cleanTrack?.lastOrNull() ?: return false
+            val seen = last.time ?: return false
+            val expected = expectedArrival ?: return false
+            if (seen.isBefore(expected.minusSeconds(30 * 60))) return false
             val arrival = arrivalAirport ?: return false
             return greatCircleKm(last.lat, last.lon, arrival.latitude, arrival.longitude) > 100
         }
+
+    /** The stored track with its impossible points taken out — see [cleanedTrack]. */
+    val cleanTrack: List<TrackPoint>?
+        get() = track?.let(::cleanedTrack)
 
     /** The real track's last known fix, only when it's genuine evidence the
      * flight didn't reach where it was scheduled to -- for naming where it
      * actually ended up, on top of `displayStatus` already reading Diverted. */
     val divergedLastFix: TrackPoint?
-        get() = if (trackDiverged) track?.lastOrNull() else null
+        get() = if (trackDiverged) cleanTrack?.lastOrNull() else null
 
     val durationMinutes: Int
         get() {
             if (trackDiverged) {
-                val start = track?.firstOrNull()?.time
-                val end = track?.lastOrNull()?.time
+                val start = cleanTrack?.firstOrNull()?.time
+                val end = cleanTrack?.lastOrNull()?.time
                 if (start != null && end != null) return (java.time.Duration.between(start, end).toMinutes()).toInt().coerceAtLeast(0)
             }
             val dep = departureInstant ?: return 0
@@ -166,7 +177,7 @@ data class Flight(
     val distanceKm: Int
         get() {
             if (trackDiverged) {
-                val points = track
+                val points = cleanTrack
                 if (points != null && points.size >= 2) {
                     var total = 0
                     for (i in 0 until points.size - 1) {
@@ -277,4 +288,34 @@ fun greatCircleKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Int {
             Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
             Math.sin(dLon / 2) * Math.sin(dLon / 2)
     return (r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toInt()
+}
+
+/**
+ * A track in time order with its impossible points dropped: a fix no airliner
+ * could have reached from its neighbours (faster than 1,300 km/h) is some other
+ * aircraft's, or a garbled one — left in, it zigzags the drawn line and can end
+ * the track somewhere the flight never went. Same rules as iOS's TrackPoint.cleaned.
+ */
+fun cleanedTrack(points: List<TrackPoint>): List<TrackPoint> {
+    val out = (if (points.all { it.time != null }) points.sortedBy { it.time } else points).toMutableList()
+    fun impossible(a: TrackPoint, b: TrackPoint): Boolean {
+        val ta = a.time ?: return false
+        val tb = b.time ?: return false
+        val km = greatCircleKm(a.lat, a.lon, b.lat, b.lon).toDouble()
+        val hours = kotlin.math.abs(java.time.Duration.between(ta, tb).seconds) / 3600.0
+        return if (hours > 0) km / hours > 1300 else km > 5
+    }
+    while (out.size >= 3) {
+        val n = out.size
+        // A point in the middle out of line with both neighbours: a stray.
+        val stray = (1 until n - 1).firstOrNull { impossible(out[it - 1], out[it]) && impossible(out[it], out[it + 1]) }
+        when {
+            stray != null -> out.removeAt(stray)
+            // An end point out of line with a neighbour that itself agrees with the next one in.
+            impossible(out[0], out[1]) && !impossible(out[1], out[2]) -> out.removeAt(0)
+            impossible(out[n - 2], out[n - 1]) && !impossible(out[n - 3], out[n - 2]) -> out.removeAt(n - 1)
+            else -> break
+        }
+    }
+    return out
 }

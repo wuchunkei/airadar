@@ -305,10 +305,21 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     /// so a track that merely lost ADS-B coverage a little early on final
     /// approach (common at airports with thin ground-receiver coverage)
     /// doesn't misread as a diversion.
+    ///
+    /// And only a track that still reaches the end of the flight counts: one
+    /// that simply stops early (out of receiver range, or only the first few
+    /// minutes ever caught) says where coverage ended, not where the plane
+    /// did. Nor when the source itself already has the arrival: that is the
+    /// airline saying it landed where it was going.
     private var trackDiverged: Bool {
-        guard phase == .past, let track, let last = track.last, let arrival = arrivalAirport else { return false }
+        guard phase == .past, arrivalDelayMinutes == nil, let track = cleanTrack, let last = track.last,
+              let seen = last.time, let arrival = arrivalAirport, let expected = expectedArrival,
+              seen >= expected.addingTimeInterval(-30 * 60) else { return false }
         return greatCircleKm(last.lat, last.lon, arrival.latitude, arrival.longitude) > 100
     }
+
+    /// The stored track with its impossible points taken out — see `TrackPoint.cleaned`.
+    var cleanTrack: [TrackPoint]? { track.map(TrackPoint.cleaned) }
 
     /// The real track's last known fix, only when it's genuine evidence the
     /// flight didn't reach where it was scheduled to -- for naming where it
@@ -316,7 +327,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     var divergedLastFix: TrackPoint? { trackDiverged ? track?.last : nil }
 
     var durationMinutes: Int {
-        if trackDiverged, let track, let start = track.first?.time, let end = track.last?.time {
+        if trackDiverged, let track = cleanTrack, let start = track.first?.time, let end = track.last?.time {
             return max(0, Int(end.timeIntervalSince(start) / 60))
         }
         guard let dep = departureInstant, let arr = arrivalInstant else { return 0 }
@@ -326,7 +337,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     }
 
     var distanceKm: Int {
-        if trackDiverged, let track, track.count >= 2 {
+        if trackDiverged, let track = cleanTrack, track.count >= 2 {
             var total = 0.0
             for (p, q) in zip(track, track.dropFirst()) { total += greatCircleKm(p.lat, p.lon, q.lat, q.lon) }
             return Int(total.rounded())
@@ -591,5 +602,37 @@ extension Flight {
 
     private static func span(_ minutes: Int) -> String {
         minutes >= 60 ? "\(minutes / 60)h\(minutes % 60)m" : "\(minutes)m"
+    }
+}
+
+extension TrackPoint {
+    /// A track in time order with its impossible points dropped: a fix that
+    /// no airliner could have reached from both its neighbours (faster than
+    /// 1,300 km/h either way) is some other aircraft's, or a garbled one —
+    /// left in, it zigzags the drawn line and can end the track somewhere the
+    /// flight never went. Points without a time keep their place untouched.
+    static func cleaned(_ points: [TrackPoint]) -> [TrackPoint] {
+        var out = points.allSatisfy { $0.time != nil } ? points.sorted { $0.time! < $1.time! } : points
+        func impossible(_ a: TrackPoint, _ b: TrackPoint) -> Bool {
+            guard let ta = a.time, let tb = b.time else { return false }
+            let km = greatCircleKm(a.lat, a.lon, b.lat, b.lon)
+            let hours = abs(tb.timeIntervalSince(ta)) / 3600
+            return hours > 0 ? km / hours > 1300 : km > 5
+        }
+        while out.count >= 3 {
+            let n = out.count
+            // A point in the middle out of line with both neighbours: a stray.
+            if let i = (1..<(n - 1)).first(where: { impossible(out[$0 - 1], out[$0]) && impossible(out[$0], out[$0 + 1]) }) {
+                out.remove(at: i)
+            // An end point out of line with a neighbour that itself agrees with the next one in.
+            } else if impossible(out[0], out[1]) && !impossible(out[1], out[2]) {
+                out.removeFirst()
+            } else if impossible(out[n - 2], out[n - 1]) && !impossible(out[n - 3], out[n - 2]) {
+                out.removeLast()
+            } else {
+                break
+            }
+        }
+        return out
     }
 }
