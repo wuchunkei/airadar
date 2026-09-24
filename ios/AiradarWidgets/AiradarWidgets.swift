@@ -21,6 +21,13 @@ private extension FlightActivityAttributes.ContentState {
         return now < departureDate ? .before : .airborne
     }
 
+    /// What the plane should be over right now, while it's in the air.
+    var passingOver: String? {
+        guard stage == .airborne else { return nil }
+        let now = Date()
+        return waypoints.last { $0.at <= now }?.name
+    }
+
     /// Hours to departure (negative once gone).
     var hoursToGo: Double { departureDate.timeIntervalSinceNow / 3600 }
 
@@ -81,9 +88,9 @@ struct FlightLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     Group {
                         if s.stage == .landed {
-                            Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading)
+                            Endpoint(code: a.arrival, terminal: a.arrivalTerminal, gate: s.arrivalGate, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading)
                         } else {
-                            Endpoint(code: a.departure, terminal: a.departureTerminal, place: a.departureCity, clock: s.departureClock, alignment: .leading)
+                            Endpoint(code: a.departure, terminal: a.departureTerminal, gate: s.departureGate, place: a.departureCity, clock: s.departureClock, alignment: .leading)
                         }
                     }
                     .padding(.leading, 6)
@@ -93,7 +100,7 @@ struct FlightLiveActivity: Widget {
                         if s.stage == .landed {
                             Facts(state: s, attributes: a)
                         } else {
-                            Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .trailing)
+                            Endpoint(code: a.arrival, terminal: a.arrivalTerminal, gate: s.arrivalGate, place: a.arrivalCity, clock: s.arrivalClock, alignment: .trailing)
                         }
                     }
                     .padding(.trailing, 6)
@@ -108,6 +115,7 @@ struct FlightLiveActivity: Widget {
                     VStack(spacing: 4) {
                         Countdown(state: s).font(.caption)
                         RouteLine(state: s).frame(height: 16)
+                        if let over = s.passingOver { PassingOver(name: over).font(.caption2) }
                     }
                     .padding(.top, 2)
                     // The bottom region spans the island's full width, so its
@@ -158,13 +166,13 @@ private struct LockScreenView: View {
             }
             if s.stage == .landed {
                 HStack(alignment: .center) {
-                    Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading, large: true)
+                    Endpoint(code: a.arrival, terminal: a.arrivalTerminal, gate: s.arrivalGate, place: a.arrivalCity, clock: s.arrivalClock, alignment: .leading, large: true)
                     Spacer()
                     Facts(state: s, attributes: a)
                 }
             } else {
                 HStack(alignment: .top, spacing: 12) {
-                    Endpoint(code: a.departure, terminal: a.departureTerminal, place: a.departureCity, clock: s.departureClock, alignment: .leading, large: true)
+                    Endpoint(code: a.departure, terminal: a.departureTerminal, gate: s.departureGate, place: a.departureCity, clock: s.departureClock, alignment: .leading, large: true)
                     // The middle: countdown above, the route line below.
                     VStack(spacing: 10) {
                         Countdown(state: s).font(.subheadline)
@@ -172,8 +180,9 @@ private struct LockScreenView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, 6)
-                    Endpoint(code: a.arrival, terminal: a.arrivalTerminal, place: a.arrivalCity, clock: s.arrivalClock, alignment: .trailing, large: true)
+                    Endpoint(code: a.arrival, terminal: a.arrivalTerminal, gate: s.arrivalGate, place: a.arrivalCity, clock: s.arrivalClock, alignment: .trailing, large: true)
                 }
+                if let over = s.passingOver { PassingOver(name: over).font(.caption) }
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 16)
@@ -183,11 +192,22 @@ private struct LockScreenView: View {
 
 // MARK: - Pieces
 
+/// "Over Johor, Malaysia": where the route should have got to by now.
+private struct PassingOver: View {
+    let name: String
+    var body: some View {
+        Label("Over \(name)", systemImage: "location.fill")
+            .foregroundStyle(.secondary).lineLimit(1).labelStyle(.titleAndIcon)
+    }
+}
+
 /// Code and terminal on one line (same size, the terminal quieter), the city and
 /// country beneath, the local time beneath that.
 private struct Endpoint: View {
     let code: String
     let terminal: String?
+    /// Shown in place of the city on the island (no room for both), beside it on the lock screen.
+    var gate: String? = nil
     let place: String
     let clock: String
     let alignment: HorizontalAlignment
@@ -200,7 +220,12 @@ private struct Endpoint: View {
                 Text(code).font(large ? .title2.bold() : .title3.bold())
                 if let terminal { Text("T\(terminal)").font(large ? .title2.bold() : .title3.bold()).foregroundStyle(.secondary) }
             }
-            Text(place).font(large ? .caption : .caption2).foregroundStyle(.secondary).lineLimit(1)
+            if let gate {
+                Text(large ? "\(place) · Gate \(gate)" : "Gate \(gate)")
+                    .font((large ? Font.caption : Font.caption2).weight(.semibold)).lineLimit(1)
+            } else {
+                Text(place).font(large ? .caption : .caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
             Text(clock).font((large ? Font.body : Font.subheadline).monospacedDigit().weight(.semibold))
         }
     }

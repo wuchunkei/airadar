@@ -19,6 +19,15 @@ struct FlightActivityAttributes: ActivityAttributes {
         var delayMinutes: Int
         /// Set once the airline reports the flight down; the arrival clock is then the landing time.
         var landed: Bool = false
+        /// Places along the way, each from when the plane should be over it —
+        /// named by the app once per flight, picked by the widget by the clock
+        /// whenever it draws, so it moves on without an update from the app.
+        var waypoints: [Waypoint] = []
+    }
+
+    struct Waypoint: Codable, Hashable {
+        var at: Date
+        var name: String
     }
 
     enum StatusKind: String, Codable, Hashable { case scheduled, live, good, warn, bad }

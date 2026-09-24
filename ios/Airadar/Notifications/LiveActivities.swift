@@ -30,6 +30,7 @@ enum LiveActivities {
             Task { await a.end(nil, dismissalPolicy: .immediate) }
         }
         for f in wanted {
+            RouteWaypoints.prepare(f) { sync(FlightStore.shared.flights) }
             let content = ActivityContent(state: contentState(f), staleDate: nextStageChange(f, after: now))
             if let a = running.first(where: { $0.attributes.tripId == f.id }) {
                 // Attributes cannot change; one started before its mark arrived is replaced.
@@ -88,7 +89,8 @@ enum LiveActivities {
             departureDate: (f.departureInstant ?? Date()) + delay, arrivalDate: f.expectedArrival ?? Date(),
             departureClock: dep.clock, arrivalClock: arr.clock,
             departureGate: f.departureGate, arrivalGate: f.arrivalGate, baggageClaim: f.baggageClaim,
-            delayMinutes: f.delayMinutes, landed: f.status == .landed || f.status == .completed)
+            delayMinutes: f.delayMinutes, landed: f.status == .landed || f.status == .completed,
+            waypoints: RouteWaypoints.waypoints(for: f, departure: (f.departureInstant ?? Date()) + delay, arrival: f.expectedArrival ?? Date()))
     }
 
     private static func kind(_ s: FlightStatus) -> FlightActivityAttributes.StatusKind {
