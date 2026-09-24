@@ -295,7 +295,9 @@ struct FlightDetailSheet<Actions: View>: View {
             Spacer()
             VStack(alignment: .trailing) {
                 Text("Status").font(.caption).foregroundStyle(.secondary)
-                Text(flight.displayStatus.label).fontWeight(.semibold).foregroundStyle(flight.displayStatus.color)
+                TimelineView(.everyMinute) { context in
+                    Text(flight.statusLine(at: context.date)).fontWeight(.semibold).foregroundStyle(flight.displayStatus.color)
+                }
             }
         }
     }
@@ -324,7 +326,7 @@ struct FlightDetailSheet<Actions: View>: View {
         let arrValue = arr.clock + " " + arr.zone
         return VStack(spacing: 10) {
             DetailRow(label: "Departing", value: depValue, secondary: longDay(flight.departureDay), superseded: dep.original)
-            DetailRow(label: "Arriving", value: arrValue, secondary: longDay(flight.arrivalTime.dayString), superseded: arr.original)
+            DetailRow(label: "Arriving", value: arrValue, secondary: longDay(flight.arrivalTime.dayString), superseded: arr.original, early: arr.early)
             DetailRow(label: "Duration", value: formatDuration(flight.durationMinutes))
             DetailRow(label: "Distance", value: formatDistance(flight.distanceKm))
             if let a = flight.aircraft ?? enrichedFlight?.aircraft ?? adsbdbAircraft?.type { DetailRow(label: "Aircraft", value: a) }
@@ -356,7 +358,7 @@ struct FlightDetailSheet<Actions: View>: View {
         // track -- even a stale one stored from before this rule existed.
         guard flight.phase != .upcoming, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
         guard storedTrail.count >= 2 else { return [] }
-        let eta = flight.arrivalInstant.map { $0 + TimeInterval(flight.delayMinutes * 60) }
+        let eta = flight.expectedArrival
         return [MapTrack(from: a, to: b, points: Self.gapFilled(storedTrail), live: flight.phase == .inProgress,
                          eta: eta, now: flight.phase == .inProgress ? minute : nil)]
     }
@@ -455,6 +457,8 @@ struct DetailRow: View {
     var secondary: String? = nil
     /// An earlier figure this value replaced — shown struck through beside it.
     var superseded: String? = nil
+    /// The new figure is earlier than the one it replaced: green, not the delay colour.
+    var early = false
 
     var body: some View {
         HStack(alignment: .top) {
@@ -463,7 +467,8 @@ struct DetailRow: View {
             VStack(alignment: .trailing, spacing: 1) {
                 HStack(spacing: 6) {
                     if let superseded { Text(superseded).strikethrough().foregroundStyle(.secondary) }
-                    Text(value).fontWeight(.semibold).foregroundStyle(superseded != nil ? FlightStatus.delayed.color : .primary)
+                    Text(value).fontWeight(.semibold)
+                        .foregroundStyle(superseded == nil ? .primary : early ? FlightStatus.onTime.color : FlightStatus.delayed.color)
                 }
                 if let secondary { Text(secondary).font(.caption).foregroundStyle(.secondary) }
             }

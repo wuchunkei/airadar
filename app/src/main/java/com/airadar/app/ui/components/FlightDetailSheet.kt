@@ -190,7 +190,7 @@ fun FlightDetailSheet(
                 val minute by produceState(java.time.Instant.now(), flight.id) {
                     while (flight.phase == FlightPhase.IN_PROGRESS) { delay(60_000); value = java.time.Instant.now() }
                 }
-                val eta = flight.arrivalInstant?.plusSeconds(flight.delayMinutes * 60L)
+                val eta = flight.expectedArrival
                 TileMap(
                     routes = if (realTrack == null) listOf(MapRoute(from, to, progress = progress)) else emptyList(),
                     tracks = if (realTrack == null) emptyList()
@@ -266,7 +266,7 @@ fun FlightDetailSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            flight.displayStatus.label(),
+                            flight.statusLine(),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = flight.displayStatus.statusColor()
@@ -332,10 +332,12 @@ fun FlightDetailSheet(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
                 val late = flight.status == FlightStatus.DELAYED && flight.delayMinutes > 0
+                // The arrival moves on its own figure once the source has one, early or late.
+                val arrMoved = flight.arrivalDelayMinutes?.let { it != 0 } ?: late
                 val depScheduled = flight.shownTime(arrival = false, forceSystemZone = forceSystemZone)
                 val arrScheduled = flight.shownTime(arrival = true, forceSystemZone = forceSystemZone)
                 val depActual = flight.shownTime(arrival = false, forceSystemZone = forceSystemZone, includeDelay = late)
-                val arrActual = flight.shownTime(arrival = true, forceSystemZone = forceSystemZone, includeDelay = late)
+                val arrActual = flight.shownTime(arrival = true, forceSystemZone = forceSystemZone, includeDelay = arrMoved)
                 DetailRow(
                     label = "Departing",
                     value = "${depActual.clock} ${depActual.zoneTag}".trim(),
@@ -345,7 +347,8 @@ fun FlightDetailSheet(
                 DetailRow(
                     label = "Arriving",
                     value = "${arrActual.clock} ${arrActual.zoneTag}".trim(),
-                    superseded = if (late) arrScheduled.clock else null,
+                    superseded = if (arrMoved) arrScheduled.clock else null,
+                    early = arrMoved && flight.arrivalShiftMinutes < 0,
                     secondary = flight.arrivalTime.format(dateFormat)
                 )
                 DetailRow(
@@ -395,7 +398,9 @@ private fun DetailRow(
     value: String,
     secondary: String? = null,
     /** An earlier figure this value replaced — shown struck through beside it. */
-    superseded: String? = null
+    superseded: String? = null,
+    /** The new figure is earlier than the one it replaced: green, not the delay colour. */
+    early: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -424,9 +429,12 @@ private fun DetailRow(
                     value,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    // A revised time reads in the delay colour, nothing more.
-                    color = if (superseded != null) FlightStatus.DELAYED.statusColor()
-                    else MaterialTheme.colorScheme.onSurface
+                    // A revised time reads in the delay colour, or on-time green when earlier.
+                    color = when {
+                        superseded == null -> MaterialTheme.colorScheme.onSurface
+                        early -> FlightStatus.ON_TIME.statusColor()
+                        else -> FlightStatus.DELAYED.statusColor()
+                    }
                 )
             }
             secondary?.let {
@@ -499,4 +507,31 @@ fun FlightStatus.label(): String = when (this) {
     FlightStatus.DEPARTED -> "Departed"
     FlightStatus.IN_FLIGHT -> "In flight"
     FlightStatus.LANDED -> "Finished"
+}
+
+/**
+ * The status as one line: in the air, the time left; before it goes, how late
+ * it is ("late", so it can't be read as a duration); once down, how early or
+ * late it landed, when the source said.
+ */
+fun Flight.statusLine(now: java.time.Instant = java.time.Instant.now()): String {
+    val status = displayStatus.label()
+    if (displayStatus == FlightStatus.CANCELLED || displayStatus == FlightStatus.DIVERTED) return status
+    fun span(minutes: Long) = if (minutes >= 60) "${minutes / 60}h${minutes % 60}m" else "${minutes}m"
+    return when (phase) {
+        FlightPhase.IN_PROGRESS -> {
+            val arr = expectedArrival ?: return status
+            val left = java.time.Duration.between(now, arr).toMinutes()
+            if (left > 0) "$status · ${span(left)} left" else status
+        }
+        FlightPhase.UPCOMING -> if (delayMinutes > 0) "$status · ${span(delayMinutes.toLong())} late" else status
+        FlightPhase.PAST -> {
+            val d = arrivalDelayMinutes ?: return status
+            when {
+                d < 0 -> "Landed · ${span(-d.toLong())} early"
+                d > 0 -> "Landed · ${span(d.toLong())} late"
+                else -> "Landed · on time"
+            }
+        }
+    }
 }

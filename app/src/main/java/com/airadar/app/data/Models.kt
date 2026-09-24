@@ -39,6 +39,10 @@ data class Flight(
     val aircraft: String? = null,
     val pnr: String? = null,
     val delayMinutes: Int = 0,
+    /** How far the arrival moved from the timetable, from the source's own
+     * estimated or actual arrival: negative early, positive late, null when it
+     * hasn't said. Separate from [delayMinutes] (the departure's). */
+    val arrivalDelayMinutes: Int? = null,
     val baggageClaim: String? = null,
     val typicalDurationMinutes: Int? = null,
     /** Imported from a mailbox and not yet confirmed by the traveller. */
@@ -77,11 +81,20 @@ data class Flight(
     val arrivalInstant: Instant?
         get() = arrivalAirport?.let { arrivalTime.atZone(it.zone).toInstant() }
 
+    /** Minutes the arrival moved: the source's own arrival figure when it has
+     * one, else the departure delay carried through. */
+    val arrivalShiftMinutes: Int
+        get() = arrivalDelayMinutes ?: delayMinutes
+
+    /** When it lands (or landed), as best known. */
+    val expectedArrival: Instant?
+        get() = arrivalInstant?.plusSeconds(arrivalShiftMinutes * 60L)
+
     /** Where this flight sits relative to right now, across time zones. */
     val phase: FlightPhase
         get() {
             val dep = departureInstant ?: return FlightPhase.UPCOMING
-            val arr = arrivalInstant ?: return FlightPhase.UPCOMING
+            val arr = expectedArrival ?: return FlightPhase.UPCOMING
             val now = Instant.now()
             return when {
                 now.isBefore(dep) -> FlightPhase.UPCOMING
@@ -132,7 +145,9 @@ data class Flight(
             }
             val dep = departureInstant ?: return 0
             val arr = arrivalInstant ?: return 0
-            return ((arr.toEpochMilli() - dep.toEpochMilli()) / 60000).toInt()
+            // Door to door as it actually went, once the source has an arrival figure.
+            val moved = arrivalDelayMinutes?.let { it - delayMinutes } ?: 0
+            return (((arr.toEpochMilli() - dep.toEpochMilli()) / 60000).toInt() + moved).coerceAtLeast(0)
         }
 
     /** Share of the way flown by the clock -- used to place a schedule-

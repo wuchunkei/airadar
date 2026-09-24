@@ -21,9 +21,9 @@ enum LiveActivities {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let now = Date()
         let wanted = flights.filter { f in
-            guard f.deletedAt == nil, let dep = f.departureInstant, let arr = f.arrivalInstant else { return false }
+            guard f.deletedAt == nil, let dep = f.departureInstant, let arr = f.expectedArrival else { return false }
             let delay = TimeInterval(f.delayMinutes * 60)
-            return dep + delay - leadIn(for: f) <= now && now <= arr + delay + linger && f.status != .cancelled
+            return dep + delay - leadIn(for: f) <= now && now <= arr + linger && f.status != .cancelled
         }
         let running = Activity<FlightActivityAttributes>.activities
         for a in running where !wanted.contains(where: { $0.id == a.attributes.tripId }) {
@@ -57,7 +57,7 @@ enum LiveActivities {
     /// down to boarding to counting down to landing while the app is asleep.
     private static func nextStageChange(_ f: Flight, after now: Date) -> Date {
         let delay = TimeInterval(f.delayMinutes * 60)
-        let edges = [f.departureInstant, f.arrivalInstant].compactMap { $0.map { $0 + delay } }
+        let edges = [f.departureInstant.map { $0 + delay }, f.expectedArrival].compactMap { $0 }
         return edges.first { $0 > now } ?? now.addingTimeInterval(16 * 60)
     }
 
@@ -85,7 +85,7 @@ enum LiveActivities {
         let arr = f.shownTime(arrival: true, forceSystemZone: false)
         return .init(
             statusLabel: f.status.label, statusKind: kind(f.status),
-            departureDate: (f.departureInstant ?? Date()) + delay, arrivalDate: (f.arrivalInstant ?? Date()) + delay,
+            departureDate: (f.departureInstant ?? Date()) + delay, arrivalDate: f.expectedArrival ?? Date(),
             departureClock: dep.clock, arrivalClock: arr.clock,
             departureGate: f.departureGate, arrivalGate: f.arrivalGate, baggageClaim: f.baggageClaim,
             delayMinutes: f.delayMinutes, landed: f.status == .landed || f.status == .completed)

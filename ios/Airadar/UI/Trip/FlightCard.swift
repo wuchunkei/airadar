@@ -156,7 +156,8 @@ struct AirportRow: View {
                 if let original = time.original {
                     Text(original).font(.subheadline).strikethrough().foregroundStyle(muted)
                 }
-                Text(time.clock).font(.title3.bold()).foregroundStyle(time.original != nil ? FlightStatus.delayed.color : ink)
+                Text(time.clock).font(.title3.bold())
+                    .foregroundStyle(time.original == nil ? ink : time.early ? FlightStatus.onTime.color : FlightStatus.delayed.color)
                 Text(time.zone).font(.caption).foregroundStyle(muted)
             }
         }
@@ -168,25 +169,11 @@ struct StatusChip: View {
     var body: some View {
         // Redrawn every minute so the time left in the air keeps counting down.
         TimelineView(.everyMinute) { context in
-            Text(label(at: context.date))
+            Text(flight.statusLine(at: context.date))
                 .font(.caption.weight(.semibold)).foregroundStyle(flight.displayStatus.color)
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(flight.displayStatus.color.opacity(0.14), in: .rect(cornerRadius: 6))
         }
-    }
-
-    /// In the air: how long until it lands. Before it goes: how late it is,
-    /// said as "late" so it can't be read as a duration.
-    private func label(at now: Date) -> String {
-        let status = flight.displayStatus.label
-        let delay = TimeInterval(flight.delayMinutes * 60)
-        if flight.phase == .inProgress, let arr = flight.arrivalInstant {
-            let left = Int((arr + delay).timeIntervalSince(now) / 60)
-            guard left > 0 else { return status }
-            return "\(status) · \(left >= 60 ? "\(left / 60)h\(left % 60)m" : "\(left)m") left"
-        }
-        if flight.phase == .upcoming, flight.delayMinutes > 0 { return "\(status) · \(flight.delayMinutes)m late" }
-        return status
     }
 }
 

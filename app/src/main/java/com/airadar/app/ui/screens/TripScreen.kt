@@ -118,6 +118,7 @@ import com.airadar.app.ui.components.ShownTime
 import com.airadar.app.ui.components.shownTime
 import com.airadar.app.ui.components.formatDuration
 import com.airadar.app.ui.components.label
+import com.airadar.app.ui.components.statusLine
 import com.airadar.app.ui.theme.statusColor
 import com.airadar.app.ui.viewmodel.TripViewModel
 import java.time.Instant
@@ -943,7 +944,7 @@ fun FlightCard(
                             while (true) { delay(60_000); value = Instant.now() }
                         }
                         Text(
-                            statusChipLabel(flight, now),
+                            flight.statusLine(now),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = flight.displayStatus.statusColor()
@@ -1137,19 +1138,3 @@ private fun AirportRow(city: String?, code: String, terminal: String?, time: Sho
 private fun LazyListState.restingAt(anchor: Int): Boolean =
     firstVisibleItemIndex < anchor ||
             (firstVisibleItemIndex == anchor && firstVisibleItemScrollOffset == 0)
-
-/**
- * In the air: how long until it lands. Before it goes: how late it is, said as
- * "late" so it can't be read as a duration.
- */
-private fun statusChipLabel(flight: Flight, now: Instant): String {
-    val status = flight.displayStatus.label()
-    val arr = flight.arrivalInstant
-    if (flight.phase == FlightPhase.IN_PROGRESS && arr != null) {
-        val left = java.time.Duration.between(now, arr.plusSeconds(flight.delayMinutes * 60L)).toMinutes()
-        if (left <= 0) return status
-        return "$status · ${if (left >= 60) "${left / 60}h${left % 60}m" else "${left}m"} left"
-    }
-    if (flight.phase == FlightPhase.UPCOMING && flight.delayMinutes > 0) return "$status · ${flight.delayMinutes}m late"
-    return status
-}

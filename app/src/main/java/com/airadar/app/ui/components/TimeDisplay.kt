@@ -29,7 +29,9 @@ fun Flight.shownTime(
 ): ShownTime {
     val airport = if (arrival) arrivalAirport else departureAirport
     val scheduled = if (arrival) arrivalTime else departureTime
-    val local = if (includeDelay) scheduled.plusMinutes(delayMinutes.toLong()) else scheduled
+    // The arrival moves by its own figure (early or late) once the source has one.
+    val shift = if (arrival) arrivalShiftMinutes else delayMinutes
+    val local = if (includeDelay) scheduled.plusMinutes(shift.toLong()) else scheduled
     if (airport == null) return ShownTime(local.format(clockFormat), "")
 
     val atAirport = local.atZone(airport.zone)

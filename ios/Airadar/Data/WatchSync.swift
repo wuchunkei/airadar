@@ -29,7 +29,7 @@ final class WatchSync: NSObject {
         let trips: [WatchTrip] = flights
             .filter { $0.deletedAt == nil && $0.status != .cancelled }
             .compactMap { f in
-                guard let dep = f.departureInstant, let arr = f.arrivalInstant else { return nil }
+                guard let dep = f.departureInstant, let arr = f.expectedArrival else { return nil }
                 let delay = TimeInterval(f.delayMinutes * 60)
                 return WatchTrip(
                     id: f.id, flightNumber: f.flightNumber, airlineName: f.airlineName,
@@ -37,7 +37,7 @@ final class WatchSync: NSObject {
                     departureCity: f.departureAirport?.cityCountry ?? f.departure,
                     arrivalCity: f.arrivalAirport?.cityCountry ?? f.arrival,
                     departureTerminal: f.departureTerminal, departureGate: f.departureGate, arrivalGate: f.arrivalGate,
-                    departureDate: dep + delay, arrivalDate: arr + delay,
+                    departureDate: dep + delay, arrivalDate: arr,
                     statusLabel: f.displayStatus.label, statusKind: Self.kind(f.displayStatus), delayMinutes: f.delayMinutes)
             }
             .sorted { $0.departureDate < $1.departureDate }

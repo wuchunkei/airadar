@@ -35,6 +35,10 @@ class Flight(BaseModel):
     aircraft: str | None = None
     baggageClaim: str | None = None
     delayMinutes: int = 0
+    # How far the arrival moved from the timetable: negative early, positive
+    # late, None when the source hasn't said. Separate from delayMinutes (the
+    # departure's), since a flight can leave late and still land early.
+    arrivalDelayMinutes: int | None = None
     callsign: str | None = None
 
     source: str

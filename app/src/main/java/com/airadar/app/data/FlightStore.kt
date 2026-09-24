@@ -46,9 +46,8 @@ object FlightStore {
             val now = Instant.now()
             return _flights.value.orEmpty().any { f ->
                 val dep = f.departureInstant ?: return@any false
-                val arr = f.arrivalInstant ?: return@any false
-                val delay = f.delayMinutes * 60L
-                !now.isBefore(dep.plusSeconds(delay - 3 * 3600)) && !now.isAfter(arr.plusSeconds(delay + 30 * 60))
+                val arr = f.expectedArrival ?: return@any false
+                !now.isBefore(dep.plusSeconds(f.delayMinutes * 60L - 3 * 3600)) && !now.isAfter(arr.plusSeconds(30 * 60))
             }
         }
 
@@ -256,6 +255,7 @@ object FlightStore {
                     (it.departureInstant ?: Instant.MIN).isAfter(cutoff)
         }
         return if (recent.isEmpty()) flight.durationMinutes
-        else recent.sumOf { it.durationMinutes + it.delayMinutes } / recent.size
+        // durationMinutes already reflects the real arrival once the source gave one.
+        else recent.sumOf { it.durationMinutes + (if (it.arrivalDelayMinutes == null) it.delayMinutes else 0) } / recent.size
     }
 }

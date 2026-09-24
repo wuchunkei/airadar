@@ -40,9 +40,8 @@ final class FlightStore: ObservableObject {
     var hasFlightInLiveWindow: Bool {
         let now = Date()
         return flights.contains { f in
-            guard let dep = f.departureInstant, let arr = f.arrivalInstant else { return false }
-            let delay = TimeInterval(f.delayMinutes * 60)
-            return dep + delay - 3 * 3600 <= now && now <= arr + delay + 30 * 60
+            guard let dep = f.departureInstant, let arr = f.expectedArrival else { return false }
+            return dep + TimeInterval(f.delayMinutes * 60) - 3 * 3600 <= now && now <= arr + 30 * 60
         }
     }
 
@@ -283,7 +282,8 @@ final class FlightStore: ObservableObject {
             $0.flightNumber == flight.flightNumber && $0.phase == .past && ($0.departureInstant ?? .distantPast) > cutoff
         }
         if recent.isEmpty { return flight.durationMinutes }
-        return recent.reduce(0) { $0 + $1.durationMinutes + $1.delayMinutes } / recent.count
+        // durationMinutes already reflects the real arrival once the source gave one.
+        return recent.reduce(0) { $0 + $1.durationMinutes + ($1.arrivalDelayMinutes == nil ? $1.delayMinutes : 0) } / recent.count
     }
 }
 

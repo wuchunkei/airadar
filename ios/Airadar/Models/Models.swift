@@ -134,6 +134,11 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     var aircraft: String?
     var baggageClaim: String?
     var delayMinutes: Int = 0
+    /// How far the arrival moved from the timetable, from the source's own
+    /// estimated or actual arrival: negative early, positive late, nil when it
+    /// hasn't said. Separate from `delayMinutes` (the departure's), since a
+    /// flight can leave late and still land early.
+    var arrivalDelayMinutes: Int?
     var callsign: String?
     var pnr: String?
     var isPending: Bool = false
@@ -160,7 +165,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     // point has one; everything else is one-to-one.
     enum CodingKeys: String, CodingKey {
         case id, flightNumber, airlineName, departure, arrival, departureTerminal, arrivalTerminal, departureGate, arrivalGate
-        case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, callsign, pnr, isPending, isManual, passengers
+        case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, arrivalDelayMinutes, callsign, pnr, isPending, isManual, passengers
         case track, trackFlownOn, deletedAt, sharedBy, shares, importedVia, feedStatus
     }
 
@@ -192,6 +197,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         aircraft = try c.decodeIfPresent(String.self, forKey: .aircraft)
         baggageClaim = try c.decodeIfPresent(String.self, forKey: .baggageClaim)
         delayMinutes = try c.decodeIfPresent(Int.self, forKey: .delayMinutes) ?? 0
+        arrivalDelayMinutes = try c.decodeIfPresent(Int.self, forKey: .arrivalDelayMinutes)
         callsign = try c.decodeIfPresent(String.self, forKey: .callsign)
         pnr = try c.decodeIfPresent(String.self, forKey: .pnr)
         isPending = try c.decodeIfPresent(Bool.self, forKey: .isPending) ?? false
@@ -228,6 +234,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         try c.encodeIfPresent(aircraft, forKey: .aircraft)
         try c.encodeIfPresent(baggageClaim, forKey: .baggageClaim)
         try c.encode(delayMinutes, forKey: .delayMinutes)
+        try c.encodeIfPresent(arrivalDelayMinutes, forKey: .arrivalDelayMinutes)
         try c.encodeIfPresent(callsign, forKey: .callsign)
         try c.encodeIfPresent(pnr, forKey: .pnr)
         try c.encode(isPending, forKey: .isPending)
@@ -257,13 +264,20 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     }
     var arrivalInstant: Date? { arrivalAirport.map { arrivalTime.date(in: $0.zone) } }
 
+    /// Minutes the arrival moved: the source's own arrival figure when it has
+    /// one, else the departure delay carried through.
+    var arrivalShiftMinutes: Int { arrivalDelayMinutes ?? delayMinutes }
+
+    /// When it lands (or landed), as best known.
+    var expectedArrival: Date? { arrivalInstant.map { $0 + TimeInterval(arrivalShiftMinutes * 60) } }
+
     /// Cross-zone: an instant comparison, not a clock one.
     var phase: FlightPhase {
         let now = Date()
         guard let dep = departureInstant, let arr = arrivalInstant else {
             return departureTime.date(in: .current) < now ? .past : .upcoming
         }
-        let arrival = arr.addingTimeInterval(TimeInterval(delayMinutes * 60))
+        let arrival = arr.addingTimeInterval(TimeInterval(arrivalShiftMinutes * 60))
         if arrival < now || status == .landed || status == .completed { return .past }
         if dep.addingTimeInterval(TimeInterval(delayMinutes * 60)) <= now { return .inProgress }
         return .upcoming
@@ -306,7 +320,9 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
             return max(0, Int(end.timeIntervalSince(start) / 60))
         }
         guard let dep = departureInstant, let arr = arrivalInstant else { return 0 }
-        return max(0, Int(arr.timeIntervalSince(dep) / 60))
+        // Door to door as it actually went, once the source has an arrival figure.
+        let moved = arrivalDelayMinutes.map { $0 - delayMinutes } ?? 0
+        return max(0, Int(arr.timeIntervalSince(dep) / 60) + moved)
     }
 
     var distanceKm: Int {
@@ -548,5 +564,32 @@ extension Color {
         let b: CGFloat = 0.0722 * c[2]
         let l: CGFloat = r + g + b
         return l > 0.45 ? Color(white: 0.07) : .white
+    }
+}
+
+extension Flight {
+    /// The status as one line: in the air, the time left; before it goes, how
+    /// late it is ("late", so it can't be read as a duration); once down, how
+    /// early or late it landed, when the source said.
+    func statusLine(at now: Date = Date()) -> String {
+        let status = displayStatus.label
+        if displayStatus == .cancelled || displayStatus == .diverted { return status }
+        switch phase {
+        case .inProgress:
+            guard let arr = expectedArrival else { return status }
+            let left = Int(arr.timeIntervalSince(now) / 60)
+            return left > 0 ? "\(status) · \(Self.span(left)) left" : status
+        case .upcoming:
+            return delayMinutes > 0 ? "\(status) · \(Self.span(delayMinutes)) late" : status
+        case .past:
+            guard let d = arrivalDelayMinutes else { return status }
+            if d < 0 { return "Landed · \(Self.span(-d)) early" }
+            if d > 0 { return "Landed · \(Self.span(d)) late" }
+            return "Landed · on time"
+        }
+    }
+
+    private static func span(_ minutes: Int) -> String {
+        minutes >= 60 ? "\(minutes / 60)h\(minutes % 60)m" : "\(minutes)m"
     }
 }

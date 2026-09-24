@@ -25,6 +25,7 @@ fun Flight.toJson(): JSONObject = JSONObject().apply {
     put("aircraft", aircraft ?: JSONObject.NULL)
     put("baggageClaim", baggageClaim ?: JSONObject.NULL)
     put("delayMinutes", delayMinutes)
+    put("arrivalDelayMinutes", arrivalDelayMinutes ?: JSONObject.NULL)
     put("callsign", callsign ?: JSONObject.NULL)
     put("pnr", pnr ?: JSONObject.NULL)
     put("isPending", isPending)
@@ -63,6 +64,7 @@ fun flightFromJson(o: JSONObject): Flight = Flight(
     aircraft = o.text("aircraft"),
     baggageClaim = o.text("baggageClaim"),
     delayMinutes = o.optInt("delayMinutes", 0),
+    arrivalDelayMinutes = if (o.isNull("arrivalDelayMinutes")) null else o.optInt("arrivalDelayMinutes"),
     callsign = o.text("callsign"),
     pnr = o.text("pnr"),
     isPending = o.optBoolean("isPending", false),

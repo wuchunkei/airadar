@@ -10,6 +10,9 @@ TRASH_RETENTION_DAYS.
 
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
+from zoneinfo import ZoneInfo
+
+import airportsdata
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -50,6 +53,7 @@ class TripIn(BaseModel):
     aircraft: str | None = None
     baggageClaim: str | None = None
     delayMinutes: int = 0
+    arrivalDelayMinutes: int | None = None
     callsign: str | None = None
     pnr: str | None = None
     isPending: bool = False
@@ -105,7 +109,7 @@ async def apply_feed_status(db, trip_key: str, status: str) -> None:
 
 
 # What a live look-up may change on a stored trip; the rest is the traveller's.
-LIVE_FIELDS = ("status", "delayMinutes", "departureTime", "arrivalTime", "departureTerminal", "arrivalTerminal",
+LIVE_FIELDS = ("status", "delayMinutes", "arrivalDelayMinutes", "departureTime", "arrivalTime", "departureTerminal", "arrivalTerminal",
                "departureGate", "arrivalGate", "baggageClaim", "aircraft", "callsign")
 LIVE_WINDOW = timedelta(hours=36)   # around departure: from the day before to a while after landing
 # How stale a flight's live record may get before AirLabs is asked again. Tight
@@ -118,12 +122,29 @@ HOT_AFTER = timedelta(minutes=30)
 LIVE_CACHE_TTL = timedelta(days=3)
 
 
+_AIRPORTS = airportsdata.load("IATA")
+
+
+def _utc(local: datetime, iata: str | None) -> datetime:
+    """A stored time — the airport's own wall clock, as the sources give it — as
+    naive UTC, to compare with the server's clock. Left as is for an airport
+    with no known zone."""
+    local = local.replace(tzinfo=None)
+    tz = (_AIRPORTS.get(iata or "") or {}).get("tz")
+    if not tz:
+        return local
+    return local.replace(tzinfo=ZoneInfo(tz)).astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def _live_interval(doc: dict, now: datetime) -> timedelta:
-    dep = doc["departureTime"].replace(tzinfo=None)
+    """`now` is naive UTC."""
+    dep = _utc(doc["departureTime"], doc.get("departure"))
     arr = doc.get("arrivalTime")
-    arr = arr.replace(tzinfo=None) if isinstance(arr, datetime) else dep
-    delay = timedelta(minutes=doc.get("delayMinutes") or 0)
-    return LIVE_HOT_EVERY if dep + delay - HOT_BEFORE <= now <= arr + delay + HOT_AFTER else LIVE_EVERY
+    arr = _utc(arr, doc.get("arrival")) if isinstance(arr, datetime) else dep
+    dep_delay = timedelta(minutes=doc.get("delayMinutes") or 0)
+    arr_moved = doc.get("arrivalDelayMinutes")
+    arr_delay = timedelta(minutes=arr_moved) if arr_moved is not None else dep_delay
+    return LIVE_HOT_EVERY if dep + dep_delay - HOT_BEFORE <= now <= arr + arr_delay + HOT_AFTER else LIVE_EVERY
 
 
 async def _live_record(state, number: str, day: date, every: timedelta, now: datetime) -> dict | None:
@@ -161,8 +182,10 @@ async def _refresh_live(state, doc: dict) -> dict:
         return doc
     dep = dep.replace(tzinfo=None)
     now = _now().replace(tzinfo=None)
-    if not (dep - LIVE_WINDOW <= now <= dep + LIVE_WINDOW):
+    dep_utc = _utc(dep, doc.get("departure"))
+    if not (dep_utc - LIVE_WINDOW <= now <= dep_utc + LIVE_WINDOW):
         return doc
+    # AirLabs keys a flight by its local departure date.
     fresh = await _live_record(state, doc["flightNumber"], dep.date(), _live_interval(doc, now), now)
     if not fresh:
         return doc

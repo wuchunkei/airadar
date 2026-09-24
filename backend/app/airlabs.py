@@ -244,6 +244,19 @@ def _delay_minutes(row: dict, std: datetime) -> int:
     return 0
 
 
+def _arrival_delay(row: dict, sta: datetime) -> int | None:
+    """Signed minutes the arrival moved: the actual landing once there is one,
+    the estimate before that, AirLabs' own (late-only) figure as a last resort."""
+    for key in ("arr_actual", "arr_estimated"):
+        if (moved := _time(row, key)) is not None:
+            return round((moved - sta).total_seconds() / 60)
+    try:
+        v = int(row.get("arr_delayed") or 0)
+    except (TypeError, ValueError):
+        v = 0
+    return v if v > 0 else None
+
+
 def _parse(row: dict, number: str, day: date) -> Flight:
     number = number.upper()
     dep, arr = (row.get("dep_iata") or "").upper(), (row.get("arr_iata") or "").upper()
@@ -269,6 +282,7 @@ def _parse(row: dict, number: str, day: date) -> Flight:
         aircraft=_text(row, "aircraft_icao"),
         baggageClaim=_text(row, "arr_baggage"),
         delayMinutes=delayed,
+        arrivalDelayMinutes=_arrival_delay(row, sta),
         callsign=_text(row, "flight_icao"),
         source="airlabs",
     )
