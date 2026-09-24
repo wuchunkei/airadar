@@ -110,12 +110,8 @@ struct FlightCard: View {
                   departs.timeIntervalSinceNow > 0, departs.timeIntervalSinceNow < 86_400 else { return }
             routeValid = await RouteValidity.hasDrivableRoute(to: airport)
         }
-        .confirmationDialog("Navigate to \(flight.departure)", isPresented: $showMapChooser, titleVisibility: .visible) {
-            ForEach(MapProvider.available) { provider in
-                Button(provider.label) {
-                    if let airport = flight.departureAirport { provider.open(to: airport) }
-                }
-            }
+        .sheet(isPresented: $showMapChooser) {
+            if let airport = flight.departureAirport { MapChooserSheet(airport: airport) }
         }
     }
 
