@@ -12,7 +12,7 @@ enum MapProvider: String, CaseIterable, Identifiable {
         switch self {
         case .apple: "Apple Maps"
         case .google: "Google Maps"
-        case .amap: "Amap (高德地图)"
+        case .amap: "Amap"
         }
     }
 
