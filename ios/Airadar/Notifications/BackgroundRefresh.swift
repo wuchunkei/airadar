@@ -17,10 +17,12 @@ enum BackgroundRefresh {
 
     /// Called once at launch, before the first `schedule()`.
     static func register() {
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: taskId, using: nil) { task in
-            // BGTaskScheduler's own handler runs off the main actor; hop back
-            // on for FlightStore/LiveActivities, both of which live there.
-            Task { @MainActor in handle(task as! BGAppRefreshTask) }
+        // Delivered on the main queue: this closure is main-actor isolated
+        // (Swift 6 infers it from the enum), and a background-queue delivery
+        // (`using: nil`) trips the runtime's isolation check and crashes the
+        // app before the body runs.
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: taskId, using: .main) { task in
+            handle(task as! BGAppRefreshTask)
         }
     }
 
@@ -41,6 +43,7 @@ enum BackgroundRefresh {
             LiveActivities.sync(FlightStore.shared.flights)
             task.setTaskCompleted(success: true)
         }
-        task.expirationHandler = { work.cancel() }
+        // @Sendable so it isn't main-actor isolated: the system may call it from any queue.
+        task.expirationHandler = { @Sendable in work.cancel() }
     }
 }
