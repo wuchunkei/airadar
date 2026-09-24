@@ -19,15 +19,16 @@ struct FlightActivityAttributes: ActivityAttributes {
         var delayMinutes: Int
         /// Set once the airline reports the flight down; the arrival clock is then the landing time.
         var landed: Bool = false
-        /// Places along the way, each from when the plane should be over it —
-        /// named by the app once per flight, picked by the widget by the clock
-        /// whenever it draws, so it moves on without an update from the app.
+        /// Cities along the way, as airport (or city) codes: dots on the route
+        /// line, the next one named beneath it in the air — picked by the clock
+        /// whenever the widget draws, so it moves on without an update from the app.
         var waypoints: [Waypoint] = []
     }
 
     struct Waypoint: Codable, Hashable {
-        var at: Date
-        var name: String
+        /// How far along the route, 0 at departure, 1 at arrival.
+        var fraction: Double
+        var code: String
     }
 
     enum StatusKind: String, Codable, Hashable { case scheduled, live, good, warn, bad }

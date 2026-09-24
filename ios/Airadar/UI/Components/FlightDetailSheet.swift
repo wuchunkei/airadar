@@ -313,7 +313,7 @@ struct FlightDetailSheet<Actions: View>: View {
                     trailing: false, highlighted: routeValid,
                     onTap: routeValid ? { showMapChooser = true } : nil)
             // The way between: an arrow before departure, the plane along a dashed line in the air, done after.
-            FlightProgressLine(flight: flight).frame(maxWidth: .infinity).frame(height: 18)
+            FlightProgressLine(flight: flight).frame(maxWidth: .infinity).frame(height: 40)
             BigCode(code: flight.arrival, terminal: flight.arrivalTerminal ?? enrichedFlight?.arrivalTerminal,
                     gate: flight.arrivalGate ?? enrichedFlight?.arrivalGate, city: flight.arrivalAirport?.cityCountry, trailing: true)
         }
@@ -478,13 +478,20 @@ struct DetailRow: View {
 
 /// The same line as on the lock screen: arrow → before departure; in the air a
 /// dashed line, the flown share green with the plane at its head; a full green
-/// line once landed.
+/// line once landed. Cities along the way sit on it as dots, each with its
+/// airport (or city) code above — as many codes as fit without overlapping.
 struct FlightProgressLine: View {
     let flight: Flight
 
+    private var stops: [RouteAirports.Stop] {
+        guard let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
+        return RouteAirports.along(from: a, to: b)
+    }
+
     var body: some View {
         GeometryReader { g in
-            let w = g.size.width, midY = g.size.height / 2
+            // The line low down, the codes above it.
+            let w = g.size.width, midY = g.size.height - 9
             switch flight.phase {
             case .upcoming:
                 Path { p in p.move(to: CGPoint(x: 0, y: midY)); p.addLine(to: CGPoint(x: w - 6, y: midY)) }
@@ -510,6 +517,30 @@ struct FlightProgressLine: View {
                         .position(x: max(6, (w - 8) * f), y: midY)
                 }
             }
+            let span = w - 8
+            let flown = flight.phase == .past ? 1 : flight.phase == .inProgress ? flight.fractionFlown : 0
+            let labelled = Self.fitting(stops, span: span)
+            ForEach(stops, id: \.self) { stop in
+                Circle().fill(stop.fraction <= flown ? Color(red: 0.20, green: 0.70, blue: 0.30) : Color.secondary)
+                    .frame(width: 5, height: 5)
+                    .position(x: span * stop.fraction, y: midY)
+                if labelled.contains(stop) {
+                    Text(stop.code).font(.system(size: 9, weight: .semibold).monospaced())
+                        .foregroundStyle(.secondary).fixedSize()
+                        .position(x: span * stop.fraction, y: midY - 13)
+                }
+            }
         }
+    }
+
+    /// The stops whose codes fit side by side, left to right.
+    private static func fitting(_ stops: [RouteAirports.Stop], span: CGFloat) -> Set<RouteAirports.Stop> {
+        var kept: Set<RouteAirports.Stop> = []
+        var lastX = -CGFloat.infinity
+        for stop in stops {
+            let x = span * stop.fraction
+            if x - lastX >= 21 { kept.insert(stop); lastX = x }
+        }
+        return kept
     }
 }

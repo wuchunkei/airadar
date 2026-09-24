@@ -21,11 +21,22 @@ private extension FlightActivityAttributes.ContentState {
         return now < departureDate ? .before : .airborne
     }
 
-    /// What the plane should be over right now, while it's in the air.
-    var passingOver: String? {
+    /// Share of the way flown by the clock at draw time: 0 before, 1 once down.
+    var flownFraction: Double {
+        switch stage {
+        case .before: return 0
+        case .landed: return 1
+        case .airborne:
+            let total = arrivalDate.timeIntervalSince(departureDate)
+            return total > 0 ? min(1, max(0, Date().timeIntervalSince(departureDate) / total)) : 0
+        }
+    }
+
+    /// The next city along the way, while in the air.
+    var nextWaypoint: FlightActivityAttributes.Waypoint? {
         guard stage == .airborne else { return nil }
-        let now = Date()
-        return waypoints.last { $0.at <= now }?.name
+        let flown = flownFraction
+        return waypoints.first { $0.fraction > flown }
     }
 
     /// Hours to departure (negative once gone).
@@ -114,8 +125,7 @@ struct FlightLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 4) {
                         Countdown(state: s).font(.caption)
-                        RouteLine(state: s).frame(height: 16)
-                        if let over = s.passingOver { PassingOver(name: over).font(.caption2) }
+                        RouteLine(state: s).frame(height: 26)
                     }
                     .padding(.top, 2)
                     // The bottom region spans the island's full width, so its
@@ -176,13 +186,12 @@ private struct LockScreenView: View {
                     // The middle: countdown above, the route line below.
                     VStack(spacing: 10) {
                         Countdown(state: s).font(.subheadline)
-                        RouteLine(state: s).frame(height: 20)
+                        RouteLine(state: s).frame(height: 30)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, 6)
                     Endpoint(code: a.arrival, terminal: a.arrivalTerminal, gate: s.arrivalGate, place: a.arrivalCity, clock: s.arrivalClock, alignment: .trailing, large: true)
                 }
-                if let over = s.passingOver { PassingOver(name: over).font(.caption) }
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 16)
@@ -191,15 +200,6 @@ private struct LockScreenView: View {
 }
 
 // MARK: - Pieces
-
-/// "Over Johor, Malaysia": where the route should have got to by now.
-private struct PassingOver: View {
-    let name: String
-    var body: some View {
-        Label("Over \(name)", systemImage: "location.fill")
-            .foregroundStyle(.secondary).lineLimit(1).labelStyle(.titleAndIcon)
-    }
-}
 
 /// Code and terminal on one line (same size, the terminal quieter), the city and
 /// country beneath, the local time beneath that.
@@ -311,13 +311,16 @@ private struct Countdown: View {
 
 /// Before departure: a solid arrow from left to right. In the air: a system
 /// progress bar from take-off to landing, so it fills on its own with the app
-/// asleep, and a node at the far end. Landed: the whole line green.
+/// asleep, and a node at the far end. Landed: the whole line green. Cities
+/// along the way sit on it as dots (green once passed); in the air the next
+/// one's code is written beneath its dot.
 private struct RouteLine: View {
     let state: FlightActivityAttributes.ContentState
 
     var body: some View {
         GeometryReader { g in
-            let w = g.size.width, midY = g.size.height / 2
+            // The line near the top, room beneath it for the next city's code.
+            let w = g.size.width, midY: CGFloat = 8
             switch state.stage {
             case .before:
                 // Kept well clear of the island's own rounded corner — flush against
@@ -343,6 +346,18 @@ private struct RouteLine: View {
                 Circle().fill(.white.opacity(0.9)).frame(width: 6, height: 6).position(x: w - 4, y: midY)
                 Image(systemName: "airplane").font(.system(size: 11)).foregroundStyle(.green)
                     .position(x: w - 14, y: midY)
+            }
+            let span = w - 12
+            let flown = state.flownFraction
+            ForEach(state.waypoints, id: \.self) { wp in
+                Circle().fill(wp.fraction <= flown ? Color.green : Color.white.opacity(0.9))
+                    .frame(width: 5, height: 5)
+                    .position(x: span * wp.fraction, y: midY)
+            }
+            if let next = state.nextWaypoint {
+                Text(next.code).font(.system(size: 9, weight: .semibold).monospaced())
+                    .foregroundStyle(.white.opacity(0.85)).fixedSize()
+                    .position(x: min(max(12, span * next.fraction), w - 12), y: midY + 12)
             }
         }
     }
