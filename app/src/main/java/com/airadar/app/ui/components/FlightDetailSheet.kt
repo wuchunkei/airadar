@@ -1,5 +1,6 @@
 package com.airadar.app.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -281,7 +282,13 @@ fun FlightDetailSheet(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    // Blue and tappable in the day before it leaves: navigate there.
+                    val canNavigate = flight.canNavigateToDeparture()
+                    var showMapChooser by remember { mutableStateOf(false) }
+                    if (showMapChooser) from?.let { MapChooserSheet(it) { showMapChooser = false } }
+                    Column(
+                        modifier = if (canNavigate) Modifier.clickable { showMapChooser = true } else Modifier
+                    ) {
                         Text(
                             from?.city ?: flight.departure,
                             style = MaterialTheme.typography.bodySmall,
@@ -291,23 +298,23 @@ fun FlightDetailSheet(
                             flight.departure,
                             fontSize = 36.sp,
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.displaySmall
+                            style = MaterialTheme.typography.displaySmall,
+                            color = if (canNavigate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                         )
-                        flight.departureTerminal?.let {
+                        terminalAndGate(flight.departureTerminal, flight.departureGate)?.let {
                             Text(
-                                "Terminal $it",
+                                it,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
-                    Text("✈", fontSize = 26.sp, modifier = Modifier.padding(horizontal = 8.dp))
+                    // The way between: an arrow before departure, the plane along a
+                    // dashed line in the air, the cities it passes as dots.
+                    FlightProgressLine(flight, Modifier.weight(1f).padding(horizontal = 10.dp))
 
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.End
-                    ) {
+                    Column(horizontalAlignment = Alignment.End) {
                         Text(
                             to?.city ?: flight.arrival,
                             style = MaterialTheme.typography.bodySmall,
@@ -319,9 +326,9 @@ fun FlightDetailSheet(
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.displaySmall
                         )
-                        flight.arrivalTerminal?.let {
+                        terminalAndGate(flight.arrivalTerminal, flight.arrivalGate)?.let {
                             Text(
-                                "Terminal $it",
+                                it,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -535,3 +542,7 @@ fun Flight.statusLine(now: java.time.Instant = java.time.Instant.now()): String 
         }
     }
 }
+
+/** "Terminal 1 · Gate 35", or whichever half is known; null for neither. */
+private fun terminalAndGate(terminal: String?, gate: String?): String? =
+    listOfNotNull(terminal?.let { "Terminal $it" }, gate?.let { "Gate $it" }).joinToString(" · ").ifEmpty { null }

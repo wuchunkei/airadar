@@ -85,6 +85,10 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.text.style.TextDecoration
+import com.airadar.app.ui.components.MapChooserSheet
+import com.airadar.app.ui.components.canNavigateToDeparture
+import com.airadar.app.data.FlightStatus
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -905,11 +909,18 @@ fun FlightCard(
             Spacer(Modifier.height(10.dp))
 
             // Row 2 — departure: city + country, airport, terminal · time + zone
+            // Blue and tappable in the day before it leaves: navigate there.
+            var showMapChooser by remember { mutableStateOf(false) }
+            val canNavigate = flight.canNavigateToDeparture()
+            if (showMapChooser) flight.departureAirport?.let { MapChooserSheet(it) { showMapChooser = false } }
             AirportRow(
                 city = flight.departureAirport?.let { "${it.city}, ${it.countryCode}" },
                 code = flight.departure,
                 terminal = flight.departureTerminal,
-                time = flight.shownTime(arrival = false, forceSystemZone = forceSystemZone)
+                time = flight.shownTime(arrival = false, forceSystemZone = forceSystemZone),
+                actual = flight.shownTime(arrival = false, forceSystemZone = forceSystemZone, includeDelay = flight.delayMinutes > 0),
+                early = false,
+                onCodeClick = if (canNavigate) ({ showMapChooser = true }) else null
             )
 
             Spacer(Modifier.height(6.dp))
@@ -919,7 +930,9 @@ fun FlightCard(
                 city = flight.arrivalAirport?.let { "${it.city}, ${it.countryCode}" },
                 code = flight.arrival,
                 terminal = flight.arrivalTerminal,
-                time = flight.shownTime(arrival = true, forceSystemZone = forceSystemZone)
+                time = flight.shownTime(arrival = true, forceSystemZone = forceSystemZone),
+                actual = flight.shownTime(arrival = true, forceSystemZone = forceSystemZone, includeDelay = flight.arrivalShiftMinutes != 0),
+                early = flight.arrivalShiftMinutes < 0
             )
 
             Spacer(Modifier.height(10.dp))
@@ -1090,7 +1103,17 @@ private fun Modifier.dashedBorder(color: Color, shape: Shape) = drawWithContent 
 }
 
 @Composable
-private fun AirportRow(city: String?, code: String, terminal: String?, time: ShownTime) {
+private fun AirportRow(
+    city: String?,
+    code: String,
+    terminal: String?,
+    time: ShownTime,
+    /** The time as it now stands; when it differs, the timetable's is struck through beside it. */
+    actual: ShownTime = time,
+    early: Boolean = false,
+    onCodeClick: (() -> Unit)? = null
+) {
+    val moved = actual.clock != time.clock
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1101,20 +1124,36 @@ private fun AirportRow(city: String?, code: String, terminal: String?, time: Sho
             Text(
                 if (terminal != null) "$code T$terminal" else code,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = if (onCodeClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                modifier = if (onCodeClick != null) Modifier.clickable(onClick = onCodeClick) else Modifier
             )
             Row(
                 verticalAlignment = Alignment.Bottom,
                 modifier = Modifier.padding(start = 8.dp)
             ) {
-                Text(
-                    time.clock,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
-                if (time.zoneTag.isNotEmpty()) {
+                if (moved) {
                     Text(
-                        " ${time.zoneTag}",
+                        time.clock,
+                        style = MaterialTheme.typography.bodySmall,
+                        textDecoration = TextDecoration.LineThrough,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 6.dp, bottom = 1.dp)
+                    )
+                }
+                Text(
+                    actual.clock,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = when {
+                        !moved -> MaterialTheme.colorScheme.onSurface
+                        early -> FlightStatus.ON_TIME.statusColor()
+                        else -> FlightStatus.DELAYED.statusColor()
+                    }
+                )
+                if (actual.zoneTag.isNotEmpty()) {
+                    Text(
+                        " ${actual.zoneTag}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 1.dp)
