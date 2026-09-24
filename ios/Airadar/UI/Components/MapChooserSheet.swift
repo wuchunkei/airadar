@@ -38,8 +38,8 @@ struct MapChooserSheet: View {
         .padding(.bottom, 12)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         .frame(maxHeight: .infinity, alignment: .top)
-        .presentationDetents([.height(height > 0 ? height : 240)])
+        .presentationDetents([.custom(MapChooserSheetDetent.self)])
         .presentationDragIndicator(.visible)
-        .background(SheetHeightFitter(height: height, fits: true))
+        .background(SheetDetentRefresher<MapChooserSheetDetent>(height: height))
     }
 }

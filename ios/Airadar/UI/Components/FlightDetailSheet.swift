@@ -66,8 +66,6 @@ struct FlightDetailSheet<Actions: View>: View {
     /// Measured content height: the sheet opens just tall enough, not full screen.
     @State private var contentHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
-    @State private var detents: Set<PresentationDetent> = [.large]
-    @State private var selectedDetent: PresentationDetent = .large
 
     var body: some View {
         ScrollView {
@@ -116,20 +114,10 @@ struct FlightDetailSheet<Actions: View>: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             }
         }
-        .presentationDetents(detents, selection: $selectedDetent)
-        // The sheet opens before anything is measured, so at .large. Once the
-        // height is known, swap the allowed set and the selection together:
-        // .large drops out (the sheet has to move) and the selection already
-        // names the new height, so neither is ever left pointing at the other.
-        .onChange(of: fittedDetent) { _, new in
-            guard new != .large else { return }
-            detents = contentFitsScreen ? [new] : [new, .large]
-            selectedDetent = new
-        }
-        // iOS 27 no longer passes detent changes made after the sheet is up
-        // on to UIKit, so it stayed at the .large it opened with. Set the
-        // measured height on the sheet controller directly as well.
-        .background(SheetHeightFitter(height: contentHeight + footerHeight, fits: contentFitsScreen))
+        // Just tall enough for the content (see SheetHeightFitter.swift); only
+        // content that doesn't fit on one screen can be pulled up to full height.
+        .presentationDetents(contentFitsScreen ? [.custom(DetailSheetDetent.self)] : [.custom(DetailSheetDetent.self), .large])
+        .background(SheetDetentRefresher<DetailSheetDetent>(height: fittedHeight))
         .presentationDragIndicator(.visible)
         // No ATC callsign yet: the bundled ~35-airline table missed this one at
         // import time — adsbdb reaches any airline it knows, so it gets asked
@@ -286,15 +274,13 @@ struct FlightDetailSheet<Actions: View>: View {
         enrichedFlight = found
     }
 
-    /// Just tall enough for the content; only content that does not fit on one
-    /// screen can be pulled up to full height.
-    private var fittedDetent: PresentationDetent {
+    /// The measured content, capped short of full screen; 0 until measured.
+    private var fittedHeight: CGFloat {
         let fitted = contentHeight + footerHeight
-        guard fitted > 0 else { return .large }
-        return .height(min(fitted, screenHeight * 0.88))
+        return fitted > 0 ? min(fitted, screenHeight * 0.88) : 0
     }
 
-    private var contentFitsScreen: Bool { contentHeight + footerHeight < screenHeight * 0.88 }
+    private var contentFitsScreen: Bool { contentHeight + footerHeight < screenHeight * 0.88 || contentHeight == 0 }
 
     private var screenHeight: CGFloat {
         UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.screen.bounds.height ?? 844

@@ -118,10 +118,6 @@ struct TripView: View {
             // Looked up by id so the sheet sees the refreshed Flight once a track is stored on it.
             if let flight = store.flights.first(where: { $0.id == id }) { detailSheet(flight) }
         }
-        .background {
-            // The share flow presents its own sheets; it just needs to exist while sharing.
-            if let f = shareFor { ShareFlow(flight: f) { shareFor = nil } }
-        }
         .sheet(item: $editingFlight) { flight in
             ManualFlightForm(editing: flight) { updated in
                 store.replace(flight, with: updated)
@@ -175,6 +171,14 @@ struct TripView: View {
                     }
                 }
             )
+            // The share flow presents its own sheets, so it sits inside the detail
+            // sheet it's started from: hung off the list behind that sheet, its
+            // sheets were presented by the list while the list was already
+            // presenting, and the next detail sheet opened drawn with no sheet
+            // behind it.
+            .background {
+                if let f = shareFor { ShareFlow(flight: f) { shareFor = nil } }
+            }
         }
     }
 
