@@ -12,6 +12,8 @@ struct FlightDetailSheet<Actions: View>: View {
     var onLoadTrack: (() -> Void)? = nil
     /// The aircraft's real position while it flies, asked every 5 minutes the sheet is open.
     @State private var live: LivePosition?
+    /// Bumped once a minute in the air, so the map's estimated position moves on.
+    @State private var minute = Date()
     /// Every live fix collected this way since the sheet opened -- a real,
     /// if short, breadcrumb trail for a flight OpenSky's own track fetch
     /// hasn't (yet, or ever) answered for. Genuinely reported positions,
@@ -188,6 +190,12 @@ struct FlightDetailSheet<Actions: View>: View {
         // route (that borrowed track could itself be an incomplete or
         // diverted flight, which reads as a broken route for a trip that
         // hasn't even happened).
+        .task(id: flight.id) {
+            while !Task.isCancelled, flight.phase == .inProgress {
+                try? await Task.sleep(for: .seconds(60))
+                minute = Date()
+            }
+        }
         .task(id: "\(flight.id)|\(callsign ?? "")") {
             if flight.trackFlownOn == nil, callsign != nil, flight.phase != .upcoming { onLoadTrack?() }
         }
@@ -362,7 +370,9 @@ struct FlightDetailSheet<Actions: View>: View {
         // track -- even a stale one stored from before this rule existed.
         guard flight.phase != .upcoming, let a = flight.departureAirport, let b = flight.arrivalAirport else { return [] }
         guard storedTrail.count >= 2 else { return [] }
-        return [MapTrack(from: a, to: b, points: Self.gapFilled(storedTrail), live: flight.phase == .inProgress)]
+        let eta = flight.arrivalInstant.map { $0 + TimeInterval(flight.delayMinutes * 60) }
+        return [MapTrack(from: a, to: b, points: Self.gapFilled(storedTrail), live: flight.phase == .inProgress,
+                         eta: eta, now: flight.phase == .inProgress ? minute : nil)]
     }
 
     /// The real fixes only -- no interpolated gap-fill points -- worth

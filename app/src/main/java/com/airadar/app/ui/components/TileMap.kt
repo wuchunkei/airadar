@@ -77,8 +77,31 @@ data class MapTrack(
     val points: List<TrackPoint>,
     /** Still flying: the track is drawn solid with a plane at its end, and
      * the remaining way to the destination is drawn dashed past it. */
-    val live: Boolean = false
-)
+    val live: Boolean = false,
+    /** Expected landing, delay included, and the minute this is drawn for: with
+     * both, a live track whose last real fix has gone stale (out of receiver
+     * range over the sea, say) gets the plane moved on to where it should be by now. */
+    val eta: java.time.Instant? = null,
+    val now: java.time.Instant? = null,
+) {
+    /** Where the plane should be by [now], along the way from its last real fix
+     * to the destination, in proportion to the time from that fix to [eta].
+     * Null while the last fix is still fresh (under ten minutes old). */
+    val estimatedPosition: OsmGeoPoint?
+        get() {
+            if (!live) return null
+            val now = now ?: return null
+            val eta = eta ?: return null
+            val last = points.lastOrNull() ?: return null
+            val seen = last.time ?: return null
+            val sinceFix = java.time.Duration.between(seen, now).seconds
+            val fixToEta = java.time.Duration.between(seen, eta).seconds
+            if (sinceFix <= 600 || fixToEta <= 0) return null
+            val fraction = minOf(0.97, sinceFix.toDouble() / fixToEta)
+            val path = arcPath(last.lat, last.lon, to.latitude, to.longitude)
+            return path[((path.size - 1) * fraction).toInt()]
+        }
+}
 
 /** A leg per flight, oldest first, ranked among its repeats. */
 fun List<Flight>.toMapRoutes(): List<MapRoute> {
@@ -412,7 +435,9 @@ fun TileMap(
                     var cut = (((coords.size - 1) * progress).toInt() + 1).coerceIn(2, coords.size)
                     var planeAt = coords[cut - 1]
                     var heading = bearing(coords[maxOf(0, cut - 2)], coords[cut - 1])
-                    if (livePlane != null) {
+                    // A fix over ten minutes old is where it was, not where it is:
+                    // past that, the timetable's estimate is the better guess.
+                    if (livePlane != null && java.time.Duration.between(livePlane.seenAt, java.time.Instant.now()).seconds < 600) {
                         cut = (nearestIndex(coords, livePlane.lat, livePlane.lon) + 1).coerceIn(2, coords.size)
                         planeAt = OsmGeoPoint(livePlane.lat, livePlane.lon)
                         heading = livePlane.heading
@@ -476,13 +501,32 @@ fun TileMap(
                     }
                 )
                 if (track.live && coords.size >= 2) {
-                    val last = coords.last()
+                    var last = coords.last()
+                    var heading = bearing(coords[coords.size - 2], last)
+                    track.estimatedPosition?.let { estimate ->
+                        // Out of receiver range: dashed green from the last real fix
+                        // to where it should be by now, so the estimate reads as one.
+                        val gap = arcPath(last.latitude, last.longitude, estimate.latitude, estimate.longitude)
+                        addOwned(
+                            Polyline(map).apply {
+                                setPoints(gap)
+                                outlinePaint.color = liveColor
+                                outlinePaint.strokeWidth = 4f
+                                outlinePaint.isAntiAlias = true
+                                outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 10f), 0f)
+                                infoWindow = null
+                                setOnClickListener { _, _, _ -> false }
+                            }
+                        )
+                        if (gap.size >= 2) heading = bearing(gap[gap.size - 2], estimate)
+                        last = estimate
+                    }
                     addOwned(
                         Marker(map).apply {
                             position = last
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                             icon = planeDrawable(liveColor, density)
-                            rotation = bearing(coords[coords.size - 2], last).toFloat()
+                            rotation = heading.toFloat()
                             infoWindow = null
                         }
                     )

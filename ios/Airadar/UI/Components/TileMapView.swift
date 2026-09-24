@@ -15,6 +15,22 @@ struct MapTrack: Hashable {
     let from: Airport; let to: Airport; let points: [TrackPoint]
     /// Still flying: the track is drawn green with the plane at its end.
     var live: Bool = false
+    /// Expected landing, delay included, and the minute this is drawn for: with
+    /// both, a live track whose last real fix has gone stale (out of receiver
+    /// range over the sea, say) gets the plane moved on to where it should be by now.
+    var eta: Date? = nil
+    var now: Date? = nil
+
+    /// Where the plane should be by `now`, along the way from its last real fix
+    /// to the destination, in proportion to the time from that fix to `eta`.
+    /// Nil while the last fix is still fresh (under ten minutes old).
+    var estimatedPosition: CLLocationCoordinate2D? {
+        guard live, let now, let eta, let last = points.last, let seen = last.time,
+              now.timeIntervalSince(seen) > 600, eta > seen else { return nil }
+        let fraction = min(0.97, now.timeIntervalSince(seen) / eta.timeIntervalSince(seen))
+        let path = TileMapView.arcPath(from: CLLocationCoordinate2D(latitude: last.lat, longitude: last.lon), to: to.coordinate)
+        return path[Int(Double(path.count - 1) * fraction)]
+    }
 }
 
 extension Array where Element == Flight {
@@ -203,7 +219,9 @@ struct TileMapView: UIViewRepresentable {
                 var n = max(2, Int(Double(coords.count - 1) * p) + 1)
                 var planeAt = coords[n - 1]
                 var heading = Self.bearing(coords[max(0, n - 2)], coords[n - 1])
-                if let live = livePlane {
+                // A fix over ten minutes old is where it was, not where it is: past
+                // that, the timetable's estimate is the better guess.
+                if let live = livePlane, Date().timeIntervalSince(live.seenAt) < 600 {
                     let here = MKMapPoint(live.coordinate)
                     n = max(2, (coords.indices.min { MKMapPoint(coords[$0]).distance(to: here) < MKMapPoint(coords[$1]).distance(to: here) } ?? 1) + 1)
                     planeAt = live.coordinate
@@ -232,8 +250,19 @@ struct TileMapView: UIViewRepresentable {
             line.arrow = !t.live
             map.addOverlay(line, level: .aboveLabels)
             if t.live, coords.count >= 2 {
-                let last = coords[coords.count - 1]
-                map.addAnnotation(PlaneAnnotation(coordinate: last, heading: Self.bearing(coords[coords.count - 2], last)))
+                var last = coords[coords.count - 1]
+                var heading = Self.bearing(coords[coords.count - 2], last)
+                if let estimate = t.estimatedPosition {
+                    // Out of receiver range: dashed green from the last real fix to
+                    // where it should be by now, so the estimate reads as one.
+                    let gap = Self.arcPath(from: last, to: estimate)
+                    let guess = LegPolyline(coordinates: gap, count: gap.count)
+                    guess.color = Coordinator.liveColor; guess.width = 1.6; guess.dashed = true; guess.arrow = false
+                    map.addOverlay(guess, level: .aboveLabels)
+                    if gap.count >= 2 { heading = Self.bearing(gap[gap.count - 2], estimate) }
+                    last = estimate
+                }
+                map.addAnnotation(PlaneAnnotation(coordinate: last, heading: heading))
                 // The way still to go, dashed, so the map frames the whole flight and not just the bit flown.
                 let rest = Self.arcPath(from: last, to: t.to.coordinate)
                 let ahead = LegPolyline(coordinates: rest, count: rest.count)

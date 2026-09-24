@@ -28,6 +28,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -185,10 +186,20 @@ fun FlightDetailSheet(
                     else -> null
                 }?.let { gapFilled(it) }
                 val progress = if (realTrack == null && flight.phase == FlightPhase.IN_PROGRESS) flight.fractionFlown else null
+                // Ticks once a minute in the air, so the map's estimated position moves on.
+                val minute by produceState(java.time.Instant.now(), flight.id) {
+                    while (flight.phase == FlightPhase.IN_PROGRESS) { delay(60_000); value = java.time.Instant.now() }
+                }
+                val eta = flight.arrivalInstant?.plusSeconds(flight.delayMinutes * 60L)
                 TileMap(
                     routes = if (realTrack == null) listOf(MapRoute(from, to, progress = progress)) else emptyList(),
                     tracks = if (realTrack == null) emptyList()
-                    else listOf(MapTrack(from, to, realTrack, live = flight.phase == FlightPhase.IN_PROGRESS)),
+                    else listOf(
+                        MapTrack(
+                            from, to, realTrack, live = flight.phase == FlightPhase.IN_PROGRESS,
+                            eta = eta, now = if (flight.phase == FlightPhase.IN_PROGRESS) minute else null,
+                        )
+                    ),
                     interactive = false,
                     livePlane = live,
                     modifier = Modifier
