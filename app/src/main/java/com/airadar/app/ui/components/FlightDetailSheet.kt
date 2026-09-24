@@ -309,7 +309,7 @@ fun FlightDetailSheet(
                             color = if (canNavigate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.codeLineAtCenter()
                         )
-                        TerminalAndGate(flight.departureTerminal, flight.departureGate)
+                        Terminal(flight.departureTerminal)
                     }
 
                     // The way between: an arrow before departure, the plane along a
@@ -329,7 +329,7 @@ fun FlightDetailSheet(
                             style = MaterialTheme.typography.displaySmall,
                             modifier = Modifier.codeLineAtCenter()
                         )
-                        TerminalAndGate(flight.arrivalTerminal, flight.arrivalGate)
+                        Terminal(flight.arrivalTerminal)
                     }
                 }
 
@@ -355,6 +355,14 @@ fun FlightDetailSheet(
                     early = arrMoved && flight.arrivalShiftMinutes < 0,
                     secondary = flight.arrivalTime.format(dateFormat)
                 )
+                // A row of its own: the departure gate, the arrival one beneath once known.
+                if (flight.departureGate != null || flight.arrivalGate != null) {
+                    DetailRow(
+                        label = "Gate",
+                        value = flight.departureGate ?: "–",
+                        secondary = flight.arrivalGate?.let { "Arrives at $it" }
+                    )
+                }
                 DetailRow(
                     label = "Duration",
                     value = formatDuration(flight.durationMinutes)
@@ -540,11 +548,10 @@ fun Flight.statusLine(now: java.time.Instant = java.time.Instant.now()): String 
     }
 }
 
-/** Terminal and gate, one line each, so the column stays narrow and the route line gets the room. */
 @Composable
-private fun TerminalAndGate(terminal: String?, gate: String?) {
-    listOfNotNull(terminal?.let { "Terminal $it" }, gate?.let { "Gate $it" }).forEach {
-        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun Terminal(terminal: String?) {
+    terminal?.let {
+        Text("Terminal $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

@@ -318,14 +318,14 @@ struct FlightDetailSheet<Actions: View>: View {
             // would just be confusing. Blue exactly when a real drivable
             // route was found, in the same last-24h window it was checked in.
             BigCode(code: flight.departure, terminal: flight.departureTerminal ?? enrichedFlight?.departureTerminal,
-                    gate: flight.departureGate ?? enrichedFlight?.departureGate, city: flight.departureAirport?.cityCountry,
+                    city: flight.departureAirport?.cityCountry,
                     trailing: false, highlighted: routeValid,
                     onTap: routeValid ? { showMapChooser = true } : nil)
             // The way between: an arrow before departure, the plane along a dashed line in the air, done after.
             FlightProgressLine(flight: flight).frame(maxWidth: .infinity).frame(height: 40)
                 .alignmentGuide(.codeLine) { $0.height - 9 }
             BigCode(code: flight.arrival, terminal: flight.arrivalTerminal ?? enrichedFlight?.arrivalTerminal,
-                    gate: flight.arrivalGate ?? enrichedFlight?.arrivalGate, city: flight.arrivalAirport?.cityCountry, trailing: true)
+                    city: flight.arrivalAirport?.cityCountry, trailing: true)
         }
     }
 
@@ -337,6 +337,12 @@ struct FlightDetailSheet<Actions: View>: View {
         return VStack(spacing: 10) {
             DetailRow(label: "Departing", value: depValue, secondary: longDay(flight.departureDay), superseded: dep.original)
             DetailRow(label: "Arriving", value: arrValue, secondary: longDay(flight.arrivalTime.dayString), superseded: arr.original, early: arr.early)
+            // A row of its own: the departure gate, the arrival one beneath once known.
+            let depGate = flight.departureGate ?? enrichedFlight?.departureGate
+            let arrGate = flight.arrivalGate ?? enrichedFlight?.arrivalGate
+            if depGate != nil || arrGate != nil {
+                DetailRow(label: "Gate", value: depGate ?? "–", secondary: arrGate.map { "Arrives at \($0)" })
+            }
             DetailRow(label: "Duration", value: formatDuration(flight.durationMinutes))
             DetailRow(label: "Distance", value: formatDistance(flight.distanceKm))
             if let a = flight.aircraft ?? enrichedFlight?.aircraft ?? adsbdbAircraft?.type { DetailRow(label: "Aircraft", value: a) }
@@ -487,7 +493,7 @@ private struct BalancedRow: Layout {
 }
 
 private struct BigCode: View {
-    let code: String, terminal: String?, gate: String?, city: String?, trailing: Bool
+    let code: String, terminal: String?, city: String?, trailing: Bool
     var highlighted: Bool = false
     var onTap: (() -> Void)? = nil
 
@@ -497,9 +503,7 @@ private struct BigCode: View {
             Text(code).font(.system(size: 40, weight: .bold))
                 .foregroundStyle(highlighted ? Color(red: 0.043, green: 0.435, blue: 0.831) : .primary)
                 .alignmentGuide(.codeLine) { $0[VerticalAlignment.center] }
-            // One line each, so the column stays narrow and the route line between gets the room.
             if let terminal { Text("Terminal \(normalizeTerminal(terminal))").font(.caption).foregroundStyle(.secondary) }
-            if let gate { Text("Gate \(gate)").font(.caption).foregroundStyle(.secondary) }
         }
         if let onTap {
             Button(action: onTap) { content }.buttonStyle(.plain)
