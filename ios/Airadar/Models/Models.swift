@@ -142,6 +142,11 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     /// Boarding progress from the departure airport's own board, for the
     /// airports that publish one (the backend's airportboard.py) — nil elsewhere.
     var boardingStatus: BoardingStatus?
+    /// What a gate or belt read before it last changed (the backend keeps the
+    /// old one), for showing it struck through beside the new.
+    var departureGatePrevious: String?
+    var arrivalGatePrevious: String?
+    var baggageClaimPrevious: String?
     var callsign: String?
     var pnr: String?
     var isPending: Bool = false
@@ -169,6 +174,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, flightNumber, airlineName, departure, arrival, departureTerminal, arrivalTerminal, departureGate, arrivalGate
         case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, arrivalDelayMinutes, boardingStatus, callsign, pnr, isPending, isManual, passengers
+        case departureGatePrevious, arrivalGatePrevious, baggageClaimPrevious
         case track, trackFlownOn, deletedAt, sharedBy, shares, importedVia, feedStatus
     }
 
@@ -202,6 +208,9 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         delayMinutes = try c.decodeIfPresent(Int.self, forKey: .delayMinutes) ?? 0
         arrivalDelayMinutes = try c.decodeIfPresent(Int.self, forKey: .arrivalDelayMinutes)
         boardingStatus = (try? c.decodeIfPresent(String.self, forKey: .boardingStatus)).flatMap { $0.flatMap(BoardingStatus.init(rawValue:)) }
+        departureGatePrevious = try c.decodeIfPresent(String.self, forKey: .departureGatePrevious)
+        arrivalGatePrevious = try c.decodeIfPresent(String.self, forKey: .arrivalGatePrevious)
+        baggageClaimPrevious = try c.decodeIfPresent(String.self, forKey: .baggageClaimPrevious)
         callsign = try c.decodeIfPresent(String.self, forKey: .callsign)
         pnr = try c.decodeIfPresent(String.self, forKey: .pnr)
         isPending = try c.decodeIfPresent(Bool.self, forKey: .isPending) ?? false
@@ -240,6 +249,9 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         try c.encode(delayMinutes, forKey: .delayMinutes)
         try c.encodeIfPresent(arrivalDelayMinutes, forKey: .arrivalDelayMinutes)
         try c.encodeIfPresent(boardingStatus?.rawValue, forKey: .boardingStatus)
+        try c.encodeIfPresent(departureGatePrevious, forKey: .departureGatePrevious)
+        try c.encodeIfPresent(arrivalGatePrevious, forKey: .arrivalGatePrevious)
+        try c.encodeIfPresent(baggageClaimPrevious, forKey: .baggageClaimPrevious)
         try c.encodeIfPresent(callsign, forKey: .callsign)
         try c.encodeIfPresent(pnr, forKey: .pnr)
         try c.encode(isPending, forKey: .isPending)
@@ -346,6 +358,17 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         // Door to door as it actually went, once the source has an arrival figure.
         let moved = arrivalDelayMinutes.map { $0 - delayMinutes } ?? 0
         return max(0, Int(arr.timeIntervalSince(dep) / 60) + moved)
+    }
+
+    /// Block time and distance as timetabled, for showing what changed.
+    var scheduledDurationMinutes: Int {
+        guard let dep = departureInstant, let arr = arrivalInstant else { return 0 }
+        return max(0, Int(arr.timeIntervalSince(dep) / 60))
+    }
+
+    var scheduledDistanceKm: Int {
+        guard let a = departureAirport, let b = arrivalAirport else { return 0 }
+        return Int(greatCircleKm(a.latitude, a.longitude, b.latitude, b.longitude).rounded())
     }
 
     var distanceKm: Int {

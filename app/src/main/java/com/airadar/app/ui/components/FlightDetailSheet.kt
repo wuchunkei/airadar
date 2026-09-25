@@ -38,6 +38,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -357,26 +361,51 @@ fun FlightDetailSheet(
                     early = arrMoved && flight.arrivalShiftMinutes < 0,
                     secondary = flight.arrivalTime.format(dateFormat)
                 )
-                // A row of its own: the departure gate, the arrival one beneath once known.
-                if (flight.departureGate != null || flight.arrivalGate != null) {
-                    DetailRow(
-                        label = "Gate",
-                        value = flight.departureGate ?: "–",
-                        secondary = flight.arrivalGate?.let { "Arrives at $it" }
-                    )
-                }
+                // A row of its own, always there like the belt's ("–" until known): the
+                // departure gate, the arrival one beneath once known.
+                DetailRow(
+                    label = "Gate",
+                    value = flight.departureGate ?: "–",
+                    superseded = if (flight.departureGate == null) null else flight.departureGatePrevious,
+                    valueColor = MaterialTheme.colorScheme.onSurface,
+                    secondaryText = flight.arrivalGate?.let { gate ->
+                        // "Arrives at ~~G18~~ G19" once the arrival gate has moved.
+                        buildAnnotatedString {
+                            append("Arrives at ")
+                            flight.arrivalGatePrevious?.let {
+                                withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { append(it) }
+                                append(" ")
+                            }
+                            append(gate)
+                        }
+                    }
+                )
+                // Longer than timetabled reads red, shorter green; unchanged, plain.
+                val duration = flight.durationMinutes
+                val plannedDuration = flight.scheduledDurationMinutes
                 DetailRow(
                     label = "Duration",
-                    value = formatDuration(flight.durationMinutes)
+                    value = formatDuration(duration),
+                    superseded = if (duration != plannedDuration && plannedDuration > 0) formatDuration(plannedDuration) else null,
+                    valueColor = if (duration < plannedDuration) FlightStatus.ON_TIME.statusColor() else Longer
                 )
+                val distance = flight.distanceKm
+                val plannedDistance = flight.scheduledDistanceKm
                 DetailRow(
                     label = "Distance",
-                    value = formatDistance(flight.distanceKm)
+                    value = formatDistance(distance),
+                    superseded = if (distance != plannedDistance && plannedDistance > 0) formatDistance(plannedDistance) else null,
+                    valueColor = if (distance < plannedDistance) FlightStatus.ON_TIME.statusColor() else Longer
                 )
                 flight.aircraft?.let { DetailRow(label = "Aircraft", value = it) }
                 // Belt numbers appear close to landing; the row is always there so the
                 // traveller knows where to look for it later.
-                DetailRow(label = "Baggage claim", value = flight.baggageClaim ?: "–")
+                DetailRow(
+                    label = "Baggage claim",
+                    value = flight.baggageClaim ?: "–",
+                    superseded = if (flight.baggageClaim == null) null else flight.baggageClaimPrevious,
+                    valueColor = MaterialTheme.colorScheme.onSurface
+                )
                 flight.pnr?.let { DetailRow(label = "Booking reference", value = it) }
 
                 // Who shared it, when the trip is a friend's.
@@ -414,7 +443,12 @@ private fun DetailRow(
     /** An earlier figure this value replaced — shown struck through beside it. */
     superseded: String? = null,
     /** The new figure is earlier than the one it replaced: green, not the delay colour. */
-    early: Boolean = false
+    early: Boolean = false,
+    /** The value's colour once it has replaced something, when that isn't the
+     * early/late pair (a moved gate is just new, not better or worse). */
+    valueColor: androidx.compose.ui.graphics.Color? = null,
+    /** In place of [secondary], when part of it needs its own styling. */
+    secondaryText: AnnotatedString? = null
 ) {
     Row(
         modifier = Modifier
@@ -435,7 +469,7 @@ private fun DetailRow(
                         it,
                         style = MaterialTheme.typography.bodyMedium,
                         textDecoration = TextDecoration.LineThrough,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         modifier = Modifier.padding(end = 8.dp)
                     )
                 }
@@ -446,12 +480,19 @@ private fun DetailRow(
                     // A revised time reads in the delay colour, or on-time green when earlier.
                     color = when {
                         superseded == null -> MaterialTheme.colorScheme.onSurface
+                        valueColor != null -> valueColor
                         early -> FlightStatus.ON_TIME.statusColor()
                         else -> FlightStatus.DELAYED.statusColor()
                     }
                 )
             }
-            secondary?.let {
+            if (secondaryText != null) {
+                Text(
+                    secondaryText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else secondary?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.bodySmall,
@@ -574,3 +615,6 @@ fun Flight.statusTint(): androidx.compose.ui.graphics.Color = when (currentBoard
     BoardingStatus.GATE_CLOSED -> androidx.compose.ui.graphics.Color(0xFFCC2E26)
     null -> displayStatus.statusColor()
 }
+
+/** Longer or further than timetabled. */
+private val Longer = androidx.compose.ui.graphics.Color(0xFFD9332E)

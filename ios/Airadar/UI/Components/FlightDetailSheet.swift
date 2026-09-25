@@ -329,6 +329,9 @@ struct FlightDetailSheet<Actions: View>: View {
         }
     }
 
+    /// Longer or further than timetabled.
+    private static var longer: Color { Color(red: 0.85, green: 0.20, blue: 0.18) }
+
     private var facts: some View {
         let dep = flight.shownTime(arrival: false, forceSystemZone: forceSystemZone)
         let arr = flight.shownTime(arrival: true, forceSystemZone: forceSystemZone)
@@ -337,18 +340,29 @@ struct FlightDetailSheet<Actions: View>: View {
         return VStack(spacing: 10) {
             DetailRow(label: "Departing", value: depValue, secondary: longDay(flight.departureDay), superseded: dep.original)
             DetailRow(label: "Arriving", value: arrValue, secondary: longDay(flight.arrivalTime.dayString), superseded: arr.original, early: arr.early)
-            // A row of its own: the departure gate, the arrival one beneath once known.
+            // A row of its own, always there like the belt's ("–" until known): the
+            // departure gate, the arrival one beneath once known.
             let depGate = flight.departureGate ?? enrichedFlight?.departureGate
             let arrGate = flight.arrivalGate ?? enrichedFlight?.arrivalGate
-            if depGate != nil || arrGate != nil {
-                DetailRow(label: "Gate", value: depGate ?? "–", secondary: arrGate.map { "Arrives at \($0)" })
-            }
-            DetailRow(label: "Duration", value: formatDuration(flight.durationMinutes))
-            DetailRow(label: "Distance", value: formatDistance(flight.distanceKm))
+            DetailRow(label: "Gate", value: depGate ?? "–", secondaryText: arrGate.map { gate in
+                // "Arrives at ~~G18~~ G19" once the arrival gate has moved.
+                let was = flight.arrivalGatePrevious.map { Text($0).strikethrough() + Text(" ") } ?? Text("")
+                return Text("Arrives at ") + was + Text(gate)
+            }, superseded: depGate == nil ? nil : flight.departureGatePrevious, valueColor: .primary)
+            // Longer than timetabled reads red, shorter green; unchanged, plain.
+            let duration = flight.durationMinutes, plannedDuration = flight.scheduledDurationMinutes
+            DetailRow(label: "Duration", value: formatDuration(duration),
+                      superseded: duration != plannedDuration && plannedDuration > 0 ? formatDuration(plannedDuration) : nil,
+                      valueColor: duration < plannedDuration ? FlightStatus.onTime.color : Self.longer)
+            let distance = flight.distanceKm, plannedDistance = flight.scheduledDistanceKm
+            DetailRow(label: "Distance", value: formatDistance(distance),
+                      superseded: distance != plannedDistance && plannedDistance > 0 ? formatDistance(plannedDistance) : nil,
+                      valueColor: distance < plannedDistance ? FlightStatus.onTime.color : Self.longer)
             if let a = flight.aircraft ?? enrichedFlight?.aircraft ?? adsbdbAircraft?.type { DetailRow(label: "Aircraft", value: a) }
             if let reg = adsbdbAircraft?.registration { DetailRow(label: "Registration", value: reg) }
             // Belt numbers appear close to landing; the row is always there.
-            DetailRow(label: "Baggage claim", value: flight.baggageClaim ?? "–")
+            DetailRow(label: "Baggage claim", value: flight.baggageClaim ?? "–",
+                      superseded: flight.baggageClaim == nil ? nil : flight.baggageClaimPrevious, valueColor: .primary)
             if let p = flight.pnr { DetailRow(label: "Booking reference", value: p) }
             if let s = flight.sharedBy { DetailRow(label: "Shared by", value: s.person.givenName, secondary: s.status.label) }
         }
@@ -517,10 +531,15 @@ struct DetailRow: View {
     let label: String
     let value: String
     var secondary: String? = nil
-    /// An earlier figure this value replaced — shown struck through beside it.
+    /// In place of `secondary`, when part of it needs its own styling.
+    var secondaryText: Text? = nil
+    /// An earlier figure this value replaced — shown struck through, faded, beside it.
     var superseded: String? = nil
     /// The new figure is earlier than the one it replaced: green, not the delay colour.
     var early = false
+    /// The value's colour once it has replaced something, when that isn't the
+    /// early/late pair (a moved gate is just new, not better or worse).
+    var valueColor: Color? = nil
 
     var body: some View {
         HStack(alignment: .top) {
@@ -528,11 +547,13 @@ struct DetailRow: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 1) {
                 HStack(spacing: 6) {
-                    if let superseded { Text(superseded).strikethrough().foregroundStyle(.secondary) }
+                    if let superseded { Text(superseded).strikethrough().foregroundStyle(.tertiary) }
                     Text(value).fontWeight(.semibold)
-                        .foregroundStyle(superseded == nil ? .primary : early ? FlightStatus.onTime.color : FlightStatus.delayed.color)
+                        .foregroundStyle(superseded == nil ? .primary
+                                         : valueColor ?? (early ? FlightStatus.onTime.color : FlightStatus.delayed.color))
                 }
-                if let secondary { Text(secondary).font(.caption).foregroundStyle(.secondary) }
+                if let secondaryText { secondaryText.font(.caption).foregroundStyle(.secondary) }
+                else if let secondary { Text(secondary).font(.caption).foregroundStyle(.secondary) }
             }
         }
     }

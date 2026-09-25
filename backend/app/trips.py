@@ -56,6 +56,11 @@ class TripIn(BaseModel):
     arrivalDelayMinutes: int | None = None
     # From the departure airport's own board, around departure — see airportboard.py.
     boardingStatus: str | None = None
+    # What a gate or belt read before it last changed, so the apps can show the
+    # old one struck through beside the new.
+    departureGatePrevious: str | None = None
+    arrivalGatePrevious: str | None = None
+    baggageClaimPrevious: str | None = None
     callsign: str | None = None
     pnr: str | None = None
     isPending: bool = False
@@ -195,10 +200,20 @@ async def _refresh_live(state, doc: dict) -> dict:
     fresh = await _live_record(state, doc["flightNumber"], dep.date(), _live_interval(doc, now), now)
     changes = {k: fresh[k] for k in LIVE_FIELDS if fresh.get(k) is not None and fresh[k] != doc.get(k)} if fresh else {}
     changes.update(await _boarding_changes(state, doc, dep, dep_utc, now))
+    _note_previous(doc, changes)
     if not changes:
         return doc
     await state.db.trips.update_one({"_id": doc["_id"]}, {"$set": changes})
     return {**doc, **changes}
+
+
+def _note_previous(doc: dict, changes: dict) -> None:
+    """A gate or belt that moved from one real value to another keeps the old
+    one alongside, for the apps to strike through."""
+    for key in ("departureGate", "arrivalGate", "baggageClaim"):
+        old, new = doc.get(key), changes.get(key)
+        if old and new and new != old:
+            changes[f"{key}Previous"] = old
 
 
 # The departure airport's board is only asked about while it can say something

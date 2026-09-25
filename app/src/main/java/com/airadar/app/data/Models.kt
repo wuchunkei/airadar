@@ -46,6 +46,11 @@ data class Flight(
     /** Boarding progress from the departure airport's own board, for the airports
      * that publish one (the backend's airportboard.py); null elsewhere. */
     val boardingStatus: BoardingStatus? = null,
+    /** What a gate or belt read before it last changed (the backend keeps the old
+     * one), for showing it struck through beside the new. */
+    val departureGatePrevious: String? = null,
+    val arrivalGatePrevious: String? = null,
+    val baggageClaimPrevious: String? = null,
     val baggageClaim: String? = null,
     val typicalDurationMinutes: Int? = null,
     /** Imported from a mailbox and not yet confirmed by the traveller. */
@@ -184,6 +189,21 @@ data class Flight(
             if (total <= 0) return 0.0
             val elapsed = java.time.Instant.now().toEpochMilli() - delayed.toEpochMilli()
             return (elapsed.toDouble() / total).coerceIn(0.0, 1.0)
+        }
+
+    /** Block time and distance as timetabled, for showing what changed. */
+    val scheduledDurationMinutes: Int
+        get() {
+            val dep = departureInstant ?: return 0
+            val arr = arrivalInstant ?: return 0
+            return ((arr.toEpochMilli() - dep.toEpochMilli()) / 60000).toInt().coerceAtLeast(0)
+        }
+
+    val scheduledDistanceKm: Int
+        get() {
+            val a = departureAirport ?: return 0
+            val b = arrivalAirport ?: return 0
+            return greatCircleKm(a.latitude, a.longitude, b.latitude, b.longitude)
         }
 
     val distanceKm: Int
