@@ -206,7 +206,7 @@ private struct LockScreenView: View {
 private struct Endpoint: View {
     let code: String
     let terminal: String?
-    /// Shown in place of the city on the island (no room for both), beside it on the lock screen.
+    /// Once known, shown in place of the city — the gate is what matters by then.
     var gate: String? = nil
     let place: String
     let clock: String
@@ -215,18 +215,54 @@ private struct Endpoint: View {
     var large = false
 
     var body: some View {
-        VStack(alignment: alignment, spacing: large ? 3 : 1) {
+        // As wide as the code and terminal: a long city and country wraps
+        // beneath them rather than pushing into the middle.
+        HeaderWidth(alignment: alignment, spacing: large ? 3 : 1) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(code).font(large ? .title2.bold() : .title3.bold())
                 if let terminal { Text("T\(terminal)").font(large ? .title2.bold() : .title3.bold()).foregroundStyle(.secondary) }
             }
-            if let gate {
-                Text(large ? "\(place) · Gate \(gate)" : "Gate \(gate)")
-                    .font((large ? Font.caption : Font.caption2).weight(.semibold)).lineLimit(1)
-            } else {
-                Text(place).font(large ? .caption : .caption2).foregroundStyle(.secondary).lineLimit(1)
+            .fixedSize()
+            Group {
+                if let gate {
+                    Text("Gate \(gate)").font((large ? Font.caption : Font.caption2).weight(.semibold))
+                } else {
+                    Text(place).font(large ? .caption : .caption2).foregroundStyle(.secondary)
+                }
             }
-            Text(clock).font((large ? Font.body : Font.subheadline).monospacedDigit().weight(.semibold))
+            .lineLimit(2)
+            .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
+            Text(clock).font((large ? Font.body : Font.subheadline).monospacedDigit().weight(.semibold)).fixedSize()
+        }
+    }
+}
+
+/// A column as wide as its first view (or its last, if wider): the views
+/// between are held to that width and wrap within it.
+private struct HeaderWidth: Layout {
+    var alignment: HorizontalAlignment
+    var spacing: CGFloat
+
+    private func width(_ subviews: Subviews) -> CGFloat {
+        guard let first = subviews.first, let last = subviews.last else { return 0 }
+        return max(first.sizeThatFits(.unspecified).width, last.sizeThatFits(.unspecified).width)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let w = width(subviews)
+        let heights = subviews.map { $0.sizeThatFits(ProposedViewSize(width: w, height: nil)).height }
+        return CGSize(width: w, height: heights.reduce(0, +) + spacing * CGFloat(max(0, subviews.count - 1)))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let w = width(subviews)
+        var y = bounds.minY
+        for view in subviews {
+            let size = view.sizeThatFits(ProposedViewSize(width: w, height: nil))
+            let x = alignment == .trailing ? bounds.maxX - size.width
+                : alignment == .center ? bounds.midX - size.width / 2 : bounds.minX
+            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: w, height: size.height))
+            y += size.height + spacing
         }
     }
 }
@@ -323,7 +359,7 @@ private struct Countdown: View {
         } else {
             HStack(spacing: 4) {
                 CountdownDigits(state: state).monospacedDigit()
-                Text(state.stage == .airborne ? "Landing" : "Boarding")
+                Text(state.stage == .airborne ? "Landing" : "Boarding").lineLimit(1).fixedSize()
             }
             .fontWeight(.semibold)
             .foregroundStyle(state.urgency.color)
