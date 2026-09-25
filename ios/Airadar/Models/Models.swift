@@ -26,16 +26,16 @@ enum FlightStatus: String, Codable, Sendable, CaseIterable {
 
     var label: String {
         switch self {
-        case .onTime: "On time"
-        case .delayed: "Delayed"
-        case .cancelled: "Cancelled"
-        case .diverted: "Diverted"
-        case .scheduled: "Scheduled"
-        case .completed: "Completed"
-        case .boarding: "Boarding"
-        case .departed: "Departed"
-        case .inFlight: "In flight"
-        case .landed: "Finished"
+        case .onTime: String(localized: "On time")
+        case .delayed: String(localized: "Delayed")
+        case .cancelled: String(localized: "Cancelled")
+        case .diverted: String(localized: "Diverted")
+        case .scheduled: String(localized: "Scheduled")
+        case .completed: String(localized: "Completed")
+        case .boarding: String(localized: "Boarding")
+        case .departed: String(localized: "Departed")
+        case .inFlight: String(localized: "In flight")
+        case .landed: String(localized: "Finished")
         }
     }
 
@@ -68,7 +68,14 @@ struct TrackPoint: Codable, Hashable, Sendable {
 enum ShareStatus: String, Codable, Sendable {
     case pending = "PENDING", accepted = "ACCEPTED", rejected = "REJECTED", together = "TOGETHER"
 
-    var label: String { rawValue.capitalized }
+    var label: String {
+        switch self {
+        case .pending: String(localized: "Pending")
+        case .accepted: String(localized: "Accepted")
+        case .rejected: String(localized: "Rejected")
+        case .together: String(localized: "Together")
+        }
+    }
 
     // The server writes "accepted"; the raw values are upper-case like the Android enum.
     init(from decoder: Decoder) throws {
@@ -476,7 +483,7 @@ func systemPrefersMetric() -> Bool {
 }
 
 func formatDistance(_ km: Int) -> String {
-    systemPrefersMetric() ? "\(km.formatted()) km" : "\(Int(Double(km) * 0.621371).formatted()) mi"
+    systemPrefersMetric() ? String(localized: "\(km.formatted()) km") : "\(Int(Double(km) * 0.621371).formatted()) mi"
 }
 
 /// "T1", "Terminal 1" and "1" are the same terminal spelled three ways
@@ -491,7 +498,7 @@ func normalizeTerminal(_ raw: String) -> String {
 
 func formatDuration(_ minutes: Int) -> String {
     let h = minutes / 60, m = minutes % 60
-    return h > 0 ? (m > 0 ? "\(h)h \(m)m" : "\(h)h") : "\(m)m"
+    return h > 0 ? (m > 0 ? String(localized: "\(h)h \(m)m") : String(localized: "\(h)h")) : String(localized: "\(m)m")
 }
 
 func greatCircleKm(_ lat1: Double, _ lon1: Double, _ lat2: Double, _ lon2: Double) -> Double {
@@ -620,12 +627,12 @@ enum BoardingStatus: String, Codable, Sendable {
 
     var label: String {
         switch self {
-        case .checkIn: "Check-in open"
-        case .gateOpen: "Gate open"
-        case .boarding: "Boarding"
-        case .finalCall: "Final call"
-        case .gateClosing: "Gate closing"
-        case .gateClosed: "Gate closed"
+        case .checkIn: String(localized: "Check-in open")
+        case .gateOpen: String(localized: "Gate open")
+        case .boarding: String(localized: "Boarding")
+        case .finalCall: String(localized: "Final call")
+        case .gateClosing: String(localized: "Gate closing")
+        case .gateClosed: String(localized: "Gate closed")
         }
     }
 
@@ -659,20 +666,20 @@ extension Flight {
         case .inProgress:
             guard let dep = departureInstant else { return status }
             let flown = Int(now.timeIntervalSince(dep + TimeInterval(delayMinutes * 60)) / 60)
-            return flown > 0 ? "\(status) for \(Self.span(flown))" : status
+            return flown > 0 ? String(localized: "\(status) for \(Self.span(flown))") : status
         case .upcoming:
             let stage = currentBoarding?.label ?? status
-            return delayMinutes > 0 ? "\(stage) · \(Self.span(delayMinutes)) late" : stage
+            return delayMinutes > 0 ? String(localized: "\(stage) · \(Self.span(delayMinutes)) late") : stage
         case .past:
             guard let d = arrivalDelayMinutes else { return status }
-            if d < 0 { return "Landed · \(Self.span(-d)) early" }
-            if d > 0 { return "Landed · \(Self.span(d)) late" }
-            return "Landed · on time"
+            if d < 0 { return String(localized: "Landed · \(Self.span(-d)) early") }
+            if d > 0 { return String(localized: "Landed · \(Self.span(d)) late") }
+            return String(localized: "Landed · on time")
         }
     }
 
     private static func span(_ minutes: Int) -> String {
-        minutes >= 60 ? "\(minutes / 60)h\(minutes % 60)m" : "\(minutes)m"
+        minutes >= 60 ? String(localized: "\(minutes / 60)h\(minutes % 60)m") : String(localized: "\(minutes)m")
     }
 }
 

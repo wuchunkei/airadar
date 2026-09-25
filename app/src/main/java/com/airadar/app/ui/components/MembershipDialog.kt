@@ -1,5 +1,7 @@
 package com.airadar.app.ui.components
 
+import com.airadar.app.data.tr
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -77,7 +79,7 @@ fun MembershipDialog(
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Cell("", Modifier.weight(1.4f), header = true)
                     Cell("Guest", Modifier.weight(1f), header = true, highlight = current == Tier.GUEST)
-                    Cell("Premium", Modifier.weight(1f), header = true, highlight = current == Tier.PREMIUM)
+                    Cell(tr("Premium"), Modifier.weight(1f), header = true, highlight = current == Tier.PREMIUM)
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 rows.forEach { r ->
@@ -92,7 +94,7 @@ fun MembershipDialog(
                 // not regardless of Guest/Premium.
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Share", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(tr("Share"), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         Text(
                             "Send trips to friends — ${Plans.SHARE_PRICE}",
                             style = MaterialTheme.typography.labelSmall,
@@ -132,7 +134,7 @@ fun MembershipDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(tr("Close")) } }
     )
 }
 

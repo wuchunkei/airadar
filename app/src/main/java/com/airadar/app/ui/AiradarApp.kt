@@ -1,5 +1,7 @@
 package com.airadar.app.ui
 
+import com.airadar.app.data.tr
+
 import android.content.Intent
 import android.net.Uri
 import com.airadar.app.ui.components.MembershipDialog
@@ -65,11 +67,13 @@ import com.airadar.app.ui.viewmodel.SearchViewModel
 import com.airadar.app.ui.viewmodel.SettingsViewModel
 import com.airadar.app.ui.viewmodel.TripViewModel
 
-private enum class Tab(val label: String) {
+private enum class Tab(private val en: String) {
     TRIP("Trip"),
     SEARCH("Search"),
     COMMUNITY("Community"),
-    MY("My")
+    MY("My");
+
+    val label: String get() = tr(en)
 }
 
 private enum class Overlay { SETTINGS, EMAIL_IMPORT, RECYCLE_BIN, FRIENDS, COMMUNITY_HISTORY }
@@ -173,7 +177,7 @@ fun AiradarApp() {
         }
         linked = runCatching { BackendClient.linkedTrip(t) }.getOrNull()
         if (linked == null) {
-            snackbar.showSnackbar("That trip link has expired.")
+            snackbar.showSnackbar(tr("That trip link has expired."))
             DeepLinks.shareToken.value = null
         }
     }
@@ -247,8 +251,7 @@ fun AiradarApp() {
                     scope.launch {
                         snackbar.currentSnackbarData?.dismiss()
                         snackbar.showSnackbar(
-                            "Moved to the Recycle Bin. Restore it from My › Settings › Recycle Bin " +
-                                    "within 30 days."
+                            tr("Moved to the Recycle Bin. Restore it from My › Settings › Recycle Bin within 30 days.")
                         )
                     }
                 },
@@ -333,7 +336,7 @@ private fun LinkedTripDialog(link: BackendClient.LinkedTrip, onDismiss: () -> Un
                             style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                     }
                     Text(
-                        "Shared by ${link.ownerName}",
+                        tr("Shared by %s", link.ownerName),
                         style = MaterialTheme.typography.bodyMedium,
                         color = link.owner.tint,
                         fontWeight = FontWeight.Medium,
@@ -342,7 +345,7 @@ private fun LinkedTripDialog(link: BackendClient.LinkedTrip, onDismiss: () -> Un
                 }
             }
         },
-        confirmButton = { Button(onClick = onAdd) { Text("Add to trips") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { Button(onClick = onAdd) { Text(tr("Add to trips")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Close")) } }
     )
 }

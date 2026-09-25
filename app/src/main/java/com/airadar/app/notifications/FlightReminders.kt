@@ -1,5 +1,7 @@
 package com.airadar.app.notifications
 
+import com.airadar.app.data.tr
+
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -48,16 +50,16 @@ object FlightReminders {
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_SCHEDULE, "Trip reminders", NotificationManager.IMPORTANCE_DEFAULT)
-                .apply { description = "The day before, and three hours before departure" }
+            NotificationChannel(CHANNEL_SCHEDULE, tr("Trip reminders"), NotificationManager.IMPORTANCE_DEFAULT)
+                .apply { description = tr("The day before, and three hours before departure") }
         )
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_LIVE, "Live updates", NotificationManager.IMPORTANCE_HIGH)
-                .apply { description = "Delays, gate changes, departure and landing" }
+            NotificationChannel(CHANNEL_LIVE, tr("Live updates"), NotificationManager.IMPORTANCE_HIGH)
+                .apply { description = tr("Delays, gate changes, departure and landing") }
         )
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_INFLIGHT, "In flight", NotificationManager.IMPORTANCE_LOW)
-                .apply { description = "Progress while airborne" }
+            NotificationChannel(CHANNEL_INFLIGHT, tr("In flight"), NotificationManager.IMPORTANCE_LOW)
+                .apply { description = tr("Progress while airborne") }
         )
     }
 
@@ -99,7 +101,7 @@ object FlightReminders {
             val stage = f.currentBoarding ?: continue
             val was = old[f.id] ?: continue          // a first load isn't a change
             if (!stage.announced || was.boardingStatus == f.boardingStatus) continue
-            val text = f.departureGate?.let { "${stage.label} · Gate $it" } ?: stage.label
+            val text = f.departureGate?.let { tr("%1\$s · Gate %2\$s", stage.label, it) } ?: stage.label
             val open = PendingIntent.getActivity(
                 context, 0, Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -137,23 +139,23 @@ object FlightReminders {
             val terminal = inputData.getString(KEY_TERMINAL)
             val id = inputData.getString(KEY_ID) ?: return Result.failure()
             // "Bob's trip · CX392 …" when the trip was shared by a friend.
-            val number = inputData.getString(KEY_OWNER)?.let { "$it's trip · $rawNumber" } ?: rawNumber
+            val number = inputData.getString(KEY_OWNER)?.let { tr("%s's trip", it) + " · $rawNumber" } ?: rawNumber
 
             ensureChannels(applicationContext)
 
             when (stage) {
                 Stage.SCHEDULED -> post(
                     id, CHANNEL_SCHEDULE,
-                    title = "$number tomorrow · $route",
-                    text = "Departs ${depAt.format(clock)}" + (terminal?.let { " from Terminal $it" } ?: "")
+                    title = tr("%1\$s tomorrow · %2\$s", number, route),
+                    text = tr("Departs %s", depAt.format(clock)) + (terminal?.let { tr(" from Terminal %s", it) } ?: "")
                 )
 
                 Stage.STATUS -> {
                     val live = fetch(rawNumber, date)
                     post(
                         id, CHANNEL_SCHEDULE,
-                        title = "$number in 3 hours · $route",
-                        text = live?.let { statusLine(it) } ?: "Scheduled ${depAt.format(clock)} · status unavailable"
+                        title = tr("%1\$s in 3 hours · %2\$s", number, route),
+                        text = live?.let { statusLine(it) } ?: tr("Scheduled %s · status unavailable", depAt.format(clock))
                     )
                 }
 
@@ -169,7 +171,7 @@ object FlightReminders {
                     post(
                         id, CHANNEL_INFLIGHT,
                         title = "$number · $route",
-                        text = "Landing in ${formatMinutes(remaining)} · ${arrAt.format(clock)}",
+                        text = tr("Landing in %1\$s · %2\$s", formatMinutes(remaining), arrAt.format(clock)),
                         ongoing = true,
                         progress = (elapsed * 100 / total).toInt()
                     )
@@ -191,9 +193,9 @@ object FlightReminders {
                         ?.arrivalTime?.plusMinutes(live.delayMinutes.toLong())
                     post(
                         id, CHANNEL_LIVE,
-                        title = "$number · landed",
-                        text = landedAt?.let { "Arrived ${it.format(clock)}" + lateSuffix(live.delayMinutes) }
-                            ?: "Scheduled arrival ${arrAt.format(clock)} · actual time unavailable"
+                        title = tr("%s · landed", number),
+                        text = landedAt?.let { tr("Arrived %s", it.format(clock)) + lateSuffix(live.delayMinutes) }
+                            ?: tr("Scheduled arrival %s · actual time unavailable", arrAt.format(clock))
                     )
                 }
             }
@@ -208,17 +210,17 @@ object FlightReminders {
             }
 
         private fun statusLine(flight: Flight): String {
-            val gate = flight.departureGate?.let { " · Gate $it" } ?: ""
+            val gate = flight.departureGate?.let { tr(" · Gate %s", it) } ?: ""
             val terminal = flight.departureTerminal?.let { " · T$it" } ?: ""
             val dep = flight.departureTime.plusMinutes(flight.delayMinutes.toLong()).format(clock)
             return when (flight.status) {
-                FlightStatus.CANCELLED -> "Cancelled"
-                FlightStatus.DELAYED -> "Delayed to $dep (+${flight.delayMinutes} min)$terminal$gate"
-                else -> "On time · $dep$terminal$gate"
+                FlightStatus.CANCELLED -> tr("Cancelled")
+                FlightStatus.DELAYED -> tr("Delayed to %1\$s (+%2\$d min)", dep, flight.delayMinutes) + terminal + gate
+                else -> tr("On time · %s", dep) + terminal + gate
             }
         }
 
-        private fun lateSuffix(delay: Int) = if (delay > 0) " · $delay min late" else " · on time"
+        private fun lateSuffix(delay: Int) = if (delay > 0) tr(" · %d min late", delay) else tr(" · on time")
 
         private fun post(
             id: String,
@@ -285,9 +287,9 @@ object FlightReminders {
         val h = minutes / 60
         val m = minutes % 60
         return when {
-            h == 0L -> "${m} min"
-            m == 0L -> "${h} h"
-            else -> "${h} h ${m} min"
+            h == 0L -> tr("%d min", m)
+            m == 0L -> tr("%dh", h)
+            else -> tr("%1\$d h %2\$d min", h, m)
         }
     }
 }

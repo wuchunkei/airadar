@@ -63,7 +63,7 @@ enum LiveActivities {
 
     private static func waypoints(_ f: Flight) -> [FlightActivityAttributes.Waypoint] {
         guard let a = f.departureAirport, let b = f.arrivalAirport else { return [] }
-        return RouteAirports.along(from: a, to: b).map { .init(fraction: $0.fraction, code: $0.code) }
+        return RouteAirports.along(from: a, to: b).map { .init(fraction: $0.fraction, code: $0.name) }
     }
 
     private static func attributes(_ f: Flight, logo: Data?) -> FlightActivityAttributes {

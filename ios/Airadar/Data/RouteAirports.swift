@@ -7,13 +7,26 @@ import Foundation
 /// Built from a bundled list of the world's large and medium airports with
 /// scheduled service (OurAirports, public domain), so it's offline and instant.
 /// A city with several airports reads as its IATA city code (HND, NRT → TYO);
-/// a stretch with no airport near it simply has no dot.
+/// a stretch with no airport near it simply has no dot. In Chinese, a stop reads
+/// as its city's name instead (TYO → 东京), from a bundled table built from
+/// Wikidata; a code the table lacks stays a code.
 enum RouteAirports {
     struct Stop: Hashable {
         /// How far along the route, 0 at departure, 1 at arrival.
         let fraction: Double
         let code: String
+        /// What the line shows: the city's name in the app's language, else the code.
+        var name: String { RouteAirports.names[code] ?? code }
     }
+
+    /// Code → city name, for the language the app is running in (only Chinese has a table).
+    private static let names: [String: String] = {
+        guard Bundle.main.preferredLocalizations.first?.hasPrefix("zh") == true,
+              let url = Bundle.main.url(forResource: "route_names_zh", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let table = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return table
+    }()
 
     private struct Entry {
         let iata: String

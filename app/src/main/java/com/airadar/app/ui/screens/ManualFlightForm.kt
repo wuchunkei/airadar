@@ -1,5 +1,7 @@
 package com.airadar.app.ui.screens
 
+import com.airadar.app.data.tr
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -135,16 +137,16 @@ fun ManualFlightForm(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                if (existing == null) "Add manually" else "Edit trip",
+                if (existing == null) tr("Add manually") else tr("Edit trip"),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
 
-            SectionLabel("Flight")
+            SectionLabel(tr("Flight"))
             OutlinedTextField(
                 value = number,
                 onValueChange = { number = it.uppercase().filter(Char::isLetterOrDigit) },
-                label = { Text("Flight number") },
+                label = { Text(tr("Flight number")) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                 modifier = Modifier.fillMaxWidth()
@@ -157,24 +159,24 @@ fun ManualFlightForm(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Airline")
-                Text(shownAirline.ifEmpty { "Tap to set" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tr("Airline"))
+                Text(shownAirline.ifEmpty { tr("Tap to set") }, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            SectionLabel("Route")
-            RouteRow("From (IATA)", from, { from = it.uppercase().filter(Char::isLetter).take(3) }, depTerminal, depTerminalOptions) { depTerminal = it }
-            RouteRow("To (IATA)", to, { to = it.uppercase().filter(Char::isLetter).take(3) }, arrTerminal, arrTerminalOptions) { arrTerminal = it }
+            SectionLabel(tr("Route"))
+            RouteRow(tr("From (IATA)"), from, { from = it.uppercase().filter(Char::isLetter).take(3) }, depTerminal, depTerminalOptions) { depTerminal = it }
+            RouteRow(tr("To (IATA)"), to, { to = it.uppercase().filter(Char::isLetter).take(3) }, arrTerminal, arrTerminalOptions) { arrTerminal = it }
 
-            SectionLabel("Times (local at each airport)")
-            DateTimeRow("Departure", depTime) { depTime = it }
-            DateTimeRow("Arrival", arrTime) { arrTime = it }
+            SectionLabel(tr("Times (local at each airport)"))
+            DateTimeRow(tr("Departure"), depTime) { depTime = it }
+            DateTimeRow(tr("Arrival"), arrTime) { arrTime = it }
 
             error?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text(tr("Cancel")) }
                 Button(
                     onClick = {
                         busy = true; error = null
@@ -187,8 +189,8 @@ fun ManualFlightForm(
                                 FlightDatabase.ensureAirport(arr) { BackendClient.airport(arr) }
                                 val a = FlightDatabase.airport(dep)
                                 val b = FlightDatabase.airport(arr)
-                                if (a == null) { error = "Unknown airport $dep."; return@launch }
-                                if (b == null) { error = "Unknown airport $arr."; return@launch }
+                                if (a == null) { error = tr("Unknown airport %s.", dep); return@launch }
+                                if (b == null) { error = tr("Unknown airport %s.", arr); return@launch }
                                 val id = "$code-${depTime.toLocalDate()}"
                                 val name = shownAirline.ifEmpty { code.take(2) }
                                 val status = if (depTime.atZone(a.zone).toInstant().isBefore(Instant.now()))
@@ -230,7 +232,7 @@ fun ManualFlightForm(
                     modifier = Modifier.weight(1f)
                 ) {
                     if (busy) CircularProgressIndicator(modifier = Modifier.height(18.dp).width(18.dp), strokeWidth = 2.dp)
-                    else Text(if (existing == null) "Add" else "Save", fontWeight = FontWeight.SemiBold)
+                    else Text(if (existing == null) tr("Add") else tr("Save"), fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -241,11 +243,11 @@ fun ManualFlightForm(
     if (showAirlineConfirm) {
         AlertDialog(
             onDismissRequest = { showAirlineConfirm = false },
-            title = { Text("Is the airline correct?") },
+            title = { Text(tr("Is the airline correct?")) },
             text = { Text(shownAirline) },
-            confirmButton = { TextButton(onClick = { showAirlineConfirm = false }) { Text("Yes") } },
+            confirmButton = { TextButton(onClick = { showAirlineConfirm = false }) { Text(tr("Yes")) } },
             dismissButton = {
-                TextButton(onClick = { showAirlineConfirm = false; showAirlinePicker = true }) { Text("No") }
+                TextButton(onClick = { showAirlineConfirm = false; showAirlinePicker = true }) { Text(tr("No")) }
             }
         )
     }
@@ -312,7 +314,7 @@ private fun TerminalField(value: String, options: List<String>, onChange: (Strin
                     modifier = Modifier.clickable { expanded = true },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(if (value.isEmpty()) "Choose" else FlightDatabase.terminalDisplayLabel(value))
+                    Text(if (value.isEmpty()) tr("Choose") else FlightDatabase.terminalDisplayLabel(value))
                     Icon(Icons.Outlined.ArrowDropDown, contentDescription = null)
                 }
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -328,7 +330,7 @@ private fun TerminalField(value: String, options: List<String>, onChange: (Strin
         else -> OutlinedTextField(
             value = value,
             onValueChange = onChange,
-            label = { Text("Terminal") },
+            label = { Text(tr("Terminal")) },
             singleLine = true,
             modifier = Modifier.width(120.dp)
         )
@@ -372,11 +374,11 @@ private fun DateTimeRow(label: String, value: LocalDateTime, onChange: (LocalDat
                 ) {
                     TimePicker(state = state)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { showTime = false }) { Text("Cancel") }
+                        TextButton(onClick = { showTime = false }) { Text(tr("Cancel")) }
                         TextButton(onClick = {
                             onChange(LocalDateTime.of(value.toLocalDate(), LocalTime.of(state.hour, state.minute)))
                             showTime = false
-                        }) { Text("OK") }
+                        }) { Text(tr("OK")) }
                     }
                 }
             }
@@ -404,7 +406,7 @@ private fun AirlinePickerSheet(flightNumber: String, onSelect: (String) -> Unit,
                 .padding(horizontal = 20.dp)
         ) {
             Text(
-                "Airline",
+                tr("Airline"),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -412,7 +414,7 @@ private fun AirlinePickerSheet(flightNumber: String, onSelect: (String) -> Unit,
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                label = { Text("Search airline name or code") },
+                label = { Text(tr("Search airline name or code")) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -437,7 +439,7 @@ private fun AirlinePickerSheet(flightNumber: String, onSelect: (String) -> Unit,
                 if (results.isEmpty() && query.isNotBlank()) {
                     item {
                         Text(
-                            "No match in the bundled list.",
+                            tr("No match in the bundled list."),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 12.dp)
@@ -446,7 +448,7 @@ private fun AirlinePickerSheet(flightNumber: String, onSelect: (String) -> Unit,
                 }
             }
             TextButton(onClick = { showOther = true }, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                Text("Other — my airline isn't listed")
+                Text(tr("Other — my airline isn't listed"))
             }
         }
     }
@@ -477,22 +479,21 @@ private fun OtherAirlineSheet(flightNumber: String, onSubmit: (String) -> Unit, 
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Suggest an airline", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(tr("Suggest an airline"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("e.g. Some New Airline") },
+                label = { Text(tr("e.g. Some New Airline")) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
             Text(
-                "Not in the bundled list yet — this trip uses the name you type right away, and it's " +
-                    "kept on this device to review adding properly later.",
+                tr("Not in the bundled list yet — this trip uses the name you type right away, and it's kept on this device to review adding properly later."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text(tr("Cancel")) }
                 Button(
                     onClick = {
                         val trimmed = name.trim()
@@ -501,7 +502,7 @@ private fun OtherAirlineSheet(flightNumber: String, onSubmit: (String) -> Unit, 
                     },
                     enabled = name.trim().isNotEmpty(),
                     modifier = Modifier.weight(1f)
-                ) { Text("Use this") }
+                ) { Text(tr("Use this")) }
             }
         }
     }

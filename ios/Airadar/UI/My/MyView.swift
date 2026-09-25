@@ -276,12 +276,14 @@ private struct TierProgressCard: View {
     private var progressText: String {
         guard tier.legsInBand != Int.max else { return tier.tagline }
         let km = systemPrefersMetric()
-            ? "\(standing.kmIntoTier.formatted())/\(tier.kmBudget.formatted()) km"
+            ? String(localized: "\(standing.kmIntoTier.formatted())/\(tier.kmBudget.formatted()) km")
             : "\(Int(Double(standing.kmIntoTier) * 0.621371).formatted())/\(Int(Double(tier.kmBudget) * 0.621371).formatted()) mi"
-        return "\(standing.legsIntoTier)/\(tier.legsInBand) flights · \(km)"
+        return String(localized: "\(standing.legsIntoTier)/\(tier.legsInBand) flights · \(km)")
     }
 
-    private var fedText: String { "\(flightsFed) \(flightsFed == 1 ? "flight" : "flights") fed" }
+    private var fedText: String {
+        flightsFed == 1 ? String(localized: "1 flight fed") : String(localized: "\(flightsFed) flights fed")
+    }
 
     private func label(_ t: MilestoneTier) -> some View {
         VStack(spacing: 3) {
@@ -398,7 +400,7 @@ private struct StatsPanel: View {
 }
 
 private struct StatCell: View {
-    let value: String, unit: String, label: String
+    let value: String, unit: String, label: LocalizedStringKey
     var body: some View {
         VStack(spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 2) {

@@ -10,9 +10,9 @@ enum MapProvider: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .apple: "Apple Maps"
-        case .google: "Google Maps"
-        case .amap: "Amap"
+        case .apple: String(localized: "Apple Maps")
+        case .google: String(localized: "Google Maps")
+        case .amap: String(localized: "Amap")
         }
     }
 

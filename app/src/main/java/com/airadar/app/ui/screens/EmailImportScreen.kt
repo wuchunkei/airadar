@@ -1,5 +1,7 @@
 package com.airadar.app.ui.screens
 
+import com.airadar.app.data.tr
+
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
@@ -81,7 +83,7 @@ fun EmailImportScreen(
                 val added = TripImporter.import(found) { done, total -> scan = Scan.Resolving(done, total) }
                 scan = Scan.Done((scan as? Scan.Resolving)?.total ?: found.size, added)
             } catch (e: Exception) {
-                scan = Scan.Failed(e.message ?: "Could not read the mailbox.")
+                scan = Scan.Failed(e.message ?: tr("Could not read the mailbox."))
             }
         }
     }
@@ -92,7 +94,7 @@ fun EmailImportScreen(
             val token = runCatching {
                 Identity.getAuthorizationClient(context).getAuthorizationResultFromIntent(result.data!!).accessToken
             }.getOrNull()
-            if (token != null) readMailbox(token) else scan = Scan.Failed("Google did not return access.")
+            if (token != null) readMailbox(token) else scan = Scan.Failed(tr("Google did not return access."))
         } else {
             scan = Scan.Idle
         }
@@ -111,10 +113,10 @@ fun EmailImportScreen(
                         consent.launch(IntentSenderRequest.Builder(it.intentSender).build())
                     }
                     token != null -> readMailbox(token)
-                    else -> scan = Scan.Failed("Google did not return access.")
+                    else -> scan = Scan.Failed(tr("Google did not return access."))
                 }
             }
-            .addOnFailureListener { scan = Scan.Failed(it.message ?: "Google sign-in is unavailable.") }
+            .addOnFailureListener { scan = Scan.Failed(it.message ?: tr("Google sign-in is unavailable.")) }
     }
 
     var pasted by remember { mutableStateOf("") }
@@ -133,10 +135,10 @@ fun EmailImportScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = tr("Back"))
             }
             Text(
-                "Import from email",
+                tr("Import from email"),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold
             )
@@ -164,22 +166,22 @@ fun EmailImportScreen(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
-                    Text("Read my Gmail", fontWeight = FontWeight.SemiBold)
+                    Text(tr("Read my Gmail"), fontWeight = FontWeight.SemiBold)
                 }
             }
 
             when (val s = scan) {
                 Scan.Idle -> Unit
                 is Scan.Reading -> Progress(
-                    if (s.total == 0) "Searching the mailbox" else "Reading mail ${s.done} of ${s.total}",
+                    if (s.total == 0) tr("Searching the mailbox") else tr("Reading mail %1\$d of %2\$d", s.done, s.total),
                     s.done, s.total
                 )
-                is Scan.Resolving -> Progress("Checking flight ${s.done} of ${s.total}", s.done, s.total)
+                is Scan.Resolving -> Progress(tr("Checking flight %1\$d of %2\$d", s.done, s.total), s.done, s.total)
                 is Scan.Done -> Text(
                     when {
-                        s.mails == 0 -> "No mail mentioning a flight in the last two years."
-                        s.added == 0 -> "Read ${s.mails} candidates; every flight is already in Trips."
-                        else -> "${s.added} trips added — open each one in Trips to confirm."
+                        s.mails == 0 -> tr("No mail mentioning a flight in the last two years.")
+                        s.added == 0 -> tr("Read %d candidates; every flight is already in Trips.", s.mails)
+                        else -> tr("%d trips added — open each one in Trips to confirm.", s.added)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
@@ -199,7 +201,7 @@ fun EmailImportScreen(
                     pasted = it
                     pastedResult = null
                 },
-                label = { Text("Or paste a booking confirmation") },
+                label = { Text(tr("Or paste a booking confirmation")) },
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -218,12 +220,12 @@ fun EmailImportScreen(
                     .height(50.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("Scan the text", fontWeight = FontWeight.SemiBold)
+                Text(tr("Scan the text"), fontWeight = FontWeight.SemiBold)
             }
 
             pastedResult?.let { n ->
                 Text(
-                    if (n == 0) "No new flights recognised." else "$n trips added — confirm them in Trips.",
+                    if (n == 0) tr("No new flights recognised.") else tr("%d trips added — confirm them in Trips.", n),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (n == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 )

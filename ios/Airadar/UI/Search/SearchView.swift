@@ -24,7 +24,7 @@ struct SearchView: View {
     @State private var trackStatus: TrackStatus?
 
     private static let shown: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US"); f.dateFormat = "yyyy-MM-dd (EEEE)"; return f
+        let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("yyyyMMddEEEE"); return f
     }()
 
     var body: some View {

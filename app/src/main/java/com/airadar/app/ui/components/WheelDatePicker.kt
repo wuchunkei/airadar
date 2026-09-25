@@ -1,5 +1,7 @@
 package com.airadar.app.ui.components
 
+import com.airadar.app.data.tr
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -76,7 +78,7 @@ fun WheelDatePickerDialog(
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
-                    "Select date",
+                    tr("Select date"),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -87,9 +89,9 @@ fun WheelDatePickerDialog(
                         .padding(top = 16.dp, bottom = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ColumnLabel("Year", Modifier.weight(1.2f))
-                    ColumnLabel("Month", Modifier.weight(1f))
-                    ColumnLabel("Day", Modifier.weight(0.8f))
+                    ColumnLabel(tr("Year"), Modifier.weight(1.2f))
+                    ColumnLabel(tr("Month"), Modifier.weight(1f))
+                    ColumnLabel(tr("Day"), Modifier.weight(0.8f))
                 }
 
                 Box(
@@ -124,7 +126,7 @@ fun WheelDatePickerDialog(
                         Wheel(
                             values = months,
                             selected = month,
-                            format = { monthNames[it - 1] },
+                            format = { if (com.airadar.app.data.L10n.chinese) "${it}月" else monthNames[it - 1] },
                             onSelect = { month = it },
                             modifier = Modifier.weight(1f)
                         )
@@ -144,9 +146,9 @@ fun WheelDatePickerDialog(
                         .padding(top = 12.dp),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(onClick = onDismiss) { Text(tr("Cancel")) }
                     TextButton(onClick = { onConfirm(LocalDate.of(year, month, day)) }) {
-                        Text("Confirm", fontWeight = FontWeight.SemiBold)
+                        Text(tr("Confirm"), fontWeight = FontWeight.SemiBold)
                     }
                 }
             }

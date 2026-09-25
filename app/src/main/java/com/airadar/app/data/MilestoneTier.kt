@@ -65,31 +65,31 @@ enum class MilestoneTier {
      * localization pass. */
     val displayName: String
         get() = when (this) {
-            BLACK_IRON -> "Black Iron"
-            BRONZE -> "Bronze"
-            SILVER -> "Silver"
-            GOLD -> "Gold"
-            PLATINUM -> "Platinum"
-            DIAMOND -> "Diamond"
-            RUBY -> "Ruby"
-            AMBER -> "Amber"
-            SILK -> "Silk"
-            PORCELAIN -> "Porcelain"
+            BLACK_IRON -> tr("Black Iron")
+            BRONZE -> tr("Bronze")
+            SILVER -> tr("Silver")
+            GOLD -> tr("Gold")
+            PLATINUM -> tr("Platinum")
+            DIAMOND -> tr("Diamond")
+            RUBY -> tr("Ruby")
+            AMBER -> tr("Amber")
+            SILK -> tr("Silk")
+            PORCELAIN -> tr("Porcelain")
         }
 
     /** Only ever shown for the tier with no next -- today just Porcelain. */
     val tagline: String
         get() = when (this) {
-            BLACK_IRON -> "Every journey starts here."
-            BRONZE -> "Ten flights and counting."
-            SILVER -> "A quarter-century in the air."
-            GOLD -> "Fifty flights strong."
-            PLATINUM -> "Triple digits — a real habit now."
-            DIAMOND -> "Diamond-clear dedication."
-            RUBY -> "Two-fifty, and still climbing."
-            AMBER -> "Preserved in flight, one leg at a time."
-            SILK -> "Smooth as the old trade routes."
-            PORCELAIN -> "A secret worth finding."
+            BLACK_IRON -> tr("Every journey starts here.")
+            BRONZE -> tr("Ten flights and counting.")
+            SILVER -> tr("A quarter-century in the air.")
+            GOLD -> tr("Fifty flights strong.")
+            PLATINUM -> tr("Triple digits — a real habit now.")
+            DIAMOND -> tr("Diamond-clear dedication.")
+            RUBY -> tr("Two-fifty, and still climbing.")
+            AMBER -> tr("Preserved in flight, one leg at a time.")
+            SILK -> tr("Smooth as the old trade routes.")
+            PORCELAIN -> tr("A secret worth finding.")
         }
 
     /** The real artwork's file key -- `tier_<key>_logo` under

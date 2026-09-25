@@ -1,5 +1,7 @@
 package com.airadar.app.ui.components
 
+import com.airadar.app.data.tr
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -250,7 +252,7 @@ fun FlightDetailSheet(
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
                 previousFlight?.fromICAO?.let { from ->
                     Text(
-                        "Landed from $from ${relativeAgo(previousFlight!!.landedAt)}",
+                        tr("Landed from %1\$s %2\$s", from, relativeAgo(previousFlight!!.landedAt)),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp)
@@ -263,7 +265,7 @@ fun FlightDetailSheet(
                 ) {
                     Column {
                         Text(
-                            flight.airlineName.ifBlank { "Airline" },
+                            flight.airlineName.ifBlank { tr("Airline") },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -275,7 +277,7 @@ fun FlightDetailSheet(
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            "Status",
+                            tr("Status"),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -349,13 +351,13 @@ fun FlightDetailSheet(
                 val depActual = flight.shownTime(arrival = false, forceSystemZone = forceSystemZone, includeDelay = late)
                 val arrActual = flight.shownTime(arrival = true, forceSystemZone = forceSystemZone, includeDelay = arrMoved)
                 DetailRow(
-                    label = "Departing",
+                    label = tr("Departing"),
                     value = "${depActual.clock} ${depActual.zoneTag}".trim(),
                     superseded = if (late) depScheduled.clock else null,
                     secondary = flight.departureTime.format(dateFormat)
                 )
                 DetailRow(
-                    label = "Arriving",
+                    label = tr("Arriving"),
                     value = "${arrActual.clock} ${arrActual.zoneTag}".trim(),
                     superseded = if (arrMoved) arrScheduled.clock else null,
                     early = arrMoved && flight.arrivalShiftMinutes < 0,
@@ -364,14 +366,14 @@ fun FlightDetailSheet(
                 // A row of its own, always there like the belt's ("–" until known): the
                 // departure gate, the arrival one beneath once known.
                 DetailRow(
-                    label = "Gate",
+                    label = tr("Gate"),
                     value = flight.departureGate ?: "–",
                     superseded = if (flight.departureGate == null) null else flight.departureGatePrevious,
                     valueColor = MaterialTheme.colorScheme.onSurface,
                     secondaryText = flight.arrivalGate?.let { gate ->
                         // "Arrives at ~~G18~~ G19" once the arrival gate has moved.
                         buildAnnotatedString {
-                            append("Arrives at ")
+                            append(tr("Arrives at "))
                             flight.arrivalGatePrevious?.let {
                                 withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { append(it) }
                                 append(" ")
@@ -384,7 +386,7 @@ fun FlightDetailSheet(
                 val duration = flight.durationMinutes
                 val plannedDuration = flight.scheduledDurationMinutes
                 DetailRow(
-                    label = "Duration",
+                    label = tr("Duration"),
                     value = formatDuration(duration),
                     superseded = if (duration != plannedDuration && plannedDuration > 0) formatDuration(plannedDuration) else null,
                     valueColor = if (duration < plannedDuration) FlightStatus.ON_TIME.statusColor() else Longer
@@ -392,25 +394,25 @@ fun FlightDetailSheet(
                 val distance = flight.distanceKm
                 val plannedDistance = flight.scheduledDistanceKm
                 DetailRow(
-                    label = "Distance",
+                    label = tr("Distance"),
                     value = formatDistance(distance),
                     superseded = if (distance != plannedDistance && plannedDistance > 0) formatDistance(plannedDistance) else null,
                     valueColor = if (distance < plannedDistance) FlightStatus.ON_TIME.statusColor() else Longer
                 )
-                flight.aircraft?.let { DetailRow(label = "Aircraft", value = it) }
+                flight.aircraft?.let { DetailRow(label = tr("Aircraft"), value = it) }
                 // Belt numbers appear close to landing; the row is always there so the
                 // traveller knows where to look for it later.
                 DetailRow(
-                    label = "Baggage claim",
+                    label = tr("Baggage claim"),
                     value = flight.baggageClaim ?: "–",
                     superseded = if (flight.baggageClaim == null) null else flight.baggageClaimPrevious,
                     valueColor = MaterialTheme.colorScheme.onSurface
                 )
-                flight.pnr?.let { DetailRow(label = "Booking reference", value = it) }
+                flight.pnr?.let { DetailRow(label = tr("Booking reference"), value = it) }
 
                 // Who shared it, when the trip is a friend's.
                 flight.sharedBy?.let { share ->
-                    DetailRow(label = "Shared by", value = share.person.givenName, secondary = share.status.label())
+                    DetailRow(label = tr("Shared by"), value = share.person.givenName, secondary = share.status.label())
                 }
 
                 primaryAction?.let { (label, action) ->
@@ -503,7 +505,9 @@ private fun DetailRow(
     }
 }
 
-private val dateFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.ENGLISH)
+private val dateFormat: DateTimeFormatter
+    get() = if (com.airadar.app.data.L10n.chinese) DateTimeFormatter.ofPattern("M月d日 EEE", Locale.SIMPLIFIED_CHINESE)
+    else DateTimeFormatter.ofPattern("EEE, d MMM", Locale.ENGLISH)
 
 /** "3h ago", "12m ago" -- coarse on purpose, this is a courtesy note, not a clock. */
 /** Bridges a gap between two consecutive real points with a bowed arc
@@ -534,9 +538,9 @@ private fun gapFilled(points: List<TrackPoint>): List<TrackPoint> {
 fun relativeAgo(instant: java.time.Instant): String {
     val minutes = java.time.Duration.between(instant, java.time.Instant.now()).toMinutes().coerceAtLeast(0)
     return when {
-        minutes < 1 -> "just now"
-        minutes < 60 -> "${minutes}m ago"
-        else -> "${minutes / 60}h ago"
+        minutes < 1 -> tr("just now")
+        minutes < 60 -> tr("%dm ago", minutes)
+        else -> tr("%dh ago", minutes / 60)
     }
 }
 
@@ -545,23 +549,23 @@ fun formatDuration(minutes: Int): String {
     val hours = minutes / 60
     val mins = minutes % 60
     return when {
-        hours == 0 -> "${mins}m"
-        mins == 0 -> "${hours}h"
-        else -> "${hours}h ${mins}m"
+        hours == 0 -> tr("%dm", mins)
+        mins == 0 -> tr("%dh", hours)
+        else -> tr("%1\$dh %2\$dm", hours, mins)
     }
 }
 
 fun FlightStatus.label(): String = when (this) {
-    FlightStatus.ON_TIME -> "On time"
-    FlightStatus.DELAYED -> "Delayed"
-    FlightStatus.CANCELLED -> "Cancelled"
-    FlightStatus.DIVERTED -> "Diverted"
-    FlightStatus.SCHEDULED -> "Scheduled"
-    FlightStatus.COMPLETED -> "Completed"
-    FlightStatus.BOARDING -> "Boarding"
-    FlightStatus.DEPARTED -> "Departed"
-    FlightStatus.IN_FLIGHT -> "In flight"
-    FlightStatus.LANDED -> "Finished"
+    FlightStatus.ON_TIME -> tr("On time")
+    FlightStatus.DELAYED -> tr("Delayed")
+    FlightStatus.CANCELLED -> tr("Cancelled")
+    FlightStatus.DIVERTED -> tr("Diverted")
+    FlightStatus.SCHEDULED -> tr("Scheduled")
+    FlightStatus.COMPLETED -> tr("Completed")
+    FlightStatus.BOARDING -> tr("Boarding")
+    FlightStatus.DEPARTED -> tr("Departed")
+    FlightStatus.IN_FLIGHT -> tr("In flight")
+    FlightStatus.LANDED -> tr("Finished")
 }
 
 /**
@@ -572,23 +576,23 @@ fun FlightStatus.label(): String = when (this) {
 fun Flight.statusLine(now: java.time.Instant = java.time.Instant.now()): String {
     val status = displayStatus.label()
     if (displayStatus == FlightStatus.CANCELLED || displayStatus == FlightStatus.DIVERTED) return status
-    fun span(minutes: Long) = if (minutes >= 60) "${minutes / 60}h${minutes % 60}m" else "${minutes}m"
+    fun span(minutes: Long) = if (minutes >= 60) tr("%1\$dh%2\$dm", minutes / 60, minutes % 60) else tr("%dm", minutes)
     return when (phase) {
         FlightPhase.IN_PROGRESS -> {
             val dep = departureInstant ?: return status
             val flown = java.time.Duration.between(dep.plusSeconds(delayMinutes * 60L), now).toMinutes()
-            if (flown > 0) "$status for ${span(flown)}" else status
+            if (flown > 0) tr("%1\$s for %2\$s", status, span(flown)) else status
         }
         FlightPhase.UPCOMING -> {
             val stage = currentBoarding?.label ?: status
-            if (delayMinutes > 0) "$stage · ${span(delayMinutes.toLong())} late" else stage
+            if (delayMinutes > 0) tr("%1\$s · %2\$s late", stage, span(delayMinutes.toLong())) else stage
         }
         FlightPhase.PAST -> {
             val d = arrivalDelayMinutes ?: return status
             when {
-                d < 0 -> "Landed · ${span(-d.toLong())} early"
-                d > 0 -> "Landed · ${span(d.toLong())} late"
-                else -> "Landed · on time"
+                d < 0 -> tr("Landed · %s early", span(-d.toLong()))
+                d > 0 -> tr("Landed · %s late", span(d.toLong()))
+                else -> tr("Landed · on time")
             }
         }
     }
@@ -597,7 +601,7 @@ fun Flight.statusLine(now: java.time.Instant = java.time.Instant.now()): String 
 @Composable
 private fun Terminal(terminal: String?) {
     terminal?.let {
-        Text("Terminal $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(tr("Terminal %s", it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

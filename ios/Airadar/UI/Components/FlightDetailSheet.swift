@@ -445,7 +445,7 @@ struct FlightDetailSheet<Actions: View>: View {
     private func longDay(_ day: String) -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = .gmt
         guard let d = f.date(from: day) else { return day }
-        let out = DateFormatter(); out.dateFormat = "EEE, d MMM"; out.locale = Locale(identifier: "en_US"); out.timeZone = .gmt
+        let out = DateFormatter(); out.setLocalizedDateFormatFromTemplate("EEEdMMM"); out.timeZone = .gmt
         return out.string(from: d)
     }
 }
@@ -528,7 +528,7 @@ private struct BigCode: View {
 }
 
 struct DetailRow: View {
-    let label: String
+    let label: LocalizedStringKey
     let value: String
     var secondary: String? = nil
     /// In place of `secondary`, when part of it needs its own styling.
@@ -602,33 +602,22 @@ struct FlightProgressLine: View {
             }
             let span = w - 8
             let flown = flight.phase == .past ? 1 : flight.phase == .inProgress ? flight.fractionFlown : 0
-            let labelled = Self.fitting(stops, span: span)
+            let labelled = WaypointLabels.fitting(stops.map { ($0.fraction, $0.name) }, span: span)
             let green = Color(red: 0.20, green: 0.70, blue: 0.30)
-            ForEach(stops, id: \.self) { stop in
+            ForEach(Array(stops.enumerated()), id: \.offset) { index, stop in
                 let passed = stop.fraction <= flown
                 // Ringed so a passed dot still reads on the green line it sits on.
                 Circle().fill(passed ? green : Color.secondary)
                     .overlay { if passed { Circle().stroke(Color(.systemBackground), lineWidth: 1.5) } }
                     .frame(width: passed ? 9 : 5, height: passed ? 9 : 5)
                     .position(x: span * stop.fraction, y: midY)
-                if labelled.contains(stop) {
-                    Text(stop.code).font(.system(size: 9, weight: .semibold).monospaced())
+                if labelled.contains(index) {
+                    Text(stop.name).font(.system(size: 9, weight: .semibold).monospaced())
                         .foregroundStyle(passed ? green : Color.secondary).fixedSize()
                         .position(x: span * stop.fraction, y: midY - 13)
                 }
             }
         }
-    }
-
-    /// The stops whose codes fit side by side, left to right.
-    private static func fitting(_ stops: [RouteAirports.Stop], span: CGFloat) -> Set<RouteAirports.Stop> {
-        var kept: Set<RouteAirports.Stop> = []
-        var lastX = -CGFloat.infinity
-        for stop in stops {
-            let x = span * stop.fraction
-            if x - lastX >= 21 { kept.insert(stop); lastX = x }
-        }
-        return kept
     }
 }
 

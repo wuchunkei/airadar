@@ -1,5 +1,7 @@
 package com.airadar.app.ui.screens
 
+import com.airadar.app.data.tr
+
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -217,7 +219,7 @@ fun MyScreen(
                 IconButton(onClick = { locationFollowing = !locationFollowing }) {
                     Icon(
                         Icons.Outlined.MyLocation,
-                        contentDescription = "My location",
+                        contentDescription = tr("My location"),
                         tint = if (locationFollowing) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurface
                     )
@@ -233,7 +235,7 @@ fun MyScreen(
                 IconButton(onClick = onSettingsClick) {
                     Icon(
                         Icons.Outlined.Settings,
-                        contentDescription = "Settings",
+                        contentDescription = tr("Settings"),
                         tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
@@ -302,7 +304,7 @@ fun MyScreen(
                     StatCell(
                         value = "%,d".format(distance),
                         unit = if (metric) "km" else "mi",
-                        label = "Distance"
+                        label = tr("Distance")
                     )
                     StatCell(value = "${stats.flightCount}", unit = "", label = "Flights")
                     StatCell(value = "${stats.countryCount}", unit = "", label = "Countries")
@@ -323,7 +325,8 @@ fun MyScreen(
     }
 }
 
-private val legDate: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd (EEE)", Locale.ENGLISH)
+private val legDate: DateTimeFormatter
+    get() = DateTimeFormatter.ofPattern("yyyy-MM-dd (EEE)", if (com.airadar.app.data.L10n.chinese) Locale.SIMPLIFIED_CHINESE else Locale.ENGLISH)
 
 /** One flight on the tapped leg: who flew it, when, and between which airports. */
 @Composable

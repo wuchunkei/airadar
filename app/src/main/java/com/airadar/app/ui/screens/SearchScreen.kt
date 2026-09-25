@@ -1,5 +1,7 @@
 package com.airadar.app.ui.screens
 
+import com.airadar.app.data.tr
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -79,7 +81,7 @@ fun SearchScreen(
             .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }
     ) {
         Text(
-            "Search",
+            tr("Search"),
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(vertical = 12.dp)
         )
@@ -105,7 +107,7 @@ fun SearchScreen(
             // No source knew it: let the traveller record it by hand -- this is
             // also the "feed" moment the community-review queue picks up.
             TextButton(onClick = { showManual = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("Add manually", fontWeight = FontWeight.SemiBold)
+                Text(tr("Add manually"), fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -160,7 +162,7 @@ private fun DetailSearchForm(
         OutlinedTextField(
             value = flightNumber,
             onValueChange = { onFlightNumberChange(it.uppercase().filter { c -> c.isLetterOrDigit() }) },
-            label = { Text("Flight number") },
+            label = { Text(tr("Flight number")) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
             textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -188,19 +190,19 @@ private fun DetailSearchForm(
             ) {
                 Column {
                     Text(
-                        "Departure date",
+                        tr("Departure date"),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd (EEEE)", Locale.ENGLISH)),
+                        date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd (EEEE)", if (com.airadar.app.data.L10n.chinese) Locale.SIMPLIFIED_CHINESE else Locale.ENGLISH)),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium
                     )
                 }
                 Icon(
                     Icons.Outlined.DateRange,
-                    contentDescription = "Pick a date",
+                    contentDescription = tr("Pick a date"),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -221,7 +223,7 @@ private fun DetailSearchForm(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             } else {
-                Text("Search flight", fontWeight = FontWeight.SemiBold)
+                Text(tr("Search flight"), fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -247,6 +249,6 @@ private fun SearchResultSheet(
     FlightDetailSheet(
         flight = flight,
         onDismiss = onDismiss,
-        primaryAction = "Add to trips" to onAdd
+        primaryAction = tr("Add to trips") to onAdd
     )
 }

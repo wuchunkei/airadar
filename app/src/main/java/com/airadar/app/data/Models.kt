@@ -309,7 +309,7 @@ fun systemPrefersMetric(): Boolean =
     java.util.Locale.getDefault().country.uppercase() !in setOf("US", "LR", "MM")
 
 fun formatDistance(km: Int): String =
-    if (systemPrefersMetric()) "%,d km".format(km)
+    if (systemPrefersMetric()) (if (L10n.chinese) "%,d 公里" else "%,d km").format(km)
     else "%,d mi".format((km * 0.621371).toInt())
 
 fun greatCircleKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Int {
@@ -367,9 +367,11 @@ fun cleanedTrack(points: List<TrackPoint>, origin: Airport? = null): List<TrackP
 }
 
 /** Where boarding has got to, as the departure airport's own board says. */
-enum class BoardingStatus(val label: String) {
+enum class BoardingStatus(private val en: String) {
     CHECK_IN("Check-in open"), GATE_OPEN("Gate open"), BOARDING("Boarding"),
     FINAL_CALL("Final call"), GATE_CLOSING("Gate closing"), GATE_CLOSED("Gate closed");
+
+    val label: String get() = tr(en)
 
     /** Worth a notification the moment it's reached — check-in and gate open aren't urgent. */
     val announced: Boolean get() = this != CHECK_IN && this != GATE_OPEN

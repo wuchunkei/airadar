@@ -62,37 +62,34 @@ enum MilestoneTier: Int, CaseIterable, Comparable {
         return ordered[i + 1]
     }
 
-    /// English for now, matching the rest of the app — the Chinese names
-    /// (黑鐵/青銅/白銀/黃金/白金/鑽石/紅寶石/黑曜石/彩虹) wait for the real
-    /// localization pass.
     var name: String {
         switch self {
-        case .blackIron: "Black Iron"
-        case .bronze: "Bronze"
-        case .silver: "Silver"
-        case .gold: "Gold"
-        case .platinum: "Platinum"
-        case .diamond: "Diamond"
-        case .ruby: "Ruby"
-        case .amber: "Amber"
-        case .silk: "Silk"
-        case .porcelain: "Porcelain"
+        case .blackIron: String(localized: "Black Iron")
+        case .bronze: String(localized: "Bronze")
+        case .silver: String(localized: "Silver")
+        case .gold: String(localized: "Gold")
+        case .platinum: String(localized: "Platinum")
+        case .diamond: String(localized: "Diamond")
+        case .ruby: String(localized: "Ruby")
+        case .amber: String(localized: "Amber")
+        case .silk: String(localized: "Silk")
+        case .porcelain: String(localized: "Porcelain")
         }
     }
 
     /// Only ever shown for the tier with no next — today just Porcelain.
     var tagline: String {
         switch self {
-        case .blackIron: "Every journey starts here."
-        case .bronze: "Ten flights and counting."
-        case .silver: "A quarter-century in the air."
-        case .gold: "Fifty flights strong."
-        case .platinum: "Triple digits — a real habit now."
-        case .diamond: "Diamond-clear dedication."
-        case .ruby: "Two-fifty, and still climbing."
-        case .amber: "Preserved in flight, one leg at a time."
-        case .silk: "Smooth as the old trade routes."
-        case .porcelain: "A secret worth finding."
+        case .blackIron: String(localized: "Every journey starts here.")
+        case .bronze: String(localized: "Ten flights and counting.")
+        case .silver: String(localized: "A quarter-century in the air.")
+        case .gold: String(localized: "Fifty flights strong.")
+        case .platinum: String(localized: "Triple digits — a real habit now.")
+        case .diamond: String(localized: "Diamond-clear dedication.")
+        case .ruby: String(localized: "Two-fifty, and still climbing.")
+        case .amber: String(localized: "Preserved in flight, one leg at a time.")
+        case .silk: String(localized: "Smooth as the old trade routes.")
+        case .porcelain: String(localized: "A secret worth finding.")
         }
     }
 

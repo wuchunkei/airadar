@@ -1,5 +1,7 @@
 package com.airadar.app.ui.screens
 
+import com.airadar.app.data.tr
+
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -317,7 +319,7 @@ fun TripScreen(
             tonalElevation = 3.dp
         ) {
             IconButton(onClick = onFriendsClick) {
-                Icon(Icons.Outlined.People, contentDescription = "Friends", tint = MaterialTheme.colorScheme.onSurface)
+                Icon(Icons.Outlined.People, contentDescription = tr("Friends"), tint = MaterialTheme.colorScheme.onSurface)
             }
         }
 
@@ -344,7 +346,7 @@ fun TripScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (past.isNotEmpty()) {
-                item(key = "past-header") { SectionTitle("Past") }
+                item(key = "past-header") { SectionTitle(tr("Past")) }
                 flightItems(past, forceSystemZone, dimmed = true, onDelete = delete, onEdit = { editingFlight = it }, swipe = swipe, allFlights = flights) { selectedId = it.id }
                 item(key = "past-divider") { TimeDivider() }
             }
@@ -352,17 +354,17 @@ fun TripScreen(
             // "Now" marks the present: either flights in the air, or simply the
             // boundary between what has been flown and what is ahead.
             if (airborne.isNotEmpty()) {
-                item(key = "now-header") { SectionTitle("Now") }
+                item(key = "now-header") { SectionTitle(tr("Now")) }
                 // Now is today by definition; no heading needed.
                 flightItems(airborne, forceSystemZone, dateHeadings = false, onDelete = delete, onEdit = { editingFlight = it }, swipe = swipe, allFlights = flights) { selectedId = it.id }
                 item(key = "coming-divider") { TimeDivider() }
-                item(key = "coming-header") { SectionTitle("Coming") }
+                item(key = "coming-header") { SectionTitle(tr("Coming")) }
             } else {
                 // "Now" only when a flight departs today; otherwise what is ahead is "Coming".
                 val flyingToday = coming.any { it.departureTime.toLocalDate() == LocalDate.now() }
                 item(key = "coming-header") {
                     Crossfade(
-                        targetState = if (flyingToday) "Now" else "Coming",
+                        targetState = if (flyingToday) tr("Now") else tr("Coming"),
                         label = "sectionTitle"
                     ) { title -> SectionTitle(title) }
                 }
@@ -382,7 +384,7 @@ fun TripScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "Come to create your first trip!",
+                                tr("Come to create your first trip!"),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.SemiBold
@@ -390,7 +392,7 @@ fun TripScreen(
                         }
                     } else {
                         Text(
-                            "No upcoming trips.",
+                            tr("No upcoming trips."),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 24.dp)
@@ -443,7 +445,7 @@ fun TripScreen(
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Share", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp))
+                    Text(tr("Share"), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp))
                 }
             }
             FlightDetailSheet(
@@ -489,7 +491,7 @@ private fun RespondButtons(status: ShareStatus, onRespond: (String) -> Unit) {
                     .weight(1f)
                     .height(48.dp),
                 shape = RoundedCornerShape(10.dp)
-            ) { Text("Accept", fontWeight = FontWeight.SemiBold) }
+            ) { Text(tr("Accept"), fontWeight = FontWeight.SemiBold) }
         }
         if (status != ShareStatus.TOGETHER) {
             Button(
@@ -499,7 +501,7 @@ private fun RespondButtons(status: ShareStatus, onRespond: (String) -> Unit) {
                     .weight(1f)
                     .height(48.dp),
                 shape = RoundedCornerShape(10.dp)
-            ) { Text("Together", fontWeight = FontWeight.SemiBold) }
+            ) { Text(tr("Together"), fontWeight = FontWeight.SemiBold) }
         }
         if (status == ShareStatus.PENDING) {
             Button(
@@ -509,7 +511,7 @@ private fun RespondButtons(status: ShareStatus, onRespond: (String) -> Unit) {
                     .weight(1f)
                     .height(48.dp),
                 shape = RoundedCornerShape(10.dp)
-            ) { Text("Reject", fontWeight = FontWeight.SemiBold) }
+            ) { Text(tr("Reject"), fontWeight = FontWeight.SemiBold) }
         }
     }
 }
@@ -650,7 +652,7 @@ private fun SwipeToDelete(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Icon(Icons.Outlined.Edit, contentDescription = null)
-                        Text("Edit", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        Text(tr("Edit"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -672,7 +674,7 @@ private fun SwipeToDelete(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Icon(Icons.Outlined.Delete, contentDescription = null)
-                    Text("Delete", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    Text(tr("Delete"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -764,10 +766,10 @@ private fun PullIndicator(
         }
 
         val hint = when {
-            isRefreshing -> "Refreshing"
-            pull >= historyPx -> "Release to open past trips"
-            pull >= refreshPx -> "Release to refresh · keep pulling for history"
-            else -> "Pull to refresh"
+            isRefreshing -> tr("Refreshing")
+            pull >= historyPx -> tr("Release to open past trips")
+            pull >= refreshPx -> tr("Release to refresh · keep pulling for history")
+            else -> tr("Pull to refresh")
         }
         Text(
             hint,
@@ -853,7 +855,7 @@ fun FlightCard(
 
             if (conflict != null) {
                 Text(
-                    "Overlaps with ${conflict.flightNumber} — you can't be on two flights at once",
+                    tr("Overlaps with %s — you can't be on two flights at once", conflict.flightNumber),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFFE53935),
@@ -862,7 +864,7 @@ fun FlightCard(
             }
             if (rejected) {
                 Text(
-                    "Blocked — this flight couldn't be confirmed",
+                    tr("Blocked — this flight couldn't be confirmed"),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFFE53935),
@@ -870,7 +872,7 @@ fun FlightCard(
                 )
             } else if (expired) {
                 Text(
-                    "Unverified — review expired",
+                    tr("Unverified — review expired"),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFFFF9800),
@@ -879,7 +881,7 @@ fun FlightCard(
             }
             if (dashed && shared == null) {
                 Text(
-                    "Imported · needs review",
+                    tr("Imported · needs review"),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
@@ -964,11 +966,11 @@ fun FlightCard(
                             color = flight.statusTint()
                         )
                     }
-                    if (flight.isManual) NameBlock("Manual", Color(0xFFF5A623))
-                    if (rejected) NameBlock("Blocked", Color(0xFFE53935))
-                    else if (expired) NameBlock("Expired", Color(0xFFFF9800))
+                    if (flight.isManual) NameBlock(tr("Manual"), Color(0xFFF5A623))
+                    if (rejected) NameBlock(tr("Blocked"), Color(0xFFE53935))
+                    else if (expired) NameBlock(tr("Expired"), Color(0xFFFF9800))
                     flight.importedVia?.let { via ->
-                        NameBlock(if (via == "gmail") "Email" else "Calendar", MaterialTheme.colorScheme.onSurfaceVariant)
+                        NameBlock(if (via == "gmail") tr("Email") else tr("Calendar"), MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
@@ -976,7 +978,7 @@ fun FlightCard(
                 ShareBlocks(flight, modifier = Modifier.weight(1f).padding(start = 8.dp))
 
                 Text(
-                    "Usually ${formatDuration(flight.typicalDurationMinutes ?: flight.durationMinutes)}",
+                    tr("Usually %s", formatDuration(flight.typicalDurationMinutes ?: flight.durationMinutes)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

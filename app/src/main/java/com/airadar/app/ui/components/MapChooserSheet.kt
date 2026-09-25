@@ -1,5 +1,7 @@
 package com.airadar.app.ui.components
 
+import com.airadar.app.data.tr
+
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -28,11 +30,13 @@ import java.time.Duration
 import java.time.Instant
 
 /** A map app the traveller might have, with how to ask it for driving directions. */
-enum class MapProvider(val label: String, val packageName: String?) {
+enum class MapProvider(private val en: String, val packageName: String?) {
     GOOGLE("Google Maps", "com.google.android.apps.maps"),
     AMAP("Amap", "com.autonavi.minimap"),
     WAZE("Waze", "com.waze"),
     OTHER("Other map app", null);
+
+    val label: String get() = tr(en)
 
     fun isInstalled(context: Context): Boolean {
         val pkg = packageName ?: return true
@@ -81,7 +85,7 @@ fun MapChooserSheet(airport: Airport, onDismiss: () -> Unit) {
                 .padding(bottom = 16.dp)
                 .navigationBarsPadding()
         ) {
-            Text("Navigate to ${airport.iata}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(tr("Navigate to %s", airport.iata), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(
                 airport.name, style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1

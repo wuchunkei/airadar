@@ -3,8 +3,8 @@ import SwiftUI
 /// The name on the traveller's tickets, in three parts so a middle name is not
 /// guessed at. Filled from the Google account after sign-in, editable from Settings.
 struct PassengerNameSheet: View {
-    let title: String
-    let intro: String
+    let title: LocalizedStringKey
+    let intro: LocalizedStringKey
     let onSave: (String) -> Void
     let onSkip: () -> Void
 
@@ -12,7 +12,7 @@ struct PassengerNameSheet: View {
     @State private var middle: String
     @State private var family: String
 
-    init(title: String, intro: String, given: String, middle: String, family: String,
+    init(title: LocalizedStringKey, intro: LocalizedStringKey, given: String, middle: String, family: String,
          onSave: @escaping (String) -> Void, onSkip: @escaping () -> Void) {
         self.title = title; self.intro = intro; self.onSave = onSave; self.onSkip = onSkip
         _given = State(initialValue: given); _middle = State(initialValue: middle); _family = State(initialValue: family)

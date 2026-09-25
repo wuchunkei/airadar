@@ -1,5 +1,7 @@
 package com.airadar.app.ui.screens
 
+import com.airadar.app.data.tr
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -82,9 +84,9 @@ fun FriendsScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = tr("Back"))
             }
-            Text("Friends", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text(tr("Friends"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         }
 
         LazyColumn(
@@ -100,7 +102,7 @@ fun FriendsScreen(
                             found = null
                             message = null
                         },
-                        label = { Text("Find by email") },
+                        label = { Text(tr("Find by email")) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                         shape = RoundedCornerShape(12.dp),
@@ -121,7 +123,7 @@ fun FriendsScreen(
                         enabled = email.contains("@"),
                         modifier = Modifier.padding(start = 8.dp),
                         shape = RoundedCornerShape(12.dp)
-                    ) { Text("Find") }
+                    ) { Text(tr("Find")) }
                 }
             }
 
@@ -141,7 +143,7 @@ fun FriendsScreen(
                                 }
                             },
                             shape = RoundedCornerShape(10.dp)
-                        ) { Text("Add friend") }
+                        ) { Text(tr("Add friend")) }
                     })
                 }
             }
@@ -157,21 +159,21 @@ fun FriendsScreen(
             val outgoing = friends.filter { it.status == FriendStatus.OUTGOING }
 
             if (incoming.isNotEmpty()) {
-                item { Heading("Requests") }
+                item { Heading(tr("Requests")) }
                 items(incoming, key = { it.friendshipId }) { f ->
                     PersonRow(f.person, trailing = {
                         TextButton(onClick = {
                             scope.launch { runCatching { BackendClient.removeFriend(f.friendshipId) }; reload() }
-                        }) { Text("Decline") }
+                        }) { Text(tr("Decline")) }
                         Button(
                             onClick = { scope.launch { runCatching { BackendClient.acceptFriend(f.friendshipId) }; reload() } },
                             shape = RoundedCornerShape(10.dp)
-                        ) { Text("Accept") }
+                        ) { Text(tr("Accept")) }
                     })
                 }
             }
 
-            item { Heading("Friends") }
+            item { Heading(tr("Friends")) }
             if (accepted.isEmpty()) {
                 item {
                     Text(
@@ -185,17 +187,17 @@ fun FriendsScreen(
                 PersonRow(f.person, trailing = {
                     TextButton(onClick = {
                         scope.launch { runCatching { BackendClient.removeFriend(f.friendshipId) }; reload() }
-                    }) { Text("Remove") }
+                    }) { Text(tr("Remove")) }
                 })
             }
 
             if (outgoing.isNotEmpty()) {
-                item { Heading("Sent") }
+                item { Heading(tr("Sent")) }
                 items(outgoing, key = { it.friendshipId }) { f ->
                     PersonRow(f.person, trailing = {
                         TextButton(onClick = {
                             scope.launch { runCatching { BackendClient.removeFriend(f.friendshipId) }; reload() }
-                        }) { Text("Cancel") }
+                        }) { Text(tr("Cancel")) }
                     })
                 }
             }

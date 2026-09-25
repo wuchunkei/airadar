@@ -1,0 +1,157 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "%@ · %@ late": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · 延误 %2$@"
+          }
+        }
+      }
+    },
+    "%@ · Gate %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ 号登机口"
+          }
+        }
+      }
+    },
+    "%lld km": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 公里"
+          }
+        }
+      }
+    },
+    "%lldh %lldm": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld小时%2$lld分"
+          }
+        }
+      }
+    },
+    "%lldm": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld分钟"
+          }
+        }
+      }
+    },
+    "Belt %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转盘 %@"
+          }
+        }
+      }
+    },
+    "Belt —": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转盘 —"
+          }
+        }
+      }
+    },
+    "Boarding": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登机中"
+          }
+        }
+      }
+    },
+    "Gate %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 号登机口"
+          }
+        }
+      }
+    },
+    "In flight": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "飞行中"
+          }
+        }
+      }
+    },
+    "Landed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已落地"
+          }
+        }
+      }
+    },
+    "Landed · %@ early": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已落地 · 提前 %@"
+          }
+        }
+      }
+    },
+    "Landed · %@ late": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已落地 · 延误 %@"
+          }
+        }
+      }
+    },
+    "Landed · on time": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已落地 · 准点"
+          }
+        }
+      }
+    },
+    "Landing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "降落"
+          }
+        }
+      }
+    },
+    "T%@": {}
+  },
+  "version": "1.0"
+}

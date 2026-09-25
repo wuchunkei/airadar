@@ -59,7 +59,7 @@ private extension FlightActivityAttributes.ContentState {
 
     var durationText: String {
         let minutes = Int(arrivalDate.timeIntervalSince(departureDate) / 60)
-        return "\(minutes / 60)h \(minutes % 60)m"
+        return String(localized: "\(minutes / 60)h \(minutes % 60)m")
     }
 }
 
@@ -201,19 +201,6 @@ private struct LockScreenView: View {
 
 // MARK: - Pieces
 
-/// Which waypoint codes fit side by side along a line, left to right.
-enum WaypointLabels {
-    static func fitting(_ fractions: [Double], span: CGFloat) -> Set<Int> {
-        var kept: Set<Int> = []
-        var lastX = -CGFloat.infinity
-        for (i, f) in fractions.enumerated() {
-            let x = span * f
-            if x - lastX >= 21 { kept.insert(i); lastX = x }
-        }
-        return kept
-    }
-}
-
 /// Code and terminal on one line (same size, the terminal quieter), the city and
 /// country beneath, the local time beneath that.
 private struct Endpoint: View {
@@ -290,12 +277,15 @@ private struct StatusText: View {
         if state.statusKind == .bad { return state.statusLabel }
         switch state.stage {
         case .landed:
-            guard let d = state.arrivalDelayMinutes else { return "Landed" }
-            return d < 0 ? "Landed · \(-d)m early" : d > 0 ? "Landed · \(d)m late" : "Landed · on time"
+            guard let d = state.arrivalDelayMinutes else { return String(localized: "Landed") }
+            if d < 0 { return String(localized: "Landed · \(String(localized: "\(-d)m")) early") }
+            if d > 0 { return String(localized: "Landed · \(String(localized: "\(d)m")) late") }
+            return String(localized: "Landed · on time")
         case .airborne:
-            return "In flight"
+            return String(localized: "In flight")
         case .before:
-            return state.statusLabel + (state.delayMinutes > 0 ? " · \(state.delayMinutes)m late" : "")
+            guard state.delayMinutes > 0 else { return state.statusLabel }
+            return String(localized: "\(state.statusLabel) · \(String(localized: "\(state.delayMinutes)m")) late")
         }
     }
     private var color: Color {
@@ -381,7 +371,7 @@ private struct RouteLine: View {
             }
             let span = w - 12
             let flown = state.flownFraction
-            let labelled = WaypointLabels.fitting(state.waypoints.map(\.fraction), span: span)
+            let labelled = WaypointLabels.fitting(state.waypoints.map { ($0.fraction, $0.code) }, span: span)
             ForEach(Array(state.waypoints.enumerated()), id: \.offset) { index, wp in
                 let passed = wp.fraction <= flown
                 // Ringed in black so a passed dot still reads on the green bar it sits on.
@@ -393,7 +383,7 @@ private struct RouteLine: View {
                     let isNext = wp == state.nextWaypoint
                     Text(wp.code).font(.system(size: 9, weight: isNext ? .bold : .semibold).monospaced())
                         .foregroundStyle(passed ? Color.green : Color.white.opacity(isNext ? 1 : 0.6)).fixedSize()
-                        .position(x: min(max(12, span * wp.fraction), w - 12), y: midY + 12)
+                        .position(x: min(max(WaypointLabels.width(of: wp.code) / 2, span * wp.fraction), w - WaypointLabels.width(of: wp.code) / 2), y: midY + 12)
                 }
             }
         }

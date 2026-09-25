@@ -7,6 +7,7 @@ options:
     watchOS: "26.0"
   xcodeVersion: "26.0"
   createIntermediateGroups: true
+  developmentLanguage: en
 
 packages:
   GoogleSignIn:
@@ -20,6 +21,10 @@ settings:
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""   # set in Config.xcconfig
+    # English and Simplified Chinese, from each target's Localizable.xcstrings;
+    # the language follows the app's own setting in iOS Settings.
+    SWIFT_EMIT_LOC_STRINGS: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
 
 # The one scheme to run: the app (the widget extension rides along inside it).
 schemes:
@@ -58,6 +63,9 @@ targets:
       path: Airadar/Info.plist
       properties:
         CFBundleDisplayName: Airadar
+        # Listing both is what gives the app its own Language choice in iOS Settings.
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans]
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIRequiresFullScreen: true
@@ -148,6 +156,8 @@ targets:
       path: AiradarWidgets/Info.plist
       properties:
         CFBundleDisplayName: Airadar
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans]
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:

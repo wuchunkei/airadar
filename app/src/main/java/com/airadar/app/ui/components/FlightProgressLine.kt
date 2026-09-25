@@ -109,22 +109,31 @@ fun FlightProgressLine(flight: Flight, modifier: Modifier = Modifier) {
             )
         }
         var lastX = (-1000).dp
+        var lastHalf = 0.dp
         for (stop in stops) {
             val x = span * stop.fraction.toFloat()
-            if (x - lastX < 21.dp) continue
+            // Each label needs its own width clear of the last: codes pack closer than city names.
+            val half = labelWidth(stop.name) / 2
+            if (x - lastX < lastHalf + half + 4.dp) continue
             lastX = x
+            lastHalf = half
             Text(
-                stop.code,
+                stop.name,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = FontFamily.Monospace,
                 textAlign = TextAlign.Center,
                 color = if (stop.fraction <= flown) Green else muted,
-                modifier = Modifier.offset(x = x - 14.dp, y = lineY - 20.dp).width(28.dp)
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.offset(x = x - half - 2.dp, y = lineY - 20.dp).width(half * 2 + 4.dp)
             )
         }
     }
 }
+
+/** Roughly how wide a 9sp label draws: CJK characters full width, the rest monospaced. */
+private fun labelWidth(label: String): Dp = label.sumOf { if (it.code >= 0x2E80) 9.5 else 5.6 }.dp
 
 /** The middle of the big airport codes, which the route line between them sits on. */
 val CodeLine = HorizontalAlignmentLine(::minOf)

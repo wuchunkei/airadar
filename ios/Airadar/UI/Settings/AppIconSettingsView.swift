@@ -37,7 +37,7 @@ struct AppIconSettingsView: View {
                     Text("Every tier").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                         .padding(.horizontal, 16)
                     LazyVGrid(columns: columns, spacing: 18) {
-                        cell(tier: .blackIron, title: "Default", locked: false)
+                        cell(tier: .blackIron, title: String(localized: "Default"), locked: false)
                         ForEach(MilestoneTier.allCases.filter { $0 != .blackIron }, id: \.rawValue) { tier in
                             cell(tier: tier, title: tier.name, locked: tier > reached)
                         }

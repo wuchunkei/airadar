@@ -1,5 +1,7 @@
 package com.airadar.app.ui.components
 
+import com.airadar.app.data.tr
+
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.animateColorAsState
@@ -97,7 +99,7 @@ fun PendingFlightSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                "Imported from email",
+                tr("Imported from email"),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold
@@ -110,7 +112,7 @@ fun PendingFlightSheet(
                         editedNumber = it.uppercase().filter(Char::isLetterOrDigit)
                         searchError = null
                     },
-                    label = { Text("Flight number", color = wrongColor) },
+                    label = { Text(tr("Flight number"), color = wrongColor) },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.headlineSmall.copy(
                         fontFamily = FontFamily.Monospace,
@@ -129,7 +131,7 @@ fun PendingFlightSheet(
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(
-                            "Departure date",
+                            tr("Departure date"),
                             style = MaterialTheme.typography.labelSmall,
                             color = wrongColor
                         )
@@ -149,7 +151,7 @@ fun PendingFlightSheet(
                 ) {
                     Column {
                         Text(
-                            flight.airlineName.ifBlank { "Airline" },
+                            flight.airlineName.ifBlank { tr("Airline") },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -169,17 +171,17 @@ fun PendingFlightSheet(
 
                 HorizontalDivider()
 
-                DetailLine("Route", "${flight.departure} → ${flight.arrival}")
+                DetailLine(tr("Route"), "${flight.departure} → ${flight.arrival}")
                 DetailLine(
-                    "Departing",
+                    tr("Departing"),
                     "${flight.departureTime.format(clock)} · ${flight.departure}"
                 )
                 DetailLine(
-                    "Arriving",
+                    tr("Arriving"),
                     "${flight.arrivalTime.format(clock)} · ${flight.arrival}"
                 )
-                DetailLine("Duration", formatDuration(flight.durationMinutes))
-                flight.aircraft?.let { DetailLine("Aircraft", it) }
+                DetailLine(tr("Duration"), formatDuration(flight.durationMinutes))
+                flight.aircraft?.let { DetailLine(tr("Aircraft"), it) }
             }
 
             candidate?.let { found ->
@@ -193,7 +195,7 @@ fun PendingFlightSheet(
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            "Found",
+                            tr("Found"),
                             style = MaterialTheme.typography.labelSmall,
                             color = searchColor,
                             fontWeight = FontWeight.SemiBold
@@ -227,22 +229,22 @@ fun PendingFlightSheet(
 
             when (stage) {
                 ReviewStage.REVIEW -> ActionRow(
-                    primaryLabel = "Correct",
+                    primaryLabel = tr("Correct"),
                     primaryColor = correctColor,
                     onPrimary = { onConfirm(flight) },
-                    secondaryLabel = "Incorrect",
+                    secondaryLabel = tr("Incorrect"),
                     secondaryColor = wrongColor,
                     onSecondary = { stage = ReviewStage.EDITING }
                 )
 
                 ReviewStage.EDITING -> ActionRow(
-                    primaryLabel = "Search",
+                    primaryLabel = tr("Search"),
                     primaryColor = searchColor,
                     onPrimary = {
                         val found = FlightDatabase.lookup(editedNumber, editedDate)
                         if (found == null) {
-                            searchError = "No schedule for ${editedNumber.uppercase()} on " +
-                                    editedDate.format(longDate)
+                            searchError = tr("No schedule for %1\$s on %2\$s.", editedNumber.uppercase(),
+                                    editedDate.format(longDate))
                             candidate = null
                         } else {
                             searchError = null
@@ -250,7 +252,7 @@ fun PendingFlightSheet(
                             stage = ReviewStage.RESULT
                         }
                     },
-                    secondaryLabel = "Discard",
+                    secondaryLabel = tr("Discard"),
                     secondaryColor = wrongColor,
                     onSecondary = {
                         stage = ReviewStage.REVIEW
@@ -262,10 +264,10 @@ fun PendingFlightSheet(
                 )
 
                 ReviewStage.RESULT -> ActionRow(
-                    primaryLabel = "Save",
+                    primaryLabel = tr("Save"),
                     primaryColor = correctColor,
                     onPrimary = { candidate?.let { onReplace(flight, it) } },
-                    secondaryLabel = "Feedback",
+                    secondaryLabel = tr("Feedback"),
                     secondaryColor = feedbackColor,
                     onSecondary = {
                         context.startActivity(
@@ -351,5 +353,7 @@ private fun DetailLine(label: String, value: String) {
     }
 }
 
-private val longDate: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.ENGLISH)
+private val longDate: DateTimeFormatter
+    get() = if (com.airadar.app.data.L10n.chinese) DateTimeFormatter.ofPattern("yyyy年M月d日 EEE", Locale.SIMPLIFIED_CHINESE)
+    else DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.ENGLISH)
 private val clock: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")

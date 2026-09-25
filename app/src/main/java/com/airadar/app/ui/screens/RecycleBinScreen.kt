@@ -1,5 +1,7 @@
 package com.airadar.app.ui.screens
 
+import com.airadar.app.data.tr
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,10 +69,10 @@ fun RecycleBinScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = tr("Back"))
             }
             Text(
-                "Recycle Bin",
+                tr("Recycle Bin"),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold
             )
@@ -79,7 +81,7 @@ fun RecycleBinScreen(
         if (deleted.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "Nothing here. Deleted trips stay for ${FlightStore.RETENTION_DAYS} days.",
+                    tr("Nothing here. Deleted trips stay for %d days.", FlightStore.RETENTION_DAYS),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -114,24 +116,24 @@ fun RecycleBinScreen(
             flight = flight,
             forceSystemZone = forceSystemZone,
             onDismiss = { selectedId = null },
-            primaryAction = "Restore" to { confirmRestore = true }
+            primaryAction = tr("Restore") to { confirmRestore = true }
         )
 
         if (confirmRestore) {
             AlertDialog(
                 onDismissRequest = { confirmRestore = false },
-                title = { Text("Restore this trip?") },
-                text = { Text("${flight.flightNumber} goes back to your trips, reminders included.") },
+                title = { Text(tr("Restore this trip?")) },
+                text = { Text(tr("%s goes back to your trips, reminders included.", flight.flightNumber)) },
                 confirmButton = {
                     TextButton(onClick = {
                         confirmRestore = false
                         selectedId = null
                         viewModel.restoreFlight(flight)
                         onRestored(flight)
-                    }) { Text("Confirm") }
+                    }) { Text(tr("Confirm")) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { confirmRestore = false }) { Text("Cancel") }
+                    TextButton(onClick = { confirmRestore = false }) { Text(tr("Cancel")) }
                 }
             )
         }
@@ -143,5 +145,6 @@ private fun retentionLine(deletedAt: Instant?): String {
     val daysLeft = (FlightStore.RETENTION_DAYS - Duration.between(deletedAt, Instant.now()).toDays())
         .coerceAtLeast(0)
     val on = deletedAt.atZone(ZoneId.systemDefault()).toLocalDate()
-    return "Deleted $on · gone for good in $daysLeft day${if (daysLeft == 1L) "" else "s"}"
+    return if (daysLeft == 1L) tr("Deleted %1\$s · gone for good in 1 day", on)
+    else tr("Deleted %1\$s · gone for good in %2\$d days", on, daysLeft)
 }

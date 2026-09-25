@@ -1,5 +1,7 @@
 package com.airadar.app.ui.components
 
+import com.airadar.app.data.tr
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -91,7 +93,7 @@ fun AvatarView(url: String?, initial: String, tint: Color, size: androidx.compos
     if (!url.isNullOrBlank()) {
         AsyncImage(
             model = url,
-            contentDescription = "Your photo",
+            contentDescription = tr("Your photo"),
             modifier = Modifier.size(size).clip(CircleShape),
             error = null
         )
@@ -148,15 +150,15 @@ fun TierProgressCard(
     val progressText = remember(standing, metric) {
         if (tier.legsInBand == Int.MAX_VALUE) tier.tagline
         else {
-            val kmText = if (metric) "%,d/%,d km".format(standing.kmIntoTier, tier.kmBudget)
+            val kmText = if (metric) (if (com.airadar.app.data.L10n.chinese) "%,d/%,d 公里" else "%,d/%,d km").format(standing.kmIntoTier, tier.kmBudget)
             else "%,d/%,d mi".format(
                 (standing.kmIntoTier * 0.621371).toInt(),
                 (tier.kmBudget * 0.621371).toInt()
             )
-            "${standing.legsIntoTier}/${tier.legsInBand} flights · $kmText"
+            tr("%1\$d/%2\$d flights · %3\$s", standing.legsIntoTier, tier.legsInBand, kmText)
         }
     }
-    val fedText = "$flightsFed ${if (flightsFed == 1) "flight" else "flights"} fed"
+    val fedText = tr(if (flightsFed == 1) "%d flight fed" else "%d flights fed", flightsFed)
 
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = 118.dp, max = 118.dp),

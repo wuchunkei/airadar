@@ -1,5 +1,7 @@
 package com.airadar.app.ui.screens
 
+import com.airadar.app.data.tr
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,7 +54,7 @@ fun CommunityHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             myReviews = BackendClient.communityHistoryReviews()
             mySubmissions = BackendClient.communityHistorySubmissions()
         } catch (e: Exception) {
-            error = e.message ?: "Couldn't load your history."
+            error = e.message ?: tr("Couldn't load your history.")
         }
         loading = false
     }
@@ -61,14 +63,14 @@ fun CommunityHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("History") },
+            title = { Text(tr("History")) },
             navigationIcon = {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back") }
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = tr("Back")) }
             }
         )
         TabRow(selectedTabIndex = tab) {
-            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("My Reviews") })
-            Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("My Submissions") })
+            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(tr("My Reviews")) })
+            Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(tr("My Submissions")) })
         }
 
         when {
@@ -78,7 +80,7 @@ fun CommunityHistoryScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             }
             shown.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    if (tab == 0) "You haven't reviewed anything yet." else "You haven't fed any flights yet.",
+                    if (tab == 0) tr("You haven't reviewed anything yet.") else tr("You haven't fed any flights yet."),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

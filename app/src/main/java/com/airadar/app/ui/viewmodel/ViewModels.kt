@@ -1,5 +1,7 @@
 package com.airadar.app.ui.viewmodel
 
+import com.airadar.app.data.tr
+
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
@@ -99,7 +101,7 @@ class TripViewModel : ViewModel() {
                 FlightStore.setTrack(flight.id, fetched.points, fetched.flownOn)
                 setTrackStatus(flight.id, null)
             } catch (e: IOException) {
-                setTrackStatus(flight.id, TrackStatus.Failed(e.message ?: "Network error"))
+                setTrackStatus(flight.id, TrackStatus.Failed(e.message ?: tr("Network error")))
             }
         }
     }
@@ -233,13 +235,13 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         viewModelScope.launch {
-            _calendarStatus.value = "Reading calendars"
+            _calendarStatus.value = tr("Reading calendars")
             val found = runCatching { CalendarImporter.scan(getApplication()) }.getOrDefault(emptyList())
             val added = TripImporter.import(found)
             _calendarStatus.value = when {
-                found.isEmpty() -> "No flights found in your calendars."
-                added == 0 -> "Every calendar flight is already in Trips."
-                else -> "$added trips added from your calendars — confirm them in Trips."
+                found.isEmpty() -> tr("No flights found in your calendars.")
+                added == 0 -> tr("Every calendar flight is already in Trips.")
+                else -> tr("%d trips added from your calendars — confirm them in Trips.", added)
             }
         }
     }

@@ -14,11 +14,17 @@ import kotlin.math.sqrt
  * the detail sheet's route line. Same bundled list and rules as iOS's
  * RouteAirports.swift: the world's large and medium airports with scheduled
  * service (OurAirports, public domain), offline; a city with several airports
- * reads as its IATA city code (HND, NRT -> TYO); no airport near, no dot.
+ * reads as its IATA city code (HND, NRT -> TYO); no airport near, no dot. In
+ * Chinese a stop reads as its city's name (TYO -> 东京), from the bundled table.
  */
 object RouteAirports {
     /** [fraction]: how far along the route, 0 at departure, 1 at arrival. */
-    data class Stop(val fraction: Double, val code: String)
+    data class Stop(val fraction: Double, val code: String) {
+        /** What the line shows: the city's name in the app's language, else the code. */
+        val name: String get() = if (L10n.chinese) zhNames[code] ?: code else code
+    }
+
+    @Volatile private var zhNames: Map<String, String> = emptyMap()
 
     private class Entry(val iata: String, val lat: Double, val lon: Double, val large: Boolean, val metro: String)
 
@@ -39,6 +45,12 @@ object RouteAirports {
                 }
             } catch (_: Exception) {
                 emptyList()
+            }
+            zhNames = try {
+                val table = org.json.JSONObject(context.assets.open("route_names_zh.json").bufferedReader().use { it.readText() })
+                table.keys().asSequence().associateWith { table.getString(it) }
+            } catch (_: Exception) {
+                emptyMap()
             }
             loaded = true
         }

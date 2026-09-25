@@ -1,5 +1,7 @@
 package com.airadar.app.ui.components
 
+import com.airadar.app.data.tr
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -78,8 +80,8 @@ fun ShareSheet(flight: Flight, onDismiss: () -> Unit) {
             mintLink(flight)?.let { url ->
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("Airadar trip", url))
-                note = "Link copied."
-            } ?: run { note = "Could not create a link." }
+                note = tr("Link copied.")
+            } ?: run { note = tr("Could not create a link.") }
         }
     }
     val sendLink: () -> Unit = {
@@ -90,12 +92,12 @@ fun ShareSheet(flight: Flight, onDismiss: () -> Unit) {
                     putExtra(Intent.EXTRA_SUBJECT, "${flight.flightNumber} ${flight.departure} → ${flight.arrival}")
                     putExtra(
                         Intent.EXTRA_TEXT,
-                        "${flight.flightNumber} ${flight.departure} → ${flight.arrival} on " +
-                                "${flight.departureTime.toLocalDate()}\n$url"
+                        tr("%1\$s %2\$s → %3\$s on %4\$s", flight.flightNumber, flight.departure, flight.arrival,
+                            flight.departureTime.toLocalDate()) + "\n$url"
                     )
                 }
-                context.startActivity(Intent.createChooser(send, "Share trip"))
-            } ?: run { note = "Could not create a link." }
+                context.startActivity(Intent.createChooser(send, tr("Share trip")))
+            } ?: run { note = tr("Could not create a link.") }
         }
     }
 
@@ -107,7 +109,7 @@ fun ShareSheet(flight: Flight, onDismiss: () -> Unit) {
                 .navigationBarsPadding()
         ) {
             Text(
-                "Share ${flight.flightNumber}",
+                tr("Share %s", flight.flightNumber),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold
             )
@@ -125,15 +127,15 @@ fun ShareSheet(flight: Flight, onDismiss: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(onClick = copyLink, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
-                        Text("Copy link")
+                        Text(tr("Copy link"))
                     }
                     OutlinedButton(onClick = sendLink, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
-                        Text("Share via…")
+                        Text(tr("Share via…"))
                     }
                 }
                 else -> {
                     Text(
-                        "Via",
+                        tr("Via"),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 20.dp, bottom = 6.dp)
@@ -154,14 +156,14 @@ fun ShareSheet(flight: Flight, onDismiss: () -> Unit) {
                             Icon(Icons.Outlined.Link, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                         }
                         Text(
-                            "Link",
+                            tr("Link"),
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(start = 12.dp)
                         )
-                        TextButton(onClick = copyLink) { Text("Copy") }
-                        TextButton(onClick = sendLink) { Text("Send…") }
+                        TextButton(onClick = copyLink) { Text(tr("Copy")) }
+                        TextButton(onClick = sendLink) { Text(tr("Send…")) }
                     }
                     list.forEach { f ->
                         val status = alreadyShared[f.person.id]
@@ -217,7 +219,7 @@ fun ShareSheet(flight: Flight, onDismiss: () -> Unit) {
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
-                            if (chosen.size <= 1) "Send to friend" else "Send to ${chosen.size} friends",
+                            if (chosen.size <= 1) tr("Send to friend") else tr("Send to %d friends", chosen.size),
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -241,10 +243,10 @@ private suspend fun mintLink(flight: Flight): String? =
     runCatching { BackendClient.shareTrip(flight.id).second }.getOrNull()
 
 fun ShareStatus.label(): String = when (this) {
-    ShareStatus.PENDING -> "Pending"
-    ShareStatus.ACCEPTED -> "Accepted"
-    ShareStatus.REJECTED -> "Rejected"
-    ShareStatus.TOGETHER -> "Together"
+    ShareStatus.PENDING -> tr("Pending")
+    ShareStatus.ACCEPTED -> tr("Accepted")
+    ShareStatus.REJECTED -> tr("Rejected")
+    ShareStatus.TOGETHER -> tr("Together")
 }
 
 /** The block colours the traveller asked for: yellow, grey, green, red. */

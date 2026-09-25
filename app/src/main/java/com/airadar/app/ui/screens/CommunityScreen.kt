@@ -1,5 +1,7 @@
 package com.airadar.app.ui.screens
 
+import com.airadar.app.data.tr
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,7 +73,7 @@ fun CommunityScreen(onHistoryClick: () -> Unit, modifier: Modifier = Modifier) {
             reviews = BackendClient.communityQueue()
             error = null
         } catch (e: Exception) {
-            error = e.message ?: "Couldn't load the review queue."
+            error = e.message ?: tr("Couldn't load the review queue.")
         }
         loading = false
     }
@@ -80,13 +82,13 @@ fun CommunityScreen(onHistoryClick: () -> Unit, modifier: Modifier = Modifier) {
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("Community") },
+            title = { Text(tr("Community")) },
             actions = {
                 IconButton(onClick = { reloadSignal++ }) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
+                    Icon(Icons.Outlined.Refresh, contentDescription = tr("Refresh"))
                 }
                 IconButton(onClick = onHistoryClick) {
-                    Icon(Icons.Outlined.History, contentDescription = "History")
+                    Icon(Icons.Outlined.History, contentDescription = tr("History"))
                 }
             }
         )
@@ -97,12 +99,12 @@ fun CommunityScreen(onHistoryClick: () -> Unit, modifier: Modifier = Modifier) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(error ?: "", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { reloadSignal++ }) { Text("Try again") }
+                    Button(onClick = { reloadSignal++ }) { Text(tr("Try again")) }
                 }
             }
             reviews.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "Nothing to review right now.",
+                    tr("Nothing to review right now."),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -182,14 +184,14 @@ fun CommunityReviewCard(review: CommunityReview, onVote: ((Boolean) -> Unit)? = 
             )
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${review.approveCount} approve · ${review.rejectCount} reject",
+                    tr("%1\$d approve · %2\$d reject", review.approveCount, review.rejectCount),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (review.boosted) {
                     Text(
-                        " · needs more votes",
+                        tr(" · needs more votes"),
                         style = MaterialTheme.typography.labelMedium,
                         color = Color(0xFFFF9800)
                     )
@@ -197,7 +199,7 @@ fun CommunityReviewCard(review: CommunityReview, onVote: ((Boolean) -> Unit)? = 
                 Spacer(Modifier.weight(1f))
                 review.myVote?.let { vote ->
                     Text(
-                        if (vote) "You: Approved" else "You: Rejected",
+                        if (vote) tr("You: Approved") else tr("You: Rejected"),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = if (vote) Color(0xFF2E7D32) else Color(0xFFE53935)
@@ -212,7 +214,7 @@ fun CommunityReviewCard(review: CommunityReview, onVote: ((Boolean) -> Unit)? = 
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
-                        Text("Looks real")
+                        Text(tr("Looks real"))
                     }
                     Button(
                         onClick = { onVote(false) },
@@ -220,7 +222,7 @@ fun CommunityReviewCard(review: CommunityReview, onVote: ((Boolean) -> Unit)? = 
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
-                        Text("Doesn't look real")
+                        Text(tr("Doesn't look real"))
                     }
                 }
             } else {

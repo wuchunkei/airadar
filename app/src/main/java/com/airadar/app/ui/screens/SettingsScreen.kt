@@ -1,5 +1,7 @@
 package com.airadar.app.ui.screens
 
+import com.airadar.app.data.tr
+
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -87,10 +89,10 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBackClick) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = tr("Back"))
             }
             Text(
-                "Settings",
+                tr("Settings"),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold
             )
@@ -105,7 +107,7 @@ fun SettingsScreen(
                 // No token gate while Entitlements.paywallEnabled is off --
                 // signing in is the only step, and it unlocks everything at
                 // once, the same way SettingsView.swift's own Account section works.
-                SettingsSection("Account") {
+                SettingsSection(tr("Account")) {
                     if (!settings.isLoggedIn) {
                         Button(
                             onClick = { viewModel.signIn(activity) },
@@ -118,7 +120,7 @@ fun SettingsScreen(
                             if (signingIn) CircularProgressIndicator(
                                 modifier = Modifier.size(18.dp), strokeWidth = 2.dp,
                                 color = MaterialTheme.colorScheme.onPrimary
-                            ) else Text("Continue with Google", fontWeight = FontWeight.SemiBold)
+                            ) else Text(tr("Continue with Google"), fontWeight = FontWeight.SemiBold)
                         }
                         authError?.let {
                             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
@@ -133,7 +135,7 @@ fun SettingsScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 // The traveller's name in their own colour — how friends see them.
                                 Text(
-                                    settings.userName ?: "Signed in",
+                                    settings.userName ?: tr("Signed in"),
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.SemiBold,
                                     color = settings.color?.let(::colorOf) ?: MaterialTheme.colorScheme.onSurface
@@ -144,11 +146,11 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            TextButton(onClick = viewModel::signOut) { Text("Sign out") }
+                            TextButton(onClick = viewModel::signOut) { Text(tr("Sign out")) }
                         }
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
                         ToggleRow(
-                            title = "Friends can find me by email",
+                            title = tr("Friends can find me by email"),
                             checked = settings.findableByEmail,
                             onCheckedChange = viewModel::setFindableByEmail
                         )
@@ -158,14 +160,14 @@ fun SettingsScreen(
 
             // Importing is for signed-in plan holders; a token alone is still a guest.
             if (settings.isLoggedIn) item {
-                SettingsSection("Import") {
+                SettingsSection(tr("Import")) {
                     NavigationRow(
-                        title = "Read trips from email",
+                        title = tr("Read trips from email"),
                         onClick = onEmailImportClick
                     )
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     ToggleRow(
-                        title = "Read trips from calendar",
+                        title = tr("Read trips from calendar"),
                         checked = settings.calendarSyncEnabled,
                         onCheckedChange = { on ->
                             if (!on) viewModel.setCalendarSync(false)
@@ -187,14 +189,14 @@ fun SettingsScreen(
             }
 
             item {
-                SettingsSection("Display") {
+                SettingsSection(tr("Display")) {
                     AppearanceRow(
                         mode = settings.themeMode,
                         onModeChange = viewModel::setThemeMode
                     )
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     ToggleRow(
-                        title = "Show times in my time zone",
+                        title = tr("Show times in my time zone"),
                         checked = settings.forceSystemZone,
                         onCheckedChange = viewModel::setForceSystemZone
                     )
@@ -202,21 +204,21 @@ fun SettingsScreen(
             }
 
             item {
-                SettingsSection("Trips") {
+                SettingsSection(tr("Trips")) {
                     NavigationRow(
-                        title = "Recycle Bin",
+                        title = tr("Recycle Bin"),
                         onClick = onRecycleBinClick
                     )
                 }
             }
 
             item {
-                SettingsSection("About") {
+                SettingsSection(tr("About")) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Version", style = MaterialTheme.typography.bodyMedium)
+                        Text(tr("Version"), style = MaterialTheme.typography.bodyMedium)
                         Text(
                             "1.0.0",
                             style = MaterialTheme.typography.bodyMedium,
@@ -234,15 +236,15 @@ fun SettingsScreen(
 @Composable
 private fun PlanLine(tier: Tier, until: java.time.Instant?, grace: Boolean, note: String?) {
     val name = when (tier) {
-        Tier.PREMIUM -> "Premium"
-        Tier.GUEST -> "No plan"
+        Tier.PREMIUM -> tr("Premium")
+        Tier.GUEST -> tr("No plan")
     }
     val when_ = until?.atZone(ZoneId.systemDefault())?.toLocalDate()
     Text(
         buildString {
             append(name)
-            if (grace) append(" · grace period")
-            else if (tier == Tier.PREMIUM) append(if (when_ != null) " · until $when_" else " · lifetime")
+            if (grace) append(tr(" · grace period"))
+            else if (tier == Tier.PREMIUM) append(if (when_ != null) tr(" · until %s", when_) else tr(" · lifetime"))
         },
         style = MaterialTheme.typography.bodyLarge,
         fontWeight = FontWeight.Medium,
@@ -307,7 +309,7 @@ private fun NavigationRow(
 @Composable
 private fun AppearanceRow(mode: ThemeMode, onModeChange: (ThemeMode) -> Unit) {
     Column(modifier = Modifier.padding(vertical = 6.dp)) {
-        Text("Appearance", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        Text(tr("Appearance"), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier
                 .fillMaxWidth()
@@ -322,9 +324,9 @@ private fun AppearanceRow(mode: ThemeMode, onModeChange: (ThemeMode) -> Unit) {
                 ) {
                     Text(
                         when (entry) {
-                            ThemeMode.SYSTEM -> "System"
-                            ThemeMode.LIGHT -> "Light"
-                            ThemeMode.DARK -> "Dark"
+                            ThemeMode.SYSTEM -> tr("System")
+                            ThemeMode.LIGHT -> tr("Light")
+                            ThemeMode.DARK -> tr("Dark")
                         }
                     )
                 }
