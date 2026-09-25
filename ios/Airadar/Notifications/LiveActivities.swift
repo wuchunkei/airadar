@@ -89,13 +89,23 @@ enum LiveActivities {
         let dep = f.shownTime(arrival: false, forceSystemZone: false)
         let arr = f.shownTime(arrival: true, forceSystemZone: false)
         return .init(
-            statusLabel: f.status.label, statusKind: kind(f.status),
+            // Before it leaves, where boarding has got to reads better than "Scheduled".
+            statusLabel: f.currentBoarding?.label ?? f.status.label, statusKind: f.currentBoarding.map(kind) ?? kind(f.status),
             departureDate: (f.departureInstant ?? Date()) + delay, arrivalDate: f.expectedArrival ?? Date(),
             departureClock: dep.clock, arrivalClock: arr.clock,
             departureGate: f.departureGate, arrivalGate: f.arrivalGate, baggageClaim: f.baggageClaim,
             delayMinutes: f.delayMinutes, landed: f.status == .landed || f.status == .completed,
             arrivalDelayMinutes: f.arrivalDelayMinutes,
             waypoints: waypoints(f))
+    }
+
+    private static func kind(_ b: BoardingStatus) -> FlightActivityAttributes.StatusKind {
+        switch b {
+        case .checkIn: .scheduled
+        case .gateOpen, .boarding: .live
+        case .finalCall, .gateClosing: .warn
+        case .gateClosed: .bad
+        }
     }
 
     private static func kind(_ s: FlightStatus) -> FlightActivityAttributes.StatusKind {

@@ -55,7 +55,12 @@ enum FlightReminders {
             lines.append(new.delayMinutes > 0 ? "Delayed \(new.delayMinutes) min — now departing \(t.clock)" : "Back on time — departing \(t.clock)")
         }
         if new.status != old.status, new.delayMinutes == old.delayMinutes { lines.append(new.status.label) }
-        if new.departureGate != old.departureGate, let g = new.departureGate { lines.append("Gate \(g)") }
+        // Boarding stages worth knowing the moment they happen, with the gate beside them.
+        if new.boardingStatus != old.boardingStatus, let b = new.currentBoarding, b.announced {
+            lines.append(new.departureGate.map { "\(b.label) · Gate \($0)" } ?? b.label)
+        } else if new.departureGate != old.departureGate, let g = new.departureGate {
+            lines.append("Gate \(g)")
+        }
         if new.baggageClaim != old.baggageClaim, let b = new.baggageClaim { lines.append("Baggage belt \(b)") }
         guard !lines.isEmpty else { return }
         let content = UNMutableNotificationContent()

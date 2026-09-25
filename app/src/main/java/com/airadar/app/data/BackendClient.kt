@@ -396,6 +396,7 @@ object BackendClient {
             baggageClaim = row.text("baggageClaim"),
             delayMinutes = row.optInt("delayMinutes", 0).coerceAtLeast(0),
             arrivalDelayMinutes = if (row.isNull("arrivalDelayMinutes")) null else row.optInt("arrivalDelayMinutes"),
+            boardingStatus = BoardingStatus.from(row.text("boardingStatus")),
             callsign = row.text("callsign")
                 ?: FlightDatabase.airlineIcao(flightNumber.takeWhile { it.isLetter() })
                     ?.let { it + flightNumber.filter(Char::isDigit) }

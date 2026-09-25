@@ -123,6 +123,7 @@ import com.airadar.app.ui.components.shownTime
 import com.airadar.app.ui.components.formatDuration
 import com.airadar.app.ui.components.label
 import com.airadar.app.ui.components.statusLine
+import com.airadar.app.ui.components.statusTint
 import com.airadar.app.ui.theme.statusColor
 import com.airadar.app.ui.viewmodel.TripViewModel
 import java.time.Instant
@@ -947,7 +948,7 @@ fun FlightCard(
                     Box(
                         modifier = Modifier
                             .background(
-                                flight.displayStatus.statusColor().copy(alpha = 0.14f),
+                                flight.statusTint().copy(alpha = 0.14f),
                                 RoundedCornerShape(6.dp)
                             )
                             .padding(horizontal = 8.dp, vertical = 3.dp)
@@ -960,7 +961,7 @@ fun FlightCard(
                             flight.statusLine(now),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = flight.displayStatus.statusColor()
+                            color = flight.statusTint()
                         )
                     }
                     if (flight.isManual) NameBlock("Manual", Color(0xFFF5A623))

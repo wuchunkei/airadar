@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.airadar.app.data.Flight
 import com.airadar.app.data.FlightPhase
+import com.airadar.app.data.currentBoarding
+import com.airadar.app.data.BoardingStatus
 import com.airadar.app.data.FlightStatus
 import com.airadar.app.data.FlightStore
 import com.airadar.app.data.LivePosition
@@ -277,7 +279,7 @@ fun FlightDetailSheet(
                             flight.statusLine(),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = flight.displayStatus.statusColor()
+                            color = flight.statusTint()
                         )
                     }
                 }
@@ -536,7 +538,10 @@ fun Flight.statusLine(now: java.time.Instant = java.time.Instant.now()): String 
             val flown = java.time.Duration.between(dep.plusSeconds(delayMinutes * 60L), now).toMinutes()
             if (flown > 0) "$status for ${span(flown)}" else status
         }
-        FlightPhase.UPCOMING -> if (delayMinutes > 0) "$status · ${span(delayMinutes.toLong())} late" else status
+        FlightPhase.UPCOMING -> {
+            val stage = currentBoarding?.label ?: status
+            if (delayMinutes > 0) "$stage · ${span(delayMinutes.toLong())} late" else stage
+        }
         FlightPhase.PAST -> {
             val d = arrivalDelayMinutes ?: return status
             when {
@@ -558,4 +563,14 @@ private fun Terminal(terminal: String?) {
 /** Flights whose incomplete track has already been asked for again this launch. */
 private object TrackRefetch {
     val done: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
+}
+
+/** The colour the status line reads in: the boarding stage's while there is one. */
+@Composable
+fun Flight.statusTint(): androidx.compose.ui.graphics.Color = when (currentBoarding) {
+    BoardingStatus.CHECK_IN -> MaterialTheme.colorScheme.onSurfaceVariant
+    BoardingStatus.GATE_OPEN, BoardingStatus.BOARDING -> MaterialTheme.colorScheme.primary
+    BoardingStatus.FINAL_CALL, BoardingStatus.GATE_CLOSING -> androidx.compose.ui.graphics.Color(0xFFE6730D)
+    BoardingStatus.GATE_CLOSED -> androidx.compose.ui.graphics.Color(0xFFCC2E26)
+    null -> displayStatus.statusColor()
 }

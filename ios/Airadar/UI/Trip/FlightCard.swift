@@ -170,9 +170,9 @@ struct StatusChip: View {
         // Redrawn every minute so the time in the air keeps counting up.
         TimelineView(.everyMinute) { context in
             Text(flight.statusLine(at: context.date))
-                .font(.caption.weight(.semibold)).foregroundStyle(flight.displayStatus.color)
+                .font(.caption.weight(.semibold)).foregroundStyle(flight.statusColor)
                 .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(flight.displayStatus.color.opacity(0.14), in: .rect(cornerRadius: 6))
+                .background(flight.statusColor.opacity(0.14), in: .rect(cornerRadius: 6))
         }
     }
 }

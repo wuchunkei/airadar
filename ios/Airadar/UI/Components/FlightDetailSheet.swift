@@ -303,7 +303,7 @@ struct FlightDetailSheet<Actions: View>: View {
             VStack(alignment: .trailing) {
                 Text("Status").font(.caption).foregroundStyle(.secondary)
                 TimelineView(.everyMinute) { context in
-                    Text(flight.statusLine(at: context.date)).fontWeight(.semibold).foregroundStyle(flight.displayStatus.color)
+                    Text(flight.statusLine(at: context.date)).fontWeight(.semibold).foregroundStyle(flight.statusColor)
                 }
             }
         }

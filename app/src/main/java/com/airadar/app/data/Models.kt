@@ -43,6 +43,9 @@ data class Flight(
      * estimated or actual arrival: negative early, positive late, null when it
      * hasn't said. Separate from [delayMinutes] (the departure's). */
     val arrivalDelayMinutes: Int? = null,
+    /** Boarding progress from the departure airport's own board, for the airports
+     * that publish one (the backend's airportboard.py); null elsewhere. */
+    val boardingStatus: BoardingStatus? = null,
     val baggageClaim: String? = null,
     val typicalDurationMinutes: Int? = null,
     /** Imported from a mailbox and not yet confirmed by the traveller. */
@@ -342,3 +345,20 @@ fun cleanedTrack(points: List<TrackPoint>, origin: Airport? = null): List<TrackP
     }
     return out
 }
+
+/** Where boarding has got to, as the departure airport's own board says. */
+enum class BoardingStatus(val label: String) {
+    CHECK_IN("Check-in open"), GATE_OPEN("Gate open"), BOARDING("Boarding"),
+    FINAL_CALL("Final call"), GATE_CLOSING("Gate closing"), GATE_CLOSED("Gate closed");
+
+    /** Worth a notification the moment it's reached — check-in and gate open aren't urgent. */
+    val announced: Boolean get() = this != CHECK_IN && this != GATE_OPEN
+
+    companion object {
+        fun from(raw: String?): BoardingStatus? = entries.firstOrNull { it.name == raw }
+    }
+}
+
+/** Boarding progress, while it still matters: before the flight has left. */
+val Flight.currentBoarding: BoardingStatus?
+    get() = if (phase == FlightPhase.UPCOMING) boardingStatus else null

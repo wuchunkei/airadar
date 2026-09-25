@@ -21,6 +21,7 @@ import androidx.work.workDataOf
 import com.airadar.app.MainActivity
 import com.airadar.app.data.BackendClient
 import com.airadar.app.data.Flight
+import com.airadar.app.data.currentBoarding
 import com.airadar.app.data.FlightStatus
 import java.io.IOException
 import java.time.Duration
@@ -81,6 +82,37 @@ object FlightReminders {
         enqueue(Stage.STATUS, departure.minus(Duration.ofHours(3)))
         enqueue(Stage.INFLIGHT, departure)
         enqueue(Stage.LANDED, arrival.plus(Duration.ofHours(1)))
+    }
+
+    /**
+     * A flight of the day that just reached a boarding stage worth knowing at once
+     * (boarding, final call, gate closing, gate closed) — said now, with the gate.
+     * [before] and [after] are the trip list either side of a sync.
+     */
+    fun announceBoarding(context: Context, before: List<Flight>, after: List<Flight>) {
+        val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        if (!allowed) return
+        val old = before.associateBy { it.id }
+        for (f in after) {
+            val stage = f.currentBoarding ?: continue
+            val was = old[f.id] ?: continue          // a first load isn't a change
+            if (!stage.announced || was.boardingStatus == f.boardingStatus) continue
+            val text = f.departureGate?.let { "${stage.label} · Gate $it" } ?: stage.label
+            val open = PendingIntent.getActivity(
+                context, 0, Intent(context, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val notification = NotificationCompat.Builder(context, CHANNEL_LIVE)
+                .setSmallIcon(android.R.drawable.ic_menu_compass)
+                .setContentTitle("${f.flightNumber} ${f.departure} → ${f.arrival}")
+                .setContentText(text)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .build()
+            NotificationManagerCompat.from(context).notify("boarding:${f.id}".hashCode(), notification)
+        }
     }
 
     fun cancel(context: Context, flightId: String) {

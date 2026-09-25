@@ -17,7 +17,7 @@ import airportsdata
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from . import airlabs, feed, names
+from . import airlabs, airportboard, feed, names
 from .auth import current_user
 from .billing import membership
 from .schema import FlightStatus
@@ -54,6 +54,8 @@ class TripIn(BaseModel):
     baggageClaim: str | None = None
     delayMinutes: int = 0
     arrivalDelayMinutes: int | None = None
+    # From the departure airport's own board, around departure — see airportboard.py.
+    boardingStatus: str | None = None
     callsign: str | None = None
     pnr: str | None = None
     isPending: bool = False
@@ -191,13 +193,36 @@ async def _refresh_live(state, doc: dict) -> dict:
         return doc
     # AirLabs keys a flight by its local departure date.
     fresh = await _live_record(state, doc["flightNumber"], dep.date(), _live_interval(doc, now), now)
-    if not fresh:
-        return doc
-    changes = {k: fresh[k] for k in LIVE_FIELDS if fresh.get(k) is not None and fresh[k] != doc.get(k)}
+    changes = {k: fresh[k] for k in LIVE_FIELDS if fresh.get(k) is not None and fresh[k] != doc.get(k)} if fresh else {}
+    changes.update(await _boarding_changes(state, doc, dep, dep_utc, now))
     if not changes:
         return doc
     await state.db.trips.update_one({"_id": doc["_id"]}, {"$set": changes})
     return {**doc, **changes}
+
+
+# The departure airport's board is only asked about while it can say something
+# useful: from check-in opening to a while after the scheduled departure.
+BOARD_BEFORE = timedelta(hours=3)
+BOARD_AFTER = timedelta(hours=1)
+
+
+async def _boarding_changes(state, doc: dict, dep_local: datetime, dep_utc: datetime, now: datetime) -> dict:
+    """Boarding progress (and the gate, which the airport's own board knows
+    first) for a departure from an airport that publishes it."""
+    airport = doc.get("departure")
+    if airport not in airportboard.AIRPORTS or not (dep_utc - BOARD_BEFORE <= now <= dep_utc + BOARD_AFTER):
+        return {}
+    found = await airportboard.lookup(state.http, airport, doc["flightNumber"], dep_local)
+    if found is None:
+        return {}
+    phase, gate = found
+    changes = {}
+    if phase != doc.get("boardingStatus"):
+        changes["boardingStatus"] = phase
+    if gate and gate != doc.get("departureGate"):
+        changes["departureGate"] = gate
+    return changes
 
 
 @router.get("", response_model=list[Trip])

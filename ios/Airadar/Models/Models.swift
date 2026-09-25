@@ -139,6 +139,9 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     /// hasn't said. Separate from `delayMinutes` (the departure's), since a
     /// flight can leave late and still land early.
     var arrivalDelayMinutes: Int?
+    /// Boarding progress from the departure airport's own board, for the
+    /// airports that publish one (the backend's airportboard.py) — nil elsewhere.
+    var boardingStatus: BoardingStatus?
     var callsign: String?
     var pnr: String?
     var isPending: Bool = false
@@ -165,7 +168,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     // point has one; everything else is one-to-one.
     enum CodingKeys: String, CodingKey {
         case id, flightNumber, airlineName, departure, arrival, departureTerminal, arrivalTerminal, departureGate, arrivalGate
-        case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, arrivalDelayMinutes, callsign, pnr, isPending, isManual, passengers
+        case departureTime, arrivalTime, status, aircraft, baggageClaim, delayMinutes, arrivalDelayMinutes, boardingStatus, callsign, pnr, isPending, isManual, passengers
         case track, trackFlownOn, deletedAt, sharedBy, shares, importedVia, feedStatus
     }
 
@@ -198,6 +201,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         baggageClaim = try c.decodeIfPresent(String.self, forKey: .baggageClaim)
         delayMinutes = try c.decodeIfPresent(Int.self, forKey: .delayMinutes) ?? 0
         arrivalDelayMinutes = try c.decodeIfPresent(Int.self, forKey: .arrivalDelayMinutes)
+        boardingStatus = (try? c.decodeIfPresent(String.self, forKey: .boardingStatus)).flatMap { $0.flatMap(BoardingStatus.init(rawValue:)) }
         callsign = try c.decodeIfPresent(String.self, forKey: .callsign)
         pnr = try c.decodeIfPresent(String.self, forKey: .pnr)
         isPending = try c.decodeIfPresent(Bool.self, forKey: .isPending) ?? false
@@ -235,6 +239,7 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
         try c.encodeIfPresent(baggageClaim, forKey: .baggageClaim)
         try c.encode(delayMinutes, forKey: .delayMinutes)
         try c.encodeIfPresent(arrivalDelayMinutes, forKey: .arrivalDelayMinutes)
+        try c.encodeIfPresent(boardingStatus?.rawValue, forKey: .boardingStatus)
         try c.encodeIfPresent(callsign, forKey: .callsign)
         try c.encodeIfPresent(pnr, forKey: .pnr)
         try c.encode(isPending, forKey: .isPending)
@@ -585,7 +590,42 @@ extension Color {
     }
 }
 
+/// Where boarding has got to, as the departure airport's own board says.
+enum BoardingStatus: String, Codable, Sendable {
+    case checkIn = "CHECK_IN", gateOpen = "GATE_OPEN", boarding = "BOARDING"
+    case finalCall = "FINAL_CALL", gateClosing = "GATE_CLOSING", gateClosed = "GATE_CLOSED"
+
+    var label: String {
+        switch self {
+        case .checkIn: "Check-in open"
+        case .gateOpen: "Gate open"
+        case .boarding: "Boarding"
+        case .finalCall: "Final call"
+        case .gateClosing: "Gate closing"
+        case .gateClosed: "Gate closed"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .checkIn: Color.secondary
+        case .gateOpen, .boarding: Color.accentColor
+        case .finalCall, .gateClosing: Color(red: 0.90, green: 0.45, blue: 0.05)
+        case .gateClosed: Color(red: 0.80, green: 0.18, blue: 0.15)
+        }
+    }
+
+    /// Worth a notification the moment it's reached — check-in and gate open aren't urgent.
+    var announced: Bool { self != .checkIn && self != .gateOpen }
+}
+
 extension Flight {
+    /// Boarding progress, while it still matters: before the flight has left.
+    var currentBoarding: BoardingStatus? { phase == .upcoming ? boardingStatus : nil }
+
+    /// The colour the status line reads in: the boarding stage's while there is one.
+    var statusColor: Color { currentBoarding?.color ?? displayStatus.color }
+
     /// The status as one line: in the air, how long it's been flying; before it goes, how
     /// late it is ("late", so it can't be read as a duration); once down, how
     /// early or late it landed, when the source said.
@@ -598,7 +638,8 @@ extension Flight {
             let flown = Int(now.timeIntervalSince(dep + TimeInterval(delayMinutes * 60)) / 60)
             return flown > 0 ? "\(status) for \(Self.span(flown))" : status
         case .upcoming:
-            return delayMinutes > 0 ? "\(status) · \(Self.span(delayMinutes)) late" : status
+            let stage = currentBoarding?.label ?? status
+            return delayMinutes > 0 ? "\(stage) · \(Self.span(delayMinutes)) late" : stage
         case .past:
             guard let d = arrivalDelayMinutes else { return status }
             if d < 0 { return "Landed · \(Self.span(-d)) early" }

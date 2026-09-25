@@ -70,7 +70,11 @@ class MainActivity : ComponentActivity() {
                 while (true) {
                     val due = minute == 0 || FlightStore.hasFlightInLiveWindow ||
                         (FlightStore.hasFlightNearNow && minute % 2 == 0)
-                    if (AuthStore.isSignedIn && due) runCatching { FlightStore.syncFromServer() }
+                    if (AuthStore.isSignedIn && due) {
+                        val before = FlightStore.flights.value.orEmpty()
+                        runCatching { FlightStore.syncFromServer() }
+                        FlightReminders.announceBoarding(this@MainActivity, before, FlightStore.flights.value.orEmpty())
+                    }
                     delay(60_000)
                     minute += 1
                 }
