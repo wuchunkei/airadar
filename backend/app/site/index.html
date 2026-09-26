@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="__LANG__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Airadar · 航班雷达</title>
+<meta name="description" content="Airadar — 实时追踪你的每一趟航班：灵动岛、登机口、延误与落地时间，直接来自机场官方数据。">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="/favicon.ico">
+<link rel="apple-touch-icon" href="/icon.png">
+<meta property="og:title" content="Airadar">
+<meta property="og:description" content="你的每一趟航班，实时掌握。">
+<meta property="og:image" content="/icon.png">
+<style>
+:root {
+  --bg: #070b14;
+  --bg-2: #0b1120;
+  --card: rgba(255,255,255,.035);
+  --card-hi: rgba(255,255,255,.06);
+  --line: rgba(255,255,255,.08);
+  --line-hi: rgba(255,255,255,.16);
+  --text: #eef2f8;
+  --muted: #9aa6ba;
+  --faint: #5d6a80;
+  --green: #34c759;
+  --green-2: #30d158;
+  --blue: #0a84ff;
+  --amber: #ffb340;
+  --red: #ff5a52;
+  --radius: 22px;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Hiragino Sans GB",
+          "Microsoft YaHei", "Noto Sans SC", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+a { color: inherit; text-decoration: none; }
+img { display: block; max-width: 100%; }
+
+/* One language at a time; the server picks, the switch overrides. */
+html[lang="en"] .zh, html:not([lang="en"]) .en { display: none !important; }
+
+.wrap { width: min(1160px, 100% - 40px); margin: 0 auto; }
+
+/* ---------- Nav ---------- */
+.nav {
+  position: fixed; inset: 0 0 auto 0; z-index: 50;
+  transition: background .3s, border-color .3s, backdrop-filter .3s;
+  border-bottom: 1px solid transparent;
+}
+.nav.scrolled {
+  background: rgba(7,11,20,.72);
+  backdrop-filter: saturate(160%) blur(18px);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  border-bottom-color: var(--line);
+}
+.nav .wrap { display: flex; align-items: center; gap: 16px; height: 68px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: .2px; }
+.brand img { width: 34px; height: 34px; border-radius: 9px; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.nav-links { display: flex; gap: 26px; margin-left: 28px; font-size: 14.5px; color: var(--muted); }
+.nav-links a:hover { color: var(--text); }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.lang {
+  display: flex; border: 1px solid var(--line-hi); border-radius: 999px; padding: 3px; font-size: 13px;
+}
+.lang button {
+  background: none; border: 0; color: var(--muted); font: inherit; padding: 4px 11px; border-radius: 999px; cursor: pointer;
+}
+.lang button.on { background: rgba(255,255,255,.12); color: var(--text); }
+.nav-cta {
+  font-size: 14px; font-weight: 600; padding: 8px 16px; border-radius: 999px;
+  background: var(--text); color: #0a0f1a;
+}
+.nav-cta:hover { background: #fff; }
+
+/* ---------- Hero ---------- */
+.hero { position: relative; padding: 150px 0 90px; overflow: hidden; }
+.hero::before {
+  content: ""; position: absolute; inset: -20% -10% auto -10%; height: 900px; z-index: -2;
+  background:
+    radial-gradient(600px 380px at 18% 30%, rgba(10,132,255,.20), transparent 70%),
+    radial-gradient(520px 380px at 82% 22%, rgba(52,199,89,.16), transparent 70%),
+    radial-gradient(700px 500px at 50% 100%, rgba(120,90,255,.10), transparent 70%);
+  mask-image: linear-gradient(#000 55%, transparent 95%);
+  -webkit-mask-image: linear-gradient(#000 55%, transparent 95%);
+}
+.hero-grid > *, .bento > *, .dl > *, .airports > * { min-width: 0; }
+.hero::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; opacity: .5;
+  background-image: radial-gradient(rgba(255,255,255,.11) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 35%, #000 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 35%, #000 30%, transparent 75%);
+}
+.hero-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
+  padding: 6px 12px 6px 8px; border: 1px solid var(--line-hi); border-radius: 999px; background: rgba(255,255,255,.03);
+}
+.eyebrow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 rgba(52,199,89,.6); animation: ping 2.2s infinite; }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(52,199,89,.55); } 80%,100% { box-shadow: 0 0 0 9px rgba(52,199,89,0); } }
+h1 {
+  font-size: clamp(40px, 6.2vw, 72px); line-height: 1.06; letter-spacing: -.025em; font-weight: 800;
+  margin: 22px 0 20px;
+}
+html:not([lang="en"]) h1 { letter-spacing: 0; line-height: 1.14; }
+.grad {
+  background: linear-gradient(100deg, #fff 10%, #b9d6ff 45%, #7ee2a0 90%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.lead { font-size: clamp(16px, 1.6vw, 19px); color: var(--muted); max-width: 540px; }
+.cta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 34px; }
+.meta-line { margin-top: 16px; font-size: 13px; color: var(--faint); }
+
+/* Store buttons */
+.store {
+  display: inline-flex; align-items: center; gap: 12px; min-width: 214px;
+  padding: 12px 20px 12px 16px; border-radius: 16px; border: 1px solid var(--line-hi);
+  background: rgba(255,255,255,.04); transition: transform .2s, background .2s, border-color .2s, box-shadow .2s;
+  cursor: pointer; color: var(--text); font: inherit; text-align: left;
+}
+.store:hover { transform: translateY(-2px); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.28); }
+.store svg { width: 28px; height: 28px; flex: none; }
+.store .t1 { display: block; font-size: 12px; color: var(--muted); line-height: 1.2; }
+.store .t2 { display: block; font-size: 18px; font-weight: 700; line-height: 1.25; }
+.store.apple { background: #fff; color: #000; border-color: #fff; }
+.store.apple .t1 { color: #555; }
+.store.apple:hover { background: #fff; box-shadow: 0 10px 30px rgba(255,255,255,.12); }
+.store.android { background: linear-gradient(135deg, #1f8f45, #34c759); border-color: transparent; color: #fff; }
+.store.android .t1 { color: rgba(255,255,255,.82); }
+.store.android:hover { box-shadow: 0 10px 34px rgba(52,199,89,.35); }
+.store.disabled { cursor: default; opacity: .9; }
+.store.disabled:hover { transform: none; box-shadow: none; }
+
+/* ---------- Phone mockup ---------- */
+.stage { position: relative; height: 640px; }
+.phone {
+  position: absolute; left: 50%; top: 0; transform: translateX(-50%);
+  width: 300px; height: 620px; border-radius: 52px; padding: 11px;
+  background: linear-gradient(145deg, #3a3f4a, #15181e 40%, #2c313b);
+  box-shadow: 0 50px 100px -20px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.06) inset, 0 0 60px rgba(10,132,255,.12);
+}
+.screen {
+  position: relative; width: 100%; height: 100%; border-radius: 42px; overflow: hidden;
+  background:
+    radial-gradient(420px 300px at 20% 10%, rgba(40,90,190,.55), transparent 70%),
+    radial-gradient(360px 300px at 90% 70%, rgba(20,120,90,.45), transparent 70%),
+    linear-gradient(180deg, #0e1730, #081019 70%);
+}
+.island {
+  position: absolute; top: 11px; left: 50%; transform: translateX(-50%);
+  width: 96px; height: 29px; border-radius: 20px; background: #000; z-index: 3;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 10px;
+  animation: island 9s ease-in-out infinite;
+}
+.island .l, .island .r { font-size: 10.5px; font-weight: 700; color: var(--green); opacity: 0; transition: opacity .3s; white-space: nowrap; }
+@keyframes island {
+  0%, 18% { width: 96px; }
+  26%, 70% { width: 200px; }
+  78%, 100% { width: 96px; }
+}
+.island.wide .l, .island.wide .r { opacity: 1; }
+.lock-date { text-align: center; margin-top: 62px; font-size: 14px; font-weight: 600; color: rgba(255,255,255,.85); }
+.lock-time { text-align: center; font-size: 76px; font-weight: 700; line-height: 1; letter-spacing: -2px; color: rgba(255,255,255,.92); margin-top: 2px; }
+.la {
+  position: absolute; left: 12px; right: 12px; top: 214px;
+  background: rgba(0,0,0,.82); border-radius: 24px; padding: 13px 14px 12px; color: #fff;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+.la-top { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.la-top .logo { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg,#0d7a6f,#15a38f); display: grid; place-items: center; font-size: 9px; font-weight: 800; }
+.la-top b { font-family: var(--mono); font-size: 13px; }
+.la-top .air { color: #9aa1ad; }
+.la-top .st { margin-left: auto; color: var(--amber); font-weight: 600; }
+.la-body { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; margin-top: 9px; align-items: start; }
+.ep .code { font-size: 20px; font-weight: 800; line-height: 1.1; }
+.ep .code i { font-style: normal; color: #8b93a1; }
+.ep .city { font-size: 10px; color: #aeb5c0; margin-top: 2px; }
+.ep .gate { font-size: 10px; font-weight: 700; margin-top: 2px; }
+.ep .clock { font-size: 15px; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.ep.r { text-align: right; }
+.mid { padding-top: 4px; text-align: center; }
+.mid .cd { font-size: 12.5px; font-weight: 700; color: var(--amber); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.route { position: relative; height: 34px; margin-top: 6px; }
+.route .track { position: absolute; left: 0; right: 6px; top: 10px; height: 2px; background: rgba(255,255,255,.22); border-radius: 2px; }
+.route .flown { position: absolute; left: 0; top: 10px; height: 2px; width: 58%; background: var(--green); border-radius: 2px; animation: fly 9s linear infinite; }
+@keyframes fly { from { width: 8%; } to { width: 92%; } }
+.route .wp { position: absolute; top: 7px; width: 7px; height: 7px; margin-left: -3.5px; border-radius: 50%; background: #fff; }
+.route .wp.p { background: var(--green); width: 9px; height: 9px; top: 6px; margin-left: -4.5px; box-shadow: 0 0 0 1.5px #000; }
+.route .wl { position: absolute; top: 19px; transform: translateX(-50%); font-size: 8.5px; color: #aeb5c0; white-space: nowrap; }
+.route .wl.p { color: var(--green); }
+.notif {
+  position: absolute; left: 12px; right: 12px; top: 392px;
+  background: rgba(40,44,54,.72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-radius: 20px; padding: 11px 12px; display: flex; gap: 10px; align-items: flex-start;
+  animation: drop 9s ease-in-out infinite;
+}
+@keyframes drop { 0%, 30% { opacity: 0; transform: translateY(-10px); } 38%, 92% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.notif img { width: 32px; height: 32px; border-radius: 8px; background: #fff; flex: none; }
+.notif .h { font-size: 11.5px; font-weight: 700; }
+.notif .b { font-size: 11px; color: #d4d8df; line-height: 1.35; }
+.notif .b s { color: #8d94a0; }
+.home-bar { position: absolute; bottom: 9px; left: 50%; transform: translateX(-50%); width: 110px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.7); }
+
+/* Floating map card beside the phone */
+.mapcard {
+  position: absolute; right: -56px; bottom: 26px; width: 236px; z-index: 2;
+  border-radius: 20px; padding: 12px; background: rgba(14,20,34,.86);
+  border: 1px solid var(--line-hi); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 30px 60px -20px rgba(0,0,0,.7);
+  animation: float 7s ease-in-out infinite;
+}
+.chipcard {
+  position: absolute; left: -58px; top: 372px; z-index: 2; width: 176px;
+  border-radius: 18px; padding: 12px 14px; background: rgba(14,20,34,.86);
+  border: 1px solid var(--line-hi); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 30px 60px -20px rgba(0,0,0,.7);
+  animation: float 8s ease-in-out -3s infinite;
+}
+@keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+.chipcard .k { font-size: 11px; color: var(--muted); }
+.chipcard .v { font-size: 15px; font-weight: 700; margin-top: 2px; }
+.chipcard .v s { color: var(--faint); font-weight: 500; margin-right: 6px; }
+.chipcard .v .up { color: var(--red); }
+.chipcard .v .dn { color: var(--green); }
+.chipcard .row + .row { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
+.mapcard svg { width: 100%; height: auto; display: block; border-radius: 12px; }
+.mapcard .cap { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+.mapcard .cap b { color: var(--text); }
+
+/* ---------- Sections ---------- */
+section { padding: 110px 0; position: relative; }
+.kicker { font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--green); }
+h2 { font-size: clamp(30px, 4vw, 48px); line-height: 1.12; letter-spacing: -.02em; font-weight: 800; margin-top: 12px; }
+html:not([lang="en"]) h2 { letter-spacing: 0; line-height: 1.2; }
+.sub { color: var(--muted); font-size: 17px; max-width: 620px; margin-top: 14px; }
+.center { text-align: center; }
+.center .sub { margin-left: auto; margin-right: auto; }
+
+/* Bento */
+.bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 54px; }
+.tile {
+  grid-column: span 2; position: relative; overflow: hidden;
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 26px;
+  transition: border-color .3s, transform .3s;
+}
+.tile:hover { border-color: var(--line-hi); transform: translateY(-3px); }
+.tile.wide { grid-column: span 3; }
+.tile.xl { grid-column: span 4; }
+.tile h3 { font-size: 19px; font-weight: 700; margin-top: 16px; }
+.tile p { color: var(--muted); font-size: 14.5px; margin-top: 8px; }
+.ico {
+  width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center;
+  background: rgba(255,255,255,.06); border: 1px solid var(--line-hi);
+}
+.ico svg { width: 22px; height: 22px; }
+.tile .glow { position: absolute; width: 260px; height: 260px; border-radius: 50%; filter: blur(70px); opacity: .22; right: -80px; top: -90px; pointer-events: none; }
+
+/* Mini visual inside tiles */
+.strike { margin-top: 18px; display: grid; gap: 8px; }
+.strike div { display: flex; justify-content: space-between; font-size: 14px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.035); }
+.strike span:first-child { color: var(--muted); }
+.strike s { color: var(--faint); margin-right: 8px; }
+.strike .late { color: var(--red); font-weight: 700; }
+.strike .early { color: var(--green); font-weight: 700; }
+.strike .new { font-weight: 700; }
+
+.stages { display: flex; gap: 6px; margin-top: 18px; flex-wrap: wrap; }
+.stages span { font-size: 12px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line-hi); color: var(--muted); }
+.stages span.on { background: rgba(255,179,64,.14); border-color: rgba(255,179,64,.45); color: var(--amber); font-weight: 700; }
+
+.tiers { display: flex; gap: 6px; margin-top: 18px; }
+.tile.full { grid-column: span 6; display: flex; align-items: center; gap: 40px; }
+.full-copy { flex: 1; }
+.langdemo { flex: 1; display: grid; gap: 14px; }
+.ld { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 14px; background: rgba(255,255,255,.035); }
+.ld b { font-size: 20px; font-weight: 800; }
+.ln { position: relative; flex: 1; height: 2px; background: rgba(255,255,255,.2); margin-top: -12px; }
+.ln::before { content: ""; position: absolute; left: 0; top: 0; height: 2px; width: 45%; background: var(--green); }
+.ln i { position: absolute; top: -3px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: #fff; }
+.ln i.p { background: var(--green); }
+.ln em { position: absolute; top: 8px; transform: translateX(-50%); font-style: normal; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.ln em.p { color: var(--green); }
+.routes-mini { margin-top: 18px; border-radius: 14px; overflow: hidden; background: rgba(255,255,255,.03); }
+.routes-mini svg { display: block; width: 100%; height: auto; }
+.tiers i { flex: 1; height: 8px; border-radius: 4px; }
+
+/* Airports band */
+.airports { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 44px; }
+.ap {
+  border: 1px solid var(--line); border-radius: 18px; padding: 20px; background: var(--card);
+}
+.ap .c { font-family: var(--mono); font-size: 28px; font-weight: 800; letter-spacing: 1px; }
+.ap .n { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.ap .d { font-size: 12.5px; color: var(--faint); margin-top: 12px; }
+.ap .d b { color: var(--green); font-weight: 600; }
+.note { color: var(--faint); font-size: 13px; margin-top: 18px; text-align: center; }
+
+/* Download */
+.dl { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 50px; }
+.dlcard {
+  border-radius: 28px; padding: 34px; position: relative; overflow: hidden;
+  border: 1px solid var(--line-hi);
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+}
+.dlcard .plat { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--muted); }
+.dlcard .plat svg { width: 22px; height: 22px; }
+.dlcard h3 { font-size: 26px; font-weight: 800; margin-top: 14px; }
+.dlcard p { color: var(--muted); margin-top: 8px; font-size: 15px; }
+.dlcard .actions { margin-top: 26px; }
+.specs { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 18px; font-size: 13px; color: var(--faint); }
+.specs b { color: var(--muted); font-weight: 600; }
+.steps { margin-top: 24px; display: grid; gap: 10px; counter-reset: s; }
+.steps li { list-style: none; display: flex; gap: 12px; font-size: 14px; color: var(--muted); align-items: baseline; }
+.steps li::before {
+  counter-increment: s; content: counter(s); flex: none; width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--text); background: rgba(255,255,255,.08);
+}
+.sha { margin-top: 18px; font-size: 12px; color: var(--faint); word-break: break-all; font-family: var(--mono); }
+.sha summary { cursor: pointer; font-family: var(--font); color: var(--muted); }
+.qr { display: none; }
+
+/* Footer */
+footer { border-top: 1px solid var(--line); padding: 36px 0 50px; color: var(--faint); font-size: 13.5px; }
+footer .wrap { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+footer .brand { font-size: 15px; color: var(--muted); }
+footer .brand img { width: 26px; height: 26px; border-radius: 7px; }
+footer .sp { margin-left: auto; }
+
+/* WeChat: its built-in browser won't download an APK. */
+.wx {
+  position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.86); display: none;
+  color: #fff; text-align: right; padding: 18px 22px;
+}
+.wx.show { display: block; }
+.wx .arrow { font-size: 44px; line-height: 1; }
+.wx .msg { margin-top: 10px; font-size: 18px; font-weight: 700; line-height: 1.5; }
+.wx .msg small { display: block; font-weight: 400; font-size: 14px; color: #c9ced8; margin-top: 6px; }
+.wx button { margin-top: 26px; background: rgba(255,255,255,.14); color: #fff; border: 0; padding: 10px 18px; border-radius: 999px; font: inherit; }
+
+/* Reveal on scroll */
+.reveal { opacity: 0; transform: translateY(26px); transition: opacity .8s ease, transform .8s ease; }
+.reveal.in { opacity: 1; transform: none; }
+
+@media (max-width: 980px) {
+  .hero { padding-top: 120px; }
+  .hero-grid { grid-template-columns: 1fr; gap: 30px; }
+  .hero-copy { text-align: center; }
+  .lead { margin: 0 auto; }
+  .cta { justify-content: center; }
+  .stage { height: 640px; max-width: 440px; margin: 0 auto; width: 100%; }
+  .bento { grid-template-columns: 1fr 1fr; }
+  .tile, .tile.wide, .tile.xl { grid-column: span 2; }
+  .tile.half { grid-column: span 1; }
+  .tile.full { grid-column: span 2; flex-direction: column; align-items: stretch; gap: 22px; }
+  .airports { grid-template-columns: 1fr 1fr; }
+  .dl { grid-template-columns: 1fr; }
+  .nav-links { display: none; }
+}
+@media (max-width: 560px) {
+  .wrap { width: calc(100% - 32px); }
+  .stage { transform: scale(.86); transform-origin: top center; height: 560px; }
+  .mapcard { right: -30px; }
+  .chipcard { left: -30px; }
+  .tile.half { grid-column: span 2; }
+  .store { width: 100%; justify-content: center; }
+  .dlcard { padding: 26px 22px; }
+  .nav-cta { display: none; }
+  section { padding: 80px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="apple" viewBox="0 0 24 24"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></symbol>
+  <symbol id="android" viewBox="0 0 24 24"><path fill="currentColor" d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85a.637.637 0 0 0-.83.22l-1.88 3.24a11.463 11.463 0 0 0-8.94 0L5.65 5.67a.643.643 0 0 0-.87-.2c-.28.18-.37.54-.22.83L6.4 9.48A10.78 10.78 0 0 0 1 18h22a10.78 10.78 0 0 0-5.4-8.52M7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5m10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5"/></symbol>
+</svg>
+
+<!-- Nav -->
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="/icon.png" alt="">Airadar</a>
+    <nav class="nav-links">
+      <a href="#features"><span class="zh">功能</span><span class="en">Features</span></a>
+      <a href="#airports"><span class="zh">机场数据</span><span class="en">Airport data</span></a>
+      <a href="#download"><span class="zh">下载</span><span class="en">Download</span></a>
+    </nav>
+    <div class="nav-right">
+      <div class="lang" role="group" aria-label="Language">
+        <button data-lang="zh-Hans">中</button><button data-lang="en">EN</button>
+      </div>
+      <a class="nav-cta" href="#download"><span class="zh">免费下载</span><span class="en">Get the app</span></a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+<!-- Hero -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow"><span class="dot"></span>
+        <span class="zh">iPhone 与 Android 均可使用</span><span class="en">For iPhone and Android</span>
+      </span>
+      <h1>
+        <span class="zh">你的每一趟航班，<br><span class="grad">实时掌握。</span></span>
+        <span class="en">Every flight you take,<br><span class="grad">live.</span></span>
+      </h1>
+      <p class="lead">
+        <span class="zh">登机口、延误、登机进度、实际落地时间与行李转盘——直接来自机场官方数据，锁屏与灵动岛一眼看清。</span>
+        <span class="en">Gates, delays, boarding progress, the real landing time and your baggage belt — straight from the airport's own boards, right on your Lock Screen and Dynamic Island.</span>
+      </p>
+      <div class="cta" data-buttons></div>
+      <p class="meta-line" data-meta></p>
+    </div>
+
+    <div class="stage" aria-hidden="true">
+      <div class="chipcard">
+        <div class="row">
+          <div class="k"><span class="zh">登机口</span><span class="en">Gate</span></div>
+          <div class="v"><s>52</s>61</div>
+        </div>
+        <div class="row">
+          <div class="k"><span class="zh">飞行时长</span><span class="en">Duration</span></div>
+          <div class="v"><s>3h 30m</s><span class="dn">3h 12m</span></div>
+        </div>
+      </div>
+
+      <div class="phone">
+        <div class="screen">
+          <div class="island" id="island"><span class="l">CX392</span><span class="r">2:41:08</span></div>
+          <div class="lock-date"><span class="zh">9月26日 星期六</span><span class="en">Saturday, September 26</span></div>
+          <div class="lock-time">08:41</div>
+
+          <div class="la">
+            <div class="la-top">
+              <span class="logo">CX</span><b>CX392</b><span class="air">Cathay Pacific</span>
+              <span class="st"><span class="zh">登机中</span><span class="en">Boarding</span></span>
+            </div>
+            <div class="la-body">
+              <div class="ep">
+                <div class="code">HKG <i>T1</i></div>
+                <div class="gate"><span class="zh">登机口 61</span><span class="en">Gate 61</span></div>
+                <div class="clock">09:05</div>
+              </div>
+              <div class="mid">
+                <div class="cd">0:24:12</div>
+                <div class="route">
+                  <div class="track"></div><div class="flown"></div>
+                  <div class="wp p" style="left:22%"></div><div class="wl p" style="left:22%"><span class="zh">台北</span><span class="en">TPE</span></div>
+                  <div class="wp" style="left:52%"></div><div class="wl" style="left:52%"><span class="zh">冲绳</span><span class="en">OKA</span></div>
+                  <div class="wp" style="left:78%"></div><div class="wl" style="left:78%"><span class="zh">大阪</span><span class="en">OSA</span></div>
+                </div>
+              </div>
+              <div class="ep r">
+                <div class="code">NRT <i>T2</i></div>
+                <div class="city"><span class="zh">东京，日本</span><span class="en">Tokyo, JP</span></div>
+                <div class="clock">14:10</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="notif">
+            <img src="/icon.png" alt="">
+            <div>
+              <div class="h">CX392 HKG → NRT</div>
+              <div class="b"><span class="zh">最后召集 · 登机口 <s>52</s> 61</span><span class="en">Final call · Gate <s>52</s> 61</span></div>
+            </div>
+          </div>
+          <div class="home-bar"></div>
+        </div>
+      </div>
+
+      <div class="mapcard">
+        <svg viewBox="0 0 250 150">
+          <defs>
+            <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d1a33"/><stop offset="1" stop-color="#0a1424"/></linearGradient>
+          </defs>
+          <rect width="250" height="150" fill="url(#sea)"/>
+          <path d="M0 40 C 30 30, 50 48, 70 60 S 95 110, 80 150 L0 150 Z" fill="#16253f"/>
+          <path d="M150 20 C 170 30, 176 50, 190 56 S 215 60, 230 40 L250 36 L250 0 L150 0 Z" fill="#16253f"/>
+          <path d="M196 70 c 8 -4, 16 -2, 20 4 s -2 12, -10 12 s -14 -8, -10 -16z" fill="#16253f"/>
+          <path id="arc" d="M58 118 Q 120 30 214 50" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="2" stroke-dasharray="3 4"/>
+          <path d="M58 118 Q 120 30 214 50" fill="none" stroke="#34c759" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="220" stroke-dashoffset="220">
+            <animate attributeName="stroke-dashoffset" values="200;40;200" dur="9s" repeatCount="indefinite"/>
+          </path>
+          <circle cx="58" cy="118" r="4" fill="#fff"/><circle cx="214" cy="50" r="4" fill="#fff"/>
+          <circle cx="112" cy="68" r="3" fill="#34c759"/><circle cx="160" cy="52" r="2.5" fill="#9aa6ba"/>
+          <g>
+            <path d="M-6 -2 L6 0 L-6 2 L-3 0 Z" fill="#34c759"/>
+            <animateMotion dur="9s" repeatCount="indefinite" rotate="auto" keyPoints="0.1;0.85;0.1" keyTimes="0;0.5;1" calcMode="linear">
+              <mpath href="#arc"/>
+            </animateMotion>
+          </g>
+          <text x="50" y="136" fill="#cfd6e2" font-size="10" font-weight="700" font-family="-apple-system, sans-serif">HKG</text>
+          <text x="204" y="40" fill="#cfd6e2" font-size="10" font-weight="700" font-family="-apple-system, sans-serif">NRT</text>
+        </svg>
+        <div class="cap"><span><span class="zh">飞行中 · 1小时52分</span><span class="en">In flight for 1h52m</span></span><b>2,948 km</b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section id="features">
+  <div class="wrap">
+    <div class="center reveal">
+      <div class="kicker"><span class="zh">功能</span><span class="en">Features</span></div>
+      <h2><span class="zh">起飞前到落地后，<br>该知道的都在这里。</span><span class="en">From check-in to baggage claim,<br>everything you need to know.</span></h2>
+      <p class="sub"><span class="zh">不用反复刷新航司 App。Airadar 在后台替你盯着，变化一发生就告诉你。</span><span class="en">No more refreshing the airline's app. Airadar keeps watch and tells you the moment something changes.</span></p>
+    </div>
+
+    <div class="bento">
+      <div class="tile xl reveal">
+        <div class="glow" style="background:#34c759"></div>
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#34c759" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="2.5" width="12" height="19" rx="3"/><rect x="9" y="4.5" width="6" height="2" rx="1" fill="#34c759" stroke="none"/></svg></div>
+        <h3><span class="zh">灵动岛与实时活动</span><span class="en">Live Activities &amp; Dynamic Island</span></h3>
+        <p><span class="zh">起飞倒计时、登机进度、登机口与途经城市，锁屏和灵动岛上一眼看清。计时由系统驱动，App 在后台也能准确走动。</span><span class="en">Countdown to take-off, boarding progress, your gate and the cities along the way — on the Lock Screen and Dynamic Island. The clock runs on its own, even with the app closed.</span></p>
+        <div class="stages">
+          <span><span class="zh">值机开放</span><span class="en">Check-in open</span></span>
+          <span><span class="zh">登机口开放</span><span class="en">Gate open</span></span>
+          <span class="on"><span class="zh">登机中</span><span class="en">Boarding</span></span>
+          <span><span class="zh">最后召集</span><span class="en">Final call</span></span>
+          <span><span class="zh">登机口关闭</span><span class="en">Gate closed</span></span>
+        </div>
+      </div>
+
+      <div class="tile half reveal">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#ffb340" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></div>
+        <h3><span class="zh">变更即时提醒</span><span class="en">Instant change alerts</span></h3>
+        <p><span class="zh">延误、换登机口、行李转盘公布，第一时间推送。</span><span class="en">Delays, gate changes and the baggage belt, pushed the moment they happen.</span></p>
+      </div>
+
+      <div class="tile wide reveal">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#0a84ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></svg></div>
+        <h3><span class="zh">所有航班，一张实时地图</span><span class="en">All your flights on one live map</span></h3>
+        <p><span class="zh">真实的 ADS-B 飞行轨迹、飞机实时位置，以及沿途飞越的城市。飞过的每一段，都留在你的地图上。</span><span class="en">Real ADS-B tracks, the plane's live position and the cities it passes over. Every route you've flown stays on your map.</span></p>
+        <div class="routes-mini" aria-hidden="true">
+          <svg viewBox="0 0 400 120">
+            <path d="M40 92 Q 120 20 210 60" fill="none" stroke="#0a84ff" stroke-width="1.6" opacity=".8"/>
+            <path d="M40 92 Q 170 -10 330 38" fill="none" stroke="#0a84ff" stroke-width="1.6" opacity=".55"/>
+            <path d="M210 60 Q 280 90 360 84" fill="none" stroke="#0a84ff" stroke-width="1.6" opacity=".55"/>
+            <path d="M40 92 Q 90 110 150 104" fill="none" stroke="#0a84ff" stroke-width="1.6" opacity=".45"/>
+            <path d="M40 92 Q 170 -10 330 38" fill="none" stroke="#34c759" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="330" stroke-dashoffset="330">
+              <animate attributeName="stroke-dashoffset" values="330;120;330" dur="10s" repeatCount="indefinite"/>
+            </path>
+            <g fill="#fff"><circle cx="40" cy="92" r="3.5"/><circle cx="210" cy="60" r="3"/><circle cx="330" cy="38" r="3"/><circle cx="360" cy="84" r="3"/><circle cx="150" cy="104" r="3"/></g>
+            <g fill="#9aa6ba" font-size="10" font-weight="700" font-family="-apple-system, sans-serif">
+              <text x="30" y="112">HKG</text><text x="200" y="78">SHA</text><text x="320" y="28">NRT</text><text x="350" y="102">FUK</text><text x="140" y="120">SGN</text>
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      <div class="tile wide reveal">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#ff5a52" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+        <h3><span class="zh">变化一目了然</span><span class="en">See exactly what changed</span></h3>
+        <div class="strike">
+          <div><span><span class="zh">到达</span><span class="en">Arriving</span></span><span><s>07:00</s><span class="early">06:51</span></span></div>
+          <div><span><span class="zh">登机口</span><span class="en">Gate</span></span><span><s>52</s><span class="new">61</span></span></div>
+          <div><span><span class="zh">飞行时长</span><span class="en">Duration</span></span><span><s>3h 30m</s><span class="late">3h 48m</span></span></div>
+        </div>
+      </div>
+
+      <div class="tile half reveal">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#bf8cff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></div>
+        <h3><span class="zh">邮件与日历导入</span><span class="en">Import from mail &amp; calendar</span></h3>
+        <p><span class="zh">读取 Gmail 与日历里的订票信息，自动生成行程。</span><span class="en">Reads booking confirmations from Gmail and your calendar, and builds the trips for you.</span></p>
+      </div>
+
+      <div class="tile half reveal">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#5ac8fa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.9.7 3 2.5 3.5 5.2"/></svg></div>
+        <h3><span class="zh">与好友分享</span><span class="en">Share with friends</span></h3>
+        <p><span class="zh">一个链接分享行程，好友可以加入自己的雷达，一起确认同行。</span><span class="en">Share a trip with one link; friends add it to their own radar and confirm you're flying together.</span></p>
+      </div>
+
+      <div class="tile half reveal">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#ffd60a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"/></svg></div>
+        <h3><span class="zh">飞行里程碑</span><span class="en">Flight milestones</span></h3>
+        <p><span class="zh">从黑铁到瓷器，十个等级记录你的飞行。</span><span class="en">Ten tiers, from Black Iron to Porcelain, that grow with every flight.</span></p>
+        <div class="tiers">
+          <i style="background:#3a3a3c"></i><i style="background:#b0763b"></i><i style="background:#c7ccd4"></i><i style="background:#e8c15a"></i><i style="background:#9fd3e0"></i>
+          <i style="background:#7fd4ff"></i><i style="background:#e0385a"></i><i style="background:#f0a030"></i><i style="background:#d9c7f0"></i><i style="background:#eef4ff"></i>
+        </div>
+      </div>
+
+      <div class="tile full reveal">
+        <div class="full-copy">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#34c759" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h9M8.5 3v2M6 5c.5 3 3 6 6 7.5M11 5c-.7 3.5-3.5 6.8-7 8"/><path d="M12.5 21l4-9 4 9M14 18h5"/></svg></div>
+          <h3><span class="zh">中文与英文</span><span class="en">Chinese &amp; English</span></h3>
+          <p><span class="zh">全面支持简体中文，连航线上途经的城市也显示中文名。在系统设置里为 Airadar 单独选择语言即可。</span><span class="en">Fully in Simplified Chinese as well, down to the cities along your route. Pick Airadar's language in the system settings.</span></p>
+        </div>
+        <div class="langdemo" aria-hidden="true">
+          <div class="ld"><b>SZX</b><div class="ln"><i class="p" style="left:26%"></i><i style="left:60%"></i><em class="p" style="left:26%">LCX</em><em style="left:60%">TXN</em></div><b>ICN</b></div>
+          <div class="ld"><b>SZX</b><div class="ln"><i class="p" style="left:26%"></i><i style="left:60%"></i><em class="p" style="left:26%">连城</em><em style="left:60%">屯溪</em></div><b>ICN</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Airports -->
+<section id="airports">
+  <div class="wrap">
+    <div class="center reveal">
+      <div class="kicker"><span class="zh">机场一手数据</span><span class="en">Straight from the airport</span></div>
+      <h2><span class="zh">不靠猜，读的是机场自己的屏幕。</span><span class="en">No guessing — it reads the airport's own boards.</span></h2>
+      <p class="sub"><span class="zh">登机进度与实际落地时间，第三方航班数据往往慢半拍。Airadar 直接读取机场官方的航班信息。</span><span class="en">Flight data services are often a step behind on boarding and landing. Airadar reads each airport's official flight information directly.</span></p>
+    </div>
+    <div class="airports">
+      <div class="ap reveal"><div class="c">HKG</div><div class="n"><span class="zh">香港国际机场</span><span class="en">Hong Kong International</span></div><div class="d"><b>●</b> <span class="zh">登机进度 · 落地 · 转盘</span><span class="en">Boarding · landing · belt</span></div></div>
+      <div class="ap reveal"><div class="c">ICN</div><div class="n"><span class="zh">首尔仁川国际机场</span><span class="en">Seoul Incheon International</span></div><div class="d"><b>●</b> <span class="zh">登机进度 · 落地 · 登机口 · 转盘</span><span class="en">Boarding · landing · gate · belt</span></div></div>
+      <div class="ap reveal"><div class="c">HND</div><div class="n"><span class="zh">东京羽田机场</span><span class="en">Tokyo Haneda</span></div><div class="d"><b>●</b> <span class="zh">登机进度 · 落地 · 转盘</span><span class="en">Boarding · landing · belt</span></div></div>
+      <div class="ap reveal"><div class="c">MFM</div><div class="n"><span class="zh">澳门国际机场</span><span class="en">Macau International</span></div><div class="d"><b>●</b> <span class="zh">登机进度 · 落地</span><span class="en">Boarding · landing</span></div></div>
+    </div>
+    <p class="note"><span class="zh">其他机场同样提供航班状态、延误与登机口信息，更多机场官方数据持续接入中。</span><span class="en">Every other airport still gets status, delays and gates; more airports' own data is on the way.</span></p>
+  </div>
+</section>
+
+<!-- Download -->
+<section id="download">
+  <div class="wrap">
+    <div class="center reveal">
+      <div class="kicker"><span class="zh">下载</span><span class="en">Download</span></div>
+      <h2><span class="zh">现在就开始追踪你的下一趟航班。</span><span class="en">Start tracking your next flight.</span></h2>
+    </div>
+    <div class="dl">
+      <div class="dlcard reveal">
+        <div class="plat"><svg><use href="#apple"/></svg>iPhone</div>
+        <h3>App Store</h3>
+        <p><span class="zh">支持灵动岛、锁屏实时活动与 Apple Watch。</span><span class="en">With the Dynamic Island, Lock Screen Live Activities and Apple Watch.</span></p>
+        <div class="actions" data-apple></div>
+      </div>
+      <div class="dlcard reveal">
+        <div class="plat"><svg><use href="#android"/></svg>Android</div>
+        <h3><span class="zh">官网直接下载</span><span class="en">Direct download</span></h3>
+        <p><span class="zh">无需应用商店，下载安装包即可安装，始终是最新版本。</span><span class="en">No app store needed — install the package directly, always the latest version.</span></p>
+        <div class="actions" data-android></div>
+        <div class="specs" data-specs></div>
+        <ol class="steps">
+          <li><span class="zh">点击上方按钮下载安装包（APK）</span><span class="en">Tap the button above to download the APK</span></li>
+          <li><span class="zh">打开下载的文件；如有提示，允许浏览器“安装未知应用”</span><span class="en">Open the download; if asked, allow your browser to “install unknown apps”</span></li>
+          <li><span class="zh">点击“安装”，完成后打开 Airadar</span><span class="en">Tap Install, then open Airadar</span></li>
+        </ol>
+        <details class="sha" data-sha hidden><summary><span class="zh">校验文件（SHA-256）</span><span class="en">Verify the file (SHA-256)</span></summary><div data-sha-value></div></details>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="brand"><img src="/icon.png" alt="">Airadar</span>
+    <span>© <span data-year>2026</span> Airadar</span>
+    <span class="sp"><span class="zh">你的航班雷达</span><span class="en">Your flight radar</span></span>
+  </div>
+</footer>
+
+<div class="wx" id="wx" role="dialog" aria-modal="true">
+  <div class="arrow">↗</div>
+  <div class="msg">
+    <span class="zh">请点击右上角 ··· 选择“在浏览器打开”<small>微信内无法直接下载安装包</small></span>
+    <span class="en">Tap ··· at the top right and choose “Open in Browser”<small>WeChat can't download app packages itself</small></span>
+  </div>
+  <button type="button" id="wx-close"><span class="zh">知道了</span><span class="en">Got it</span></button>
+</div>
+
+<script>
+(function () {
+  var config = __CONFIG__;
+  var html = document.documentElement;
+
+  // Language: a choice made here sticks; otherwise the server's pick stands.
+  try { var saved = localStorage.getItem("lang"); if (saved) html.lang = saved; } catch (e) {}
+  function markLang() {
+    document.querySelectorAll(".lang button").forEach(function (b) {
+      b.classList.toggle("on", (b.dataset.lang === "en") === (html.lang === "en"));
+    });
+    document.title = html.lang === "en" ? "Airadar · Your flight radar" : "Airadar · 航班雷达";
+    render();
+  }
+  document.querySelectorAll(".lang button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      html.lang = b.dataset.lang;
+      try { localStorage.setItem("lang", b.dataset.lang); } catch (e) {}
+      markLang();
+    });
+  });
+
+  function t(zh, en) { return html.lang === "en" ? en : zh; }
+  function mb(bytes) { return (bytes / 1048576).toFixed(1) + " MB"; }
+  var inWeChat = /MicroMessenger/i.test(navigator.userAgent);
+
+  function appleButton() {
+    if (config.appStore) {
+      return '<a class="store apple" href="' + config.appStore + '" target="_blank" rel="noopener">' +
+        '<svg><use href="#apple"/></svg><span><span class="t1">' + t("前往", "Download on the") + '</span>' +
+        '<span class="t2">App Store</span></span></a>';
+    }
+    return '<span class="store apple disabled"><svg><use href="#apple"/></svg><span><span class="t1">' +
+      t("即将上架", "Coming soon to the") + '</span><span class="t2">App Store</span></span></span>';
+  }
+  function androidButton() {
+    var a = config.android;
+    if (!a) {
+      return '<span class="store android disabled"><svg><use href="#android"/></svg><span><span class="t1">' +
+        t("即将提供", "Coming soon") + '</span><span class="t2">Android APK</span></span></span>';
+    }
+    return '<a class="store android" href="/download/android" data-apk>' +
+      '<svg><use href="#android"/></svg><span><span class="t1">' + t("下载 Android 版", "Download for Android") +
+      '</span><span class="t2">APK' + (a.version ? " · v" + a.version : "") + '</span></span></a>';
+  }
+
+  function render() {
+    var both = appleButton() + androidButton();
+    document.querySelector("[data-buttons]").innerHTML = both;
+    document.querySelector("[data-apple]").innerHTML = appleButton();
+    document.querySelector("[data-android]").innerHTML = androidButton();
+    var a = config.android;
+    document.querySelector("[data-meta]").textContent = a
+      ? t("Android 版 " + (a.version ? "v" + a.version + " · " : "") + mb(a.size) + " · 更新于 " + a.date,
+          "Android " + (a.version ? "v" + a.version + " · " : "") + mb(a.size) + " · updated " + a.date)
+      : "";
+    var specs = document.querySelector("[data-specs]");
+    specs.innerHTML = a
+      ? (a.version ? "<span><b>" + t("版本", "Version") + "</b> " + a.version + "</span>" : "") +
+        "<span><b>" + t("大小", "Size") + "</b> " + mb(a.size) + "</span>" +
+        "<span><b>" + t("更新", "Updated") + "</b> " + a.date + "</span>" +
+        "<span><b>" + t("系统要求", "Requires") + "</b> Android 8.0+</span>"
+      : "";
+    var sha = document.querySelector("[data-sha]");
+    if (a && a.sha256) { sha.hidden = false; document.querySelector("[data-sha-value]").textContent = a.sha256; }
+    document.querySelectorAll("[data-apk]").forEach(function (link) {
+      link.addEventListener("click", function (e) {
+        if (inWeChat) { e.preventDefault(); document.getElementById("wx").classList.add("show"); }
+      });
+    });
+  }
+  document.getElementById("wx-close").addEventListener("click", function () {
+    document.getElementById("wx").classList.remove("show");
+  });
+  document.querySelector("[data-year]").textContent = new Date().getFullYear();
+  markLang();
+
+  // Nav turns solid once the page scrolls.
+  var nav = document.getElementById("nav");
+  function onScroll() { nav.classList.toggle("scrolled", window.scrollY > 10); }
+  window.addEventListener("scroll", onScroll, { passive: true }); onScroll();
+
+  // Dynamic Island: shows its text while it's stretched out.
+  var island = document.getElementById("island");
+  var start = Date.now();
+  setInterval(function () {
+    var phase = ((Date.now() - start) % 9000) / 9000;
+    island.classList.toggle("wide", phase > 0.27 && phase < 0.69);
+  }, 100);
+
+  // Sections ease in as they arrive.
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); } });
+    }, { threshold: 0.12 });
+    document.querySelectorAll(".reveal").forEach(function (el) { io.observe(el); });
+  } else {
+    document.querySelectorAll(".reveal").forEach(function (el) { el.classList.add("in"); });
+  }
+})();
+</script>
+</body>
+</html>

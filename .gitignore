@@ -31,3 +31,4 @@ ios/AiradarWatch/Info.plist
 ios/AiradarWatch/AiradarWatch.entitlements
 ios/AiradarWatchWidget/Info.plist
 ios/AiradarWatchWidget/AiradarWatchWidget.entitlements
+backend/downloads/

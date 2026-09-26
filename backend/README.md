@@ -31,10 +31,27 @@ curl -H "X-Airadar-Token: <your APP_TOKEN>" "http://127.0.0.1:8080/flights/CX888
 cd airadar && git pull && cd backend && docker compose up -d --build
 ```
 
+## Website and the Android download
+
+`/` is the public website; `/download/android` serves the latest APK (Chinese
+app stores don't carry Airadar, so Android users install from here). To publish
+a new Android build, on the Mac:
+
+```bash
+./scripts/publish-apk.sh                      # signed release build → backend/downloads/
+scp backend/downloads/* SERVER:airadar/backend/downloads/
+```
+
+The container mounts `backend/downloads/` read-only; the site shows the new
+version at once, no restart needed. Set `APP_STORE_URL` in `.env` (then
+`docker compose up -d`) to turn on the App Store button.
+
 ## Endpoints
 
 | Method | Path | Notes |
 |---|---|---|
+| GET | `/` | the website |
+| GET | `/download/android` | latest APK; `/download/android.json` describes it |
 | GET | `/health` | no auth |
 | GET | `/flights/{IATA}/{YYYY-MM-DD}` | `X-Airadar-Token` header |
 | GET | `/airports/{IATA}` | `X-Airadar-Token` header |

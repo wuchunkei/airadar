@@ -6,6 +6,9 @@ services:
     env_file: .env
     ports:
       - "8080:8080"
+    # The website's Android download: scripts/publish-apk.sh stages it here.
+    volumes:
+      - ./downloads:/srv/downloads:ro
     depends_on:
       - mongo
     healthcheck:

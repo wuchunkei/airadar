@@ -34,11 +34,28 @@ android {
         }
     }
 
+    // The key the website's APK is signed with (release.* in local.properties;
+    // the keystore itself lives outside the repo). Every published build must
+    // use this same key, or Android refuses it as an update.
+    signingConfigs {
+        release {
+            if (localProps.getProperty('release.storeFile')) {
+                storeFile file(localProps.getProperty('release.storeFile'))
+                storePassword localProps.getProperty('release.storePassword')
+                keyAlias localProps.getProperty('release.keyAlias')
+                keyPassword localProps.getProperty('release.keyPassword')
+            }
+        }
+    }
+
     buildTypes {
         release {
-            minifyEnabled true
-            shrinkResources true
+            // Not shrunk yet: R8 has never been tried against this code, and a
+            // broken build would reach everyone who downloads it.
+            minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (localProps.getProperty('release.storeFile')) signingConfig signingConfigs.release
         }
     }
 
