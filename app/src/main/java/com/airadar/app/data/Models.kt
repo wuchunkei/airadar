@@ -157,9 +157,13 @@ data class Flight(
      * asking for again once it has landed, and drawn with the rest dashed. */
     val trackIncomplete: Boolean
         get() {
-            val last = cleanTrack?.lastOrNull() ?: return false
+            val track = cleanTrack ?: return false
+            val first = track.firstOrNull() ?: return false
+            val last = track.last()
+            val origin = departureAirport ?: return false
             val arrival = arrivalAirport ?: return false
-            return greatCircleKm(last.lat, last.lon, arrival.latitude, arrival.longitude) > 100
+            return greatCircleKm(first.lat, first.lon, origin.latitude, origin.longitude) > 100 ||
+                greatCircleKm(last.lat, last.lon, arrival.latitude, arrival.longitude) > 100
         }
 
     /** The real track's last known fix, only when it's genuine evidence the

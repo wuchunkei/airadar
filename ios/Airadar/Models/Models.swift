@@ -353,8 +353,10 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     /// A stored track that stops well short of where the flight was going:
     /// worth asking for again once it has landed, and drawn with the rest dashed.
     var trackIncomplete: Bool {
-        guard let last = cleanTrack?.last, let arrival = arrivalAirport else { return false }
-        return greatCircleKm(last.lat, last.lon, arrival.latitude, arrival.longitude) > 100
+        guard let track = cleanTrack, let first = track.first, let last = track.last,
+              let origin = departureAirport, let arrival = arrivalAirport else { return false }
+        return greatCircleKm(first.lat, first.lon, origin.latitude, origin.longitude) > 100
+            || greatCircleKm(last.lat, last.lon, arrival.latitude, arrival.longitude) > 100
     }
 
     /// The real track's last known fix, only when it's genuine evidence the

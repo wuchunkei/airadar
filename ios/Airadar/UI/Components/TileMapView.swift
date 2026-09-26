@@ -242,7 +242,12 @@ struct TileMapView: UIViewRepresentable {
             legs.append(.init(line: line, from: r.from, to: r.to, rank: r.rank, baseColor: base))
         }
         for t in tracks {
-            let coords = t.points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+            var coords = t.points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+            // A track first heard well after take-off (no receivers near the
+            // departure): drawn on from the airport it left, in the same line.
+            if let first = coords.first, MKMapPoint(first).distance(to: MKMapPoint(t.from.coordinate)) > 50_000 {
+                coords = Self.arcPath(from: t.from.coordinate, to: first).dropLast() + coords
+            }
             let line = LegPolyline(coordinates: coords, count: coords.count)
             let base = t.live ? Coordinator.liveColor : Coordinator.routeColor
             line.color = isSelected(t.from, t.to, rank: 0) ? Coordinator.selectedColor : base

@@ -485,7 +485,14 @@ fun TileMap(
 
             tracks.forEach { track ->
                 val isSel = isSelected(track.from, track.to, 0)
-                val coords = track.points.map { OsmGeoPoint(it.lat, it.lon) }
+                var coords = track.points.map { OsmGeoPoint(it.lat, it.lon) }
+                // A track first heard well after take-off (no receivers near the
+                // departure): drawn on from the airport it left, in the same line.
+                coords.firstOrNull()?.let { first ->
+                    if (greatCircleKm(track.from.latitude, track.from.longitude, first.latitude, first.longitude) > 50) {
+                        coords = arcPath(track.from.latitude, track.from.longitude, first.latitude, first.longitude).dropLast(1) + coords
+                    }
+                }
                 val color = if (isSel) selectedColor else if (track.live) liveColor else routeColor
                 addOwned(
                     Polyline(map).apply {
