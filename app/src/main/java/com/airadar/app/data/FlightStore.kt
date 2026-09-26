@@ -228,7 +228,8 @@ object FlightStore {
     }
 
     fun setTrack(flightId: String, points: List<TrackPoint>, flownOn: LocalDate) {
-        val clean = cleanedTrack(points, all.firstOrNull { it.id == flightId }?.departureAirport)
+        val trip = all.firstOrNull { it.id == flightId }
+        val clean = cleanedTrack(points, trip?.departureAirport, trip?.trackStart)
         publish(all.map { if (it.id == flightId) it.copy(track = clean, trackFlownOn = flownOn) else it })
         all.firstOrNull { it.id == flightId }?.let { updated -> push { BackendClient.putTrip(updated) } }
     }

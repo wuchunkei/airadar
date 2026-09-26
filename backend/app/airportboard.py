@@ -2,7 +2,9 @@
 Boarding progress — check-in, gate open, boarding, final call, gate closing,
 gate closed — straight from the departure airport's own flight information,
 for the airports that publish it. No flight API carries these reliably; the
-airport's departure boards do.
+airport's departure boards do. Likewise the arrival boards: when a flight
+actually landed (or is now expected), its gate and belt — the one fact the
+traveller most wants once down, and the one the flight API is slowest with.
 
 Each airport's board is fetched once and shared by every trip leaving from it,
 cached for BOARD_TTL, and only asked for around departure (see trips.py).
@@ -18,7 +20,8 @@ import html
 import json
 import re
 import time
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -34,6 +37,15 @@ _ICAO_TO_IATA: dict[str, str] = json.loads((Path(__file__).parent / "data" / "ai
 
 # (airport, local date, local hour or None) -> (fetched at, {flight number: (phase, gate)})
 _cache: dict[tuple, tuple[float, dict[str, tuple[str | None, str | None]]]] = {}
+
+
+@dataclass
+class Arrival:
+    """One arriving flight as the arrival airport's board has it; times are airport-local."""
+    landed: datetime | None = None
+    expected: datetime | None = None
+    gate: str | None = None
+    belt: str | None = None
 
 
 def normalize(number: str) -> str:
@@ -62,6 +74,34 @@ async def lookup(http: httpx.AsyncClient, airport: str, number: str, scheduled: 
         for k in [k for k, (t, _) in _cache.items() if time.monotonic() - t > 6 * 3600]:
             _cache.pop(k, None)
     return board.get(normalize(number))
+
+
+async def lookup_arrival(http: httpx.AsyncClient, airport: str, number: str, scheduled: datetime) -> Arrival | None:
+    """The arrival board's row for one flight; None when the board doesn't list
+    it (or couldn't be read). `scheduled` is the airport-local arrival time."""
+    if airport not in AIRPORTS:
+        return None
+    key = ("arr", airport, scheduled.date(), scheduled.hour if airport == "ICN" else None)
+    hit = _cache.get(key)
+    if hit and time.monotonic() - hit[0] < BOARD_TTL:
+        board = hit[1]
+    else:
+        try:
+            board = await _ARRIVAL_FETCHERS[airport](http, scheduled)
+        except Exception:
+            board = hit[1] if hit else {}
+        _cache[key] = (time.monotonic(), board)
+    return board.get(normalize(number))
+
+
+def _clock_on(day: datetime, hhmm: str) -> datetime | None:
+    """"06:51" (or "0651") on the scheduled day — the day before or after when
+    that's nearer, for a flight scheduled close to midnight."""
+    m = re.fullmatch(r"(\d{1,2}):?(\d{2})", hhmm.strip())
+    if not m:
+        return None
+    t = day.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=0, microsecond=0)
+    return min((t + timedelta(days=d) for d in (-1, 0, 1)), key=lambda c: abs(c - day))
 
 
 def _gate(value) -> str | None:
@@ -96,6 +136,27 @@ async def _hkg(http: httpx.AsyncClient, scheduled: datetime) -> dict:
     return board
 
 
+async def _hkg_arrivals(http: httpx.AsyncClient, scheduled: datetime) -> dict:
+    url = "https://www.hongkongairport.com/flightinfo-rest/rest/flights/past"
+    resp = await http.get(url, params={"date": scheduled.date().isoformat(), "lang": "en", "cargo": "false",
+                                       "arrival": "true"}, headers=_UA, timeout=20)
+    resp.raise_for_status()
+    board = {}
+    for day in resp.json():
+        for f in day.get("list", []):
+            status = (f.get("status") or "").strip()
+            slot = _clock_on(scheduled, f.get("time") or "") or scheduled
+            # "Landed 06:51", "At gate 07:04 (26/09/2026)", "Est at 06:56"
+            m = re.match(r"(Landed|At gate|Est at)\s+(\d{1,2}:\d{2})", status)
+            when = _clock_on(slot, m.group(2)) if m else None
+            entry = Arrival(landed=when if m and m.group(1) != "Est at" else None,
+                            expected=when if m and m.group(1) == "Est at" else None,
+                            belt=_gate(f.get("baggage")))
+            for flight in f.get("flight", []):
+                board[normalize(flight.get("no", ""))] = entry
+    return board
+
+
 # --- Incheon -----------------------------------------------------------------
 
 _ICN_PHASE = {"GTO": GATE_OPEN, "BOR": BOARDING, "FIN": FINAL_CALL, "GTC": GATE_CLOSING}
@@ -115,6 +176,35 @@ async def _icn(http: httpx.AsyncClient, scheduled: datetime) -> dict:
         rows = json.loads(resp.text).get("scheduleList", [])
     return {normalize(r.get("fnumber", "")): (_ICN_PHASE.get((r.get("remark") or "").upper()), _gate(r.get("gatenumber")))
             for r in rows}
+
+
+def _icn_time(value) -> datetime | None:
+    try:
+        return datetime.strptime(str(value), "%Y%m%d%H%M")
+    except ValueError:
+        return None
+
+
+async def _icn_arrivals(http: httpx.AsyncClient, scheduled: datetime) -> dict:
+    async with httpx.AsyncClient(headers=_UA, timeout=20, follow_redirects=True) as session:
+        await session.get("https://www.airport.kr/ap_en/884/subview.do")
+        day = scheduled.strftime("%Y%m%d")
+        # The hour either side, so a flight well early or late is still in the window.
+        start, end = max(0, scheduled.hour - 1), min(23, scheduled.hour + 1)
+        form = {"curDate": day, "daySel": day, "startTime": f"{start:02d}00", "endTime": f"{end:02d}59",
+                "fromTime": f"{start:02d}00", "toTime": f"{end:02d}59", "siteId": "ap_en", "langSe": "en"}
+        resp = await session.post("https://www.airport.kr/arr/ap_en/getArrPasSchList.do", data=form,
+                                  headers={"X-Requested-With": "XMLHttpRequest"})
+        resp.raise_for_status()
+        rows = json.loads(resp.text).get("scheduleList", [])
+    board = {}
+    for r in rows:
+        # atime: touched down; etime: now expected (a clock on the scheduled day).
+        landed = _icn_time(r.get("atime"))
+        expected = _clock_on(scheduled, r.get("etime") or "") if not landed else None
+        board[normalize(r.get("fnumber", ""))] = Arrival(landed=landed, expected=expected,
+                                                         gate=_gate(r.get("gatenumber")), belt=_gate(r.get("carousel")))
+    return board
 
 
 # --- Haneda ------------------------------------------------------------------
@@ -143,6 +233,30 @@ async def _hnd(http: httpx.AsyncClient, scheduled: datetime) -> dict:
             remark = f.get("備考訳名称") or {}
             english = remark.get("en", "") if isinstance(remark, dict) else str(f.get("備考英名称", ""))
             entry = (_hnd_phase(english), _gate(f.get("ゲート番号コード")))
+            for carrier in f.get("航空会社", []):
+                iata = _ICAO_TO_IATA.get(str(carrier.get("ＡＬコード", "")).upper())
+                digits = str(carrier.get("便名", "")).strip()
+                if iata and digits.isdigit():
+                    board[normalize(f"{iata}{digits}")] = entry
+    return board
+
+
+async def _hnd_arrivals(http: httpx.AsyncClient, scheduled: datetime) -> dict:
+    board = {}
+    for kind in ("int", "dms"):
+        resp = await http.get(f"https://tokyo-haneda.com/app_resource/flight/data/{kind}/hdacfarv.json",
+                              headers=_UA, timeout=25)
+        resp.raise_for_status()
+        for f in resp.json().get("flight_info", []):
+            if not str(f.get("定刻", "")).startswith(scheduled.strftime("%Y/%m/%d")):
+                continue
+            try:
+                slot = datetime.strptime(f["定刻"], "%Y/%m/%d %H:%M:%S")
+            except (KeyError, ValueError):
+                slot = scheduled
+            landed = _clock_on(slot, str(f.get("AT") or ""))
+            expected = _clock_on(slot, str(f.get("ET") or "")) if not landed else None
+            entry = Arrival(landed=landed, expected=expected, gate=None, belt=_gate(f.get("バゲージベルト番号")))
             for carrier in f.get("航空会社", []):
                 iata = _ICAO_TO_IATA.get(str(carrier.get("ＡＬコード", "")).upper())
                 digits = str(carrier.get("便名", "")).strip()
@@ -182,4 +296,23 @@ async def _mfm(http: httpx.AsyncClient, scheduled: datetime) -> dict:
     return board
 
 
+async def _mfm_arrivals(http: httpx.AsyncClient, scheduled: datetime) -> dict:
+    resp = await http.get("https://www.macau-airport.com/en/flights/real-time/arrivals", headers=_UA, timeout=25)
+    resp.raise_for_status()
+    board = {}
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", resp.text, re.S):
+        cells = [html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", c))).strip()
+                 for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+        cells = [c for c in cells if c]
+        # time, airline + number, origin, number, terminal, status, ...
+        if len(cells) >= 6 and re.fullmatch(r"\d{2}:\d{2}", cells[0]) and re.fullmatch(r"[A-Z0-9]{2}\d{1,4}[A-Z]?", cells[3]):
+            slot = _clock_on(scheduled, cells[0]) or scheduled
+            m = re.search(r"(LANDED|EXPECTED) AT (\d{1,2}:\d{2})", cells[5].upper())
+            when = _clock_on(slot, m.group(2)) if m else None
+            board[normalize(cells[3])] = Arrival(landed=when if m and m.group(1) == "LANDED" else None,
+                                                 expected=when if m and m.group(1) == "EXPECTED" else None)
+    return board
+
+
 _FETCHERS = {"HKG": _hkg, "ICN": _icn, "HND": _hnd, "MFM": _mfm}
+_ARRIVAL_FETCHERS = {"HKG": _hkg_arrivals, "ICN": _icn_arrivals, "HND": _hnd_arrivals, "MFM": _mfm_arrivals}

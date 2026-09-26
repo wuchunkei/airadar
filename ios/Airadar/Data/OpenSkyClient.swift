@@ -42,8 +42,15 @@ actor OpenSkyClient {
             guard let hex = await LivePositionClient.shared.position(callsign: callsign)?.hex else {
                 throw OpenSkyError(message: "\(flight.flightNumber) (ATC callsign \(callsign)) is not in the live picture right now — no receiver is hearing it at the moment. Tried again shortly.")
             }
-            return FetchedTrack(points: try await fetchPath(bearer, hex, at: 0),
-                                flownOn: LocalDateTime.from(Date(), in: origin.zone).dayString, icao24: hex)
+            // OpenSky's latest track for an airframe it hasn't picked up again
+            // since take-off is the leg that brought it in; only this flight's
+            // own fixes count, and none yet means ask again later.
+            let start = flight.trackStart ?? scheduled
+            let points = try await fetchPath(bearer, hex, at: 0).filter { ($0.time ?? start) >= start }
+            guard points.count >= 2 else {
+                throw OpenSkyError(message: "OpenSky hasn't picked up \(flight.flightNumber) since take-off yet — its latest track is the aircraft's previous flight.")
+            }
+            return FetchedTrack(points: points, flownOn: LocalDateTime.from(Date(), in: origin.zone).dayString, icao24: hex)
 
         case .past, .upcoming:
             let days: [Date] = flight.phase == .past ? [scheduled]

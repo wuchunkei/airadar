@@ -343,7 +343,12 @@ struct Flight: Codable, Hashable, Identifiable, Sendable {
     }
 
     /// The stored track with its impossible points taken out — see `TrackPoint.cleaned`.
-    var cleanTrack: [TrackPoint]? { track.map { TrackPoint.cleaned($0, from: departureAirport) } }
+    var cleanTrack: [TrackPoint]? { track.map { TrackPoint.cleaned($0, from: departureAirport, notBefore: trackStart) } }
+
+    /// The earliest a fix can belong to this flight: a little before its
+    /// timetabled departure (no flight leaves much earlier than that, and the
+    /// leg that brought the aircraft in has landed by then).
+    var trackStart: Date? { departureInstant?.addingTimeInterval(-20 * 60) }
 
     /// A stored track that stops well short of where the flight was going:
     /// worth asking for again once it has landed, and drawn with the rest dashed.
@@ -695,7 +700,14 @@ extension TrackPoint {
     /// it: a point well behind the furthest from `origin` reached so far is
     /// out of order — a fix from earlier in the flight appended after a track
     /// that had already gone further — and is dropped.
-    static func cleaned(_ points: [TrackPoint], from origin: Airport? = nil) -> [TrackPoint] {
+    ///
+    /// With `notBefore`, a timed point from before then is dropped: it belongs
+    /// to the aircraft's previous flight (OpenSky's "latest track" for an
+    /// airframe it hasn't picked up again yet is the leg that brought it in —
+    /// often the same route flown the other way, which would draw this one as
+    /// already flown the moment it left).
+    static func cleaned(_ points: [TrackPoint], from origin: Airport? = nil, notBefore: Date? = nil) -> [TrackPoint] {
+        let points = notBefore.map { start in points.filter { ($0.time ?? start) >= start } } ?? points
         let timed = points.allSatisfy { $0.time != nil }
         var out = timed ? points.sorted { $0.time! < $1.time! } : points
         if !timed, let origin {

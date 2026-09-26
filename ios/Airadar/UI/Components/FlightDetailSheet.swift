@@ -404,11 +404,11 @@ struct FlightDetailSheet<Actions: View>: View {
     /// all the way from departure to right now, not just the plane marker
     /// (which `livePlane` already refreshes on its own regardless).
     private var storedTrail: [TrackPoint] {
-        let origin = flight.departureAirport
-        guard let track = flight.track, !track.isEmpty else { return TrackPoint.cleaned(liveTrail, from: origin) }
-        guard flight.phase == .inProgress else { return TrackPoint.cleaned(track, from: origin) }
-        let lastStored = track.compactMap(\.time).max() ?? .distantPast
-        return TrackPoint.cleaned(track + liveTrail.filter { ($0.time ?? .distantPast) > lastStored }, from: origin)
+        let origin = flight.departureAirport, start = flight.trackStart
+        guard let track = flight.track, !track.isEmpty else { return TrackPoint.cleaned(liveTrail, from: origin, notBefore: start) }
+        guard flight.phase == .inProgress else { return TrackPoint.cleaned(track, from: origin, notBefore: start) }
+        let lastStored = track.compactMap(\.time).filter { $0 >= start ?? .distantPast }.max() ?? .distantPast
+        return TrackPoint.cleaned(track + liveTrail.filter { ($0.time ?? .distantPast) > lastStored }, from: origin, notBefore: start)
     }
 
     /// Bridges a gap between two consecutive real points with a bowed arc

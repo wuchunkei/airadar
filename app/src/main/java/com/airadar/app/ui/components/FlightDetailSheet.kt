@@ -187,14 +187,14 @@ fun FlightDetailSheet(
                         // right now, not just the plane marker (which
                         // livePlane already refreshes on its own regardless).
                         val lastStored = if (flight.phase == FlightPhase.IN_PROGRESS)
-                            storedTrack.mapNotNull { it.time }.maxOrNull() else null
+                            storedTrack.mapNotNull { it.time }.filter { t -> flight.trackStart?.let { !t.isBefore(it) } ?: true }.maxOrNull() else null
                         if (lastStored != null) {
                             storedTrack + liveTrail.filter { (it.time ?: java.time.Instant.MIN).isAfter(lastStored) }
                         } else storedTrack
                     }
                     liveTrail.size >= 2 -> liveTrail.toList()
                     else -> null
-                }?.let { gapFilled(cleanedTrack(it, flight.departureAirport)) }
+                }?.let { gapFilled(cleanedTrack(it, flight.departureAirport, flight.trackStart)) }
                 val progress = if (realTrack == null && flight.phase == FlightPhase.IN_PROGRESS) flight.fractionFlown else null
                 // Ticks once a minute in the air, so the map's estimated position moves on.
                 val minute by produceState(java.time.Instant.now(), flight.id) {

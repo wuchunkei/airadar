@@ -65,10 +65,14 @@ object OpenSkyClient {
                         "$callsign is not in the live picture right now. Either no " +
                                 "receiver can hear it, or it is not actually in the air."
                     )
-                return@withContext FetchedTrack(
-                    fetchPath(bearer, hex, at = 0),
-                    Instant.now().atZone(origin.zone).toLocalDate()
+                // Only this flight's own fixes: until OpenSky picks it up again
+                // after take-off, its latest track is the leg that brought it in.
+                val start = flight.trackStart ?: scheduled
+                val points = fetchPath(bearer, hex, at = 0).filter { p -> p.time?.let { !it.isBefore(start) } ?: true }
+                if (points.size < 2) throw OpenSkyException(
+                    "OpenSky hasn't picked up ${flight.flightNumber} since take-off yet; its latest track is the aircraft's previous flight."
                 )
+                return@withContext FetchedTrack(points, Instant.now().atZone(origin.zone).toLocalDate())
             }
 
             // Flown: its own day. Future: the most recent day this callsign left the

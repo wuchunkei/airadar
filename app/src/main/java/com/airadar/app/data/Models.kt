@@ -147,7 +147,11 @@ data class Flight(
 
     /** The stored track with its impossible points taken out — see [cleanedTrack]. */
     val cleanTrack: List<TrackPoint>?
-        get() = track?.let { cleanedTrack(it, departureAirport) }
+        get() = track?.let { cleanedTrack(it, departureAirport, trackStart) }
+
+    /** The earliest a fix can belong to this flight: a little before its timetabled departure. */
+    val trackStart: Instant?
+        get() = departureInstant?.minus(java.time.Duration.ofMinutes(20))
 
     /** A stored track that stops well short of where the flight was going: worth
      * asking for again once it has landed, and drawn with the rest dashed. */
@@ -333,7 +337,11 @@ fun greatCircleKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Int {
  * furthest from [origin] reached so far — an earlier fix appended after a track
  * that had already gone further — is dropped.
  */
-fun cleanedTrack(points: List<TrackPoint>, origin: Airport? = null): List<TrackPoint> {
+fun cleanedTrack(points: List<TrackPoint>, origin: Airport? = null, notBefore: java.time.Instant? = null): List<TrackPoint> {
+    // A fix from before the flight could have left is the aircraft's previous
+    // leg: OpenSky's "latest track" for an airframe it hasn't picked up again
+    // is the flight that brought it in, often this route flown the other way.
+    val points = if (notBefore == null) points else points.filter { p -> p.time?.let { !it.isBefore(notBefore) } ?: true }
     val timed = points.all { it.time != null }
     var ordered = if (timed) points.sortedBy { it.time } else points
     if (!timed && origin != null) {

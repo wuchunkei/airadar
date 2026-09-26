@@ -200,6 +200,9 @@ async def _refresh_live(state, doc: dict) -> dict:
     fresh = await _live_record(state, doc["flightNumber"], dep.date(), _live_interval(doc, now), now)
     changes = {k: fresh[k] for k in LIVE_FIELDS if fresh.get(k) is not None and fresh[k] != doc.get(k)} if fresh else {}
     changes.update(await _boarding_changes(state, doc, dep, dep_utc, now))
+    # The arrival airport's own board has the landing first and gets it right;
+    # applied last, so it has the final word over the flight API's estimate.
+    changes.update(await _arrival_changes(state, {**doc, **changes}, dep_utc, now))
     _note_previous(doc, changes)
     if not changes:
         return doc
@@ -237,6 +240,38 @@ async def _boarding_changes(state, doc: dict, dep_local: datetime, dep_utc: date
         changes["boardingStatus"] = phase
     if gate and gate != doc.get("departureGate"):
         changes["departureGate"] = gate
+    return changes
+
+
+# The arrival airport's board is asked from take-off until a while after the
+# timetabled landing — enough for a late one, and for the belt to be posted.
+ARRIVAL_AFTER = timedelta(hours=3)
+
+
+async def _arrival_changes(state, doc: dict, dep_utc: datetime, now: datetime) -> dict:
+    """When the flight actually landed (or is now expected), its arrival gate
+    and belt, for an arrival at an airport that publishes them."""
+    airport, arr = doc.get("arrival"), doc.get("arrivalTime")
+    if airport not in airportboard.AIRPORTS or not isinstance(arr, datetime):
+        return {}
+    arr = arr.replace(tzinfo=None)
+    if not (dep_utc <= now <= _utc(arr, airport) + ARRIVAL_AFTER):
+        return {}
+    found = await airportboard.lookup_arrival(state.http, airport, doc["flightNumber"], arr)
+    if found is None:
+        return {}
+    changes = {}
+    moved = found.landed or (found.expected if doc.get("status") != FlightStatus.LANDED.value else None)
+    if moved is not None:
+        minutes = round((moved - arr).total_seconds() / 60)
+        if minutes != doc.get("arrivalDelayMinutes"):
+            changes["arrivalDelayMinutes"] = minutes
+    if found.landed and doc.get("status") != FlightStatus.LANDED.value:
+        changes["status"] = FlightStatus.LANDED.value
+    if found.gate and found.gate != doc.get("arrivalGate"):
+        changes["arrivalGate"] = found.gate
+    if found.belt and found.belt != doc.get("baggageClaim"):
+        changes["baggageClaim"] = found.belt
     return changes
 
 
