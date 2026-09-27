@@ -120,6 +120,20 @@ object FlightStore {
                     live.any { it.flightNumber == inc.flightNumber && it.departureTime == inc.departureTime }
         }
         withContext(Dispatchers.Main) { publish(mine + binned + rest) }
+        applyChinaAirportBoards()
+    }
+
+    /**
+     * Shenzhen's board (and any other mainland airport's the phone can read, see
+     * [ChinaAirportBoards]) for trips from or to it right now: what it says that
+     * the server didn't is applied and sent up for everyone.
+     */
+    private suspend fun applyChinaAirportBoards() {
+        for (old in all.filter { ChinaAirportBoards.applies(it) && it.sharedBy == null }) {
+            val updated = ChinaAirportBoards.update(old) ?: continue
+            withContext(Dispatchers.Main) { publish(all.map { if (it.id == updated.id) updated else it }) }
+            push { BackendClient.putTrip(updated) }
+        }
     }
 
     /** Accept, reject or take together a friend's trip; the list is then refreshed. */

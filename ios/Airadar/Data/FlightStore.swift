@@ -122,6 +122,19 @@ final class FlightStore: ObservableObject {
         for f in mine { if let old = before[f.id] { FlightReminders.announceChange(from: old, to: f) } }
         publish(mine + binned + rest)
         for f in mine where f.phase == .upcoming { SiriSuggestions.donate(f) }
+        await applyChinaAirportBoards()
+    }
+
+    /// Shenzhen's board (and any other mainland airport's the phone can read,
+    /// see ChinaAirportBoards) for trips from or to it right now: what it says
+    /// that the server didn't is applied, announced, and sent up for everyone.
+    private func applyChinaAirportBoards() async {
+        for old in all where ChinaAirportBoards.applies(to: old) && old.sharedBy == nil {
+            guard let updated = await ChinaAirportBoards.update(old) else { continue }
+            publish(all.map { $0.id == updated.id ? updated : $0 })
+            FlightReminders.announceChange(from: old, to: updated)
+            push { try await BackendClient.putTrip(updated) }
+        }
     }
 
     /// Back to the signed-out list: empty.

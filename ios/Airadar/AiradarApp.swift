@@ -13,6 +13,9 @@ struct AiradarApp: App {
         GoogleAuth.configure()
         BackgroundRefresh.register()
         WatchSync.shared.activate()
+        #if DEBUG
+        NetworkProbe.runIfAsked()
+        #endif
     }
 
     var body: some Scene {
@@ -93,3 +96,39 @@ extension ThemeMode {
         switch self { case .system: nil; case .light: .light; case .dark: .dark }
     }
 }
+
+#if DEBUG
+/// Development aid: launched with `-probe <url> [<url> …]`, fetches each URL
+/// from wherever the phone is and saves the answer under Library/Caches/probe/
+/// (status line, headers, body) — for studying sites that only answer visitors
+/// inside mainland China, which a Mac abroad can't reach.
+enum NetworkProbe {
+    static func runIfAsked() {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-probe") else { return }
+        let urls = args[(i + 1)...].prefix { !$0.hasPrefix("-") }.compactMap(URL.init(string:))
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("probe")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        Task.detached {
+            for (n, url) in urls.enumerated() {
+                var req = URLRequest(url: url, timeoutInterval: 25)
+                req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+                req.setValue("https://\(url.host ?? "")/", forHTTPHeaderField: "Referer")
+                var text = "URL \(url.absoluteString)\n"
+                do {
+                    let (data, resp) = try await URLSession.shared.data(for: req)
+                    if let http = resp as? HTTPURLResponse {
+                        text += "STATUS \(http.statusCode)\n"
+                        for (k, v) in http.allHeaderFields { text += "\(k): \(v)\n" }
+                    }
+                    text += "\n" + (String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self))
+                } catch {
+                    text += "ERROR \(error)\n"
+                }
+                try? text.write(to: dir.appendingPathComponent("\(n).txt"), atomically: true, encoding: .utf8)
+            }
+            try? "done".write(to: dir.appendingPathComponent("done"), atomically: true, encoding: .utf8)
+        }
+    }
+}
+#endif
