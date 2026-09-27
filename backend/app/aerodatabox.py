@@ -91,6 +91,9 @@ def _parse(cleaned: str, day: date, row: dict) -> Flight:
 
     current_dep = _local(dep, "revisedTime") or _local(dep, "runwayTime") or std
     delay = max(0, round((current_dep - std).total_seconds() / 60))
+    # Where the arrival has moved to: touchdown once there is one, the revised estimate before.
+    current_arr = _local(arr, "runwayTime") or _local(arr, "revisedTime")
+    arrival_delay = round((current_arr - sta).total_seconds() / 60) if current_arr else None
     callsign = (row.get("callSign") or "").replace(" ", "") or None
 
     return Flight(
@@ -108,6 +111,7 @@ def _parse(cleaned: str, day: date, row: dict) -> Flight:
         status=_status(row.get("status")),
         aircraft=(row.get("aircraft") or {}).get("model"),
         delayMinutes=delay,
+        arrivalDelayMinutes=arrival_delay,
         callsign=callsign,
         source="aerodatabox",
     )

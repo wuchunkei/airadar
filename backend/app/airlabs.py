@@ -35,7 +35,9 @@ async def _get(client: httpx.AsyncClient, path: str, **params) -> dict:
     body = resp.json()
     if err := body.get("error"):
         code = err.get("code", "")
-        if code == "limit_reached":
+        # "limit_reached", or the monthly cap ("The monthly request limit has
+        # been exceeded") under its own code — either way, nothing more this month.
+        if code == "limit_reached" or "limit" in code.lower() or "limit" in str(err.get("message", "")).lower():
             raise AirLabsError("AirLabs monthly quota used up.", quota_exhausted=True)
         if code in ("unknown_api_key", "wrong_api_key"):
             raise AirLabsError("AirLabs rejected the API key.")

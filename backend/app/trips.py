@@ -17,7 +17,7 @@ import airportsdata
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from . import airlabs, airportboard, feed, names
+from . import aerodatabox, airlabs, airportboard, feed, names
 from .auth import current_user
 from .billing import membership
 from .schema import FlightStatus
@@ -122,15 +122,20 @@ LIVE_WINDOW = timedelta(hours=36)   # around departure: from the day before to a
 # How stale a flight's live record may get before AirLabs is asked again. Tight
 # while a delay matters most, from a few hours before take-off until just after
 # landing; loose the rest of the window, where a delay a day out can wait.
-LIVE_HOT_EVERY = timedelta(minutes=2)
-LIVE_EVERY = timedelta(minutes=10)
+# AirLabs' free plan is 1,000 requests a month; polling every 2 minutes, and
+# every 10 across the whole day and a half, spent it inside the month.
+LIVE_HOT_EVERY = timedelta(minutes=5)
+LIVE_EVERY = timedelta(minutes=60)
+# AeroDataBox, the fallback, has about 200 look-ups a month: only near the
+# flight itself, and sparingly.
+FALLBACK_HOT_EVERY = timedelta(minutes=20)
 HOT_BEFORE = timedelta(hours=3)
 HOT_AFTER = timedelta(minutes=30)
 LIVE_CACHE_TTL = timedelta(days=3)
 # Bumped whenever the live record gains a field, so a record cached by an
 # older build (which would read as "no change" for the new field) is refetched
 # at once instead of lingering until its interval runs out.
-LIVE_CACHE_VERSION = 2
+LIVE_CACHE_VERSION = 3
 
 
 _AIRPORTS = airportsdata.load("IATA")
@@ -158,28 +163,62 @@ def _live_interval(doc: dict, now: datetime) -> timedelta:
     return LIVE_HOT_EVERY if dep + dep_delay - HOT_BEFORE <= now <= arr + arr_delay + HOT_AFTER else LIVE_EVERY
 
 
-async def _live_record(state, number: str, day: date, every: timedelta, now: datetime) -> dict | None:
-    """AirLabs' live record for one flight on one day, shared by every traveller
-    on it: one look-up per interval however many trips point at the flight. None
-    when AirLabs has nothing for it (also cached, so a miss isn't retried sooner)."""
-    key = f"{number.upper()}:{day.isoformat()}"
+# Once AirLabs says the month's quota is gone, it isn't asked again for a while.
+_airlabs_paused_until: datetime | None = None
+AIRLABS_PAUSE = timedelta(hours=1)
+
+
+async def _live_record(state, number: str, day: date, origin: str | None, every: timedelta, now: datetime,
+                       hot: bool) -> dict | None:
+    """The live record for one leg of a flight on one day, shared by every
+    traveller on it: one look-up per interval however many trips point at it.
+    AirLabs first; AeroDataBox when AirLabs has nothing (or its quota is gone),
+    only while the flight is near. A record for a different leg of the same
+    number (HU7744 flies HRB-NKG, then NKG-SZX) never counts. None when neither
+    has it (also cached, so a miss isn't retried sooner)."""
+    global _airlabs_paused_until
+    key = f"{number.upper()}:{day.isoformat()}:{origin or ''}"
     cached = await state.db.live_cache.find_one({"_id": key})
-    if cached and cached.get("version") == LIVE_CACHE_VERSION and now - cached["fetchedAt"].replace(tzinfo=None) < every:
-        return cached.get("flight")
-    try:
-        # The live record only: a timetable row knows nothing of today's delay and
-        # would wipe one already stored.
-        live = await airlabs.flight(state.http, number, day)
-        if live.departureTime.date() != day:
-            raise airlabs.AirLabsError("live record is for another day")
-        record = live.model_dump()
-        if isinstance(record.get("status"), FlightStatus):
-            record["status"] = record["status"].value
-    except Exception:
-        record = None
+    if cached and cached.get("version") == LIVE_CACHE_VERSION:
+        due = cached.get("nextAt") or cached["fetchedAt"] + every
+        if now < due.replace(tzinfo=None):
+            return cached.get("flight")
+
+    def ours(f) -> bool:
+        return f.departureTime.date() == day and (not origin or f.departure == origin)
+
+    record, from_airlabs = None, False
+    if _airlabs_paused_until is None or now >= _airlabs_paused_until:
+        try:
+            # The live record only: a timetable row knows nothing of today's delay and
+            # would wipe one already stored.
+            live = await airlabs.flight(state.http, number, day)
+            if ours(live):
+                record, from_airlabs = live.model_dump(), True
+        except airlabs.AirLabsError as e:
+            if e.quota_exhausted:
+                _airlabs_paused_until = now + AIRLABS_PAUSE
+        except Exception:
+            pass
+    if record is None and hot:
+        try:
+            legs = await aerodatabox.flights(state.http, number, day)
+            match = next((f for f in legs if ours(f)), None)
+            if match is not None:
+                record = match.model_dump()
+                # AeroDataBox has no belt; never let its silence clear one.
+                record.pop("baggageClaim", None)
+        except Exception:
+            pass
+    if record is not None and isinstance(record.get("status"), FlightStatus):
+        record["status"] = record["status"].value
+    # Whenever the fallback was (or would have been) the one asked, the next
+    # look-up waits for its own, longer interval.
+    next_at = now + (every if from_airlabs else max(every, FALLBACK_HOT_EVERY))
     await state.db.live_cache.update_one(
         {"_id": key},
-        {"$set": {"flight": record, "fetchedAt": now, "expiresAt": now + LIVE_CACHE_TTL, "version": LIVE_CACHE_VERSION}},
+        {"$set": {"flight": record, "fetchedAt": now, "nextAt": next_at, "expiresAt": now + LIVE_CACHE_TTL,
+                  "version": LIVE_CACHE_VERSION}},
         upsert=True,
     )
     return record
@@ -197,7 +236,8 @@ async def _refresh_live(state, doc: dict) -> dict:
     if not (dep_utc - LIVE_WINDOW <= now <= dep_utc + LIVE_WINDOW):
         return doc
     # AirLabs keys a flight by its local departure date.
-    fresh = await _live_record(state, doc["flightNumber"], dep.date(), _live_interval(doc, now), now)
+    every = _live_interval(doc, now)
+    fresh = await _live_record(state, doc["flightNumber"], dep.date(), doc.get("departure"), every, now, every == LIVE_HOT_EVERY)
     changes = {k: fresh[k] for k in LIVE_FIELDS if fresh.get(k) is not None and fresh[k] != doc.get(k)} if fresh else {}
     changes.update(await _boarding_changes(state, doc, dep, dep_utc, now))
     # The arrival airport's own board has the landing first and gets it right;

@@ -85,10 +85,9 @@ async def flight(number: str, day: date):
     try:
         return await _airlabs_flight(number, day)
     except airlabs.AirLabsError as e:
-        if e.quota_exhausted:
-            raise HTTPException(status_code=429, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
-        # AirLabs has nothing at all — a real, common coverage gap, not always
-        # a dead flight number (see airlabs.schedule). AeroDataBox, a second
+        # AirLabs has nothing at all (or its month's quota is gone) — a real,
+        # common coverage gap, not always a dead flight number (see
+        # airlabs.schedule). AeroDataBox, a second
         # paid-adjacent source, gets one shot at a real schedule next; failing
         # that, a fellow traveller may already have fed this exact one in
         # (app/feed.py) — only then does this give up and report AirLabs'
@@ -115,8 +114,6 @@ async def flight_candidates(number: str, day: date):
     try:
         return [await _airlabs_flight(number, day)]
     except airlabs.AirLabsError as e:
-        if e.quota_exhausted:
-            raise HTTPException(status_code=429, detail={"flight": number.upper(), "date": day.isoformat(), "error": str(e)})
         try:
             return await aerodatabox.flights(_http(), number, day)
         except aerodatabox.AeroDataBoxError:
